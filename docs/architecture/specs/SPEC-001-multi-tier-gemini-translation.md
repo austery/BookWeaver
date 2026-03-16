@@ -151,14 +151,14 @@ Modules:
 
 Acceptance:
 - [ ] `./translatebook.sh --help` lists all new parameters
-- [ ] `./translatebook.sh --model gemini-2.5-pro book.pdf` works
+- [ ] `./translatebook.sh --model pro book.pdf` and `--model gemini-2.5-pro` both work (alias + full model)
 - [ ] `./translatebook.sh --benchmark book.pdf` generates thresholds
 - [ ] Existing workflows (no parameters) still work (backward compatible)
 
 ## 5. Acceptance Criteria
 
 Project is complete when:
-- [ ] **Functional**: `./translatebook.sh --model gemini-2.5-flash book.pdf` produces EPUB with bilingual alternating format
+- [ ] **Functional**: `./translatebook.sh --model flash book.pdf` (or full model name) produces EPUB with bilingual alternating format
 - [ ] **Quality**: Flash-translated chunks at < 5K chars show acceptable quality (no manual post-edit needed)
 - [ ] **Efficiency**: Pro-tier used only for chunks > 10K chars (verified by quota database)
 - [ ] **Compatibility**: Generated EPUB renders correctly in Calibre, Apple Books, Kindle
