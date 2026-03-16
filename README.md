@@ -61,6 +61,24 @@ python3 03_translate_md.py --temp-dir <sample_temp_dir> --model gemini-2.5-flash
 5. `06_add_toc.py` (TOC)
 6. `07_generate_formats.py` (EPUB/DOCX/PDF generation)
 
+## Quality gate (lint and test)
+
+Run the same checks locally before pushing:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
+
+CI uses workflow `lint-and-test` with a strict order:
+
+1. lint (`ruff check` + `ruff format --check`)
+2. test (`pytest`) after lint passes
+
+If lint or tests fail, the CI gate is blocking and the change is not merge-ready.
+See `docs/architecture/specs/SPEC-003-lint-quality-gates.md` for the formal policy.
+
 ## Prompt definition
 
 Prompt rendering is profile-driven:

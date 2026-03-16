@@ -34,10 +34,13 @@ Extra user constraints are appended by `-p/--prompt`.
 - `--output-format` is handled in Step 7 (`html` skips conversion)
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
 - Step 3 model selection: requested -> alias resolution -> probe availability -> fallback chain
+- CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
 
 ## Dev verification
 
 ```bash
+uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
 bash -n translatebook.sh
 uv run python -m py_compile 03_translate_md.py ai/gemini_provider.py ai/model_probe.py 05_md_to_html.py 07_generate_formats.py
