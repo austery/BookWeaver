@@ -330,3 +330,7 @@ def test_benchmark_creates_json_output():
 - **Code**: `/Users/leipeng/Documents/Projects/claude_translater/` (current)
 - **Test Plan**: See Section 6 "Test-Driven Development Plan"
 - **Related Project**: `/Users/leipeng/Documents/Projects/translate-book/` (Skills-based alternative, not recommended)
+
+
+## Acknowledgements
+This spec and design adapt ideas from the original Claude-based project: https://github.com/wizlijun/claude_translater. Thanks to the original author and contributors for the foundation.
