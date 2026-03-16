@@ -27,4 +27,3 @@ class BilingualMerger:
                 )
             )
         return "".join(blocks).strip() + "\n"
-

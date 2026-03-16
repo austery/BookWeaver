@@ -105,9 +105,7 @@ def _parse_lint_workflow_definition(workflow_content: str) -> WorkflowDefinition
             run_block_lines.append(stripped)
             continue
         if collecting_run_indent is not None and indent <= collecting_run_indent:
-            current_job = (
-                workflow.jobs[current_job_id] if current_job_id is not None else None
-            )
+            current_job = workflow.jobs[current_job_id] if current_job_id is not None else None
             _flush_run_block(current_job, run_block_lines)
             collecting_run_indent = None
             run_block_lines = []
@@ -215,8 +213,7 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
             job_id
             for job_id, job in workflow.jobs.items()
             if any(
-                _command_contains_tokens(command, ("ruff", "check"))
-                for command in job.run_commands
+                _command_contains_tokens(command, ("ruff", "check")) for command in job.run_commands
             )
             and any(
                 _command_contains_tokens(command, ("ruff", "format", "--check"))
@@ -226,8 +223,7 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
         None,
     )
     assert lint_job_id is not None, (
-        "Expected a lint job with run steps for 'ruff check' and "
-        "'ruff format --check'"
+        "Expected a lint job with run steps for 'ruff check' and 'ruff format --check'"
     )
 
     has_downstream_pytest_job = any(
@@ -239,6 +235,5 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
         for job in workflow.jobs.values()
     )
     assert has_downstream_pytest_job, (
-        f"Expected at least one job that needs '{lint_job_id}' and runs "
-        "'uv run pytest -q'"
+        f"Expected at least one job that needs '{lint_job_id}' and runs 'uv run pytest -q'"
     )

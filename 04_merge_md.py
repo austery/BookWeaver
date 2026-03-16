@@ -51,7 +51,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--temp-dir", required=True, help="Temp directory containing page files")
     parser.add_argument(
-        "--output-name", default="output.md", help="Merged output markdown name (default: output.md)"
+        "--output-name",
+        default="output.md",
+        help="Merged output markdown name (default: output.md)",
     )
     return parser.parse_args()
 
@@ -67,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

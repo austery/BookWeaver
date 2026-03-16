@@ -24,4 +24,3 @@ def test_merge_step4_produces_bilingual_output(temp_dir: Path):
     assert "Hello." in content
     assert "你好。" in content
     assert "**中文译文**" in content
-

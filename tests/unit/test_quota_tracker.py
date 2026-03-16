@@ -18,4 +18,3 @@ def test_quota_tracker_records_and_reads_usage(temp_dir: Path):
     tracker.record_usage(model="gemini-2.5-flash", tier="flash", token_count=300)
     total = tracker.get_daily_usage(model="gemini-2.5-flash")
     assert total == 800
-

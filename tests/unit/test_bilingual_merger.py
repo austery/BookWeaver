@@ -21,4 +21,3 @@ def test_merge_raises_on_mismatched_chunk_count():
     except ValueError:
         return
     raise AssertionError("Expected ValueError on mismatched chunk count")
-

@@ -18,7 +18,11 @@ class ModelProbe:
     ) -> None:
         if ttl_seconds < 0:
             raise ValueError("ttl_seconds must be >= 0")
-        self.cache_path = Path(cache_path) if cache_path else Path.home() / ".cache" / "bookweaver" / "model_probe_cache.json"
+        self.cache_path = (
+            Path(cache_path)
+            if cache_path
+            else Path.home() / ".cache" / "bookweaver" / "model_probe_cache.json"
+        )
         self.ttl_seconds = ttl_seconds
         self.runner = runner or self._default_runner
         self.last_probe_errors: dict[str, str] = {}

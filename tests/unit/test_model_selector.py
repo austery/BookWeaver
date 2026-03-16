@@ -36,4 +36,3 @@ def test_select_pro_for_large_chunks():
         }
     )
     assert selector.select(chunk_size=15000) == "gemini-2.5-pro"
-
