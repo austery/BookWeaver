@@ -24,3 +24,5 @@ output/
 # Local config overrides (keep example files tracked)
 config/config.json
 
+# Local git worktrees
+.worktrees/
