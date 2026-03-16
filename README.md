@@ -5,7 +5,7 @@ A TDD-driven translation pipeline for long-form documents (PDF/EPUB/DOCX) that u
 
 Key features
 - Multi-tier model selection (automatic per-chunk sizing)
-- Bilingual output (alternating / collapsible formats), EPUB-friendly
+- Bilingual output (alternating format), EPUB-friendly
 - Local quota tracking and benchmark tooling
 - Designed for zero-interaction batch runs after sample verification
 
@@ -29,8 +29,8 @@ Translate (example)
 # Full pipeline (convert→translate→merge→html→epub)
 ./translatebook.sh book.pdf
 
-# Run only translation steps (3-5):
-./translatebook.sh --start-step 3 --end-step 5 book.pdf
+# Run translation + merge steps only (3-4):
+./translatebook.sh --start-step 3 --end-step 4 book.pdf
 
 # Specify model override (e.g., gemini-2.5-flash):
 ./translatebook.sh --model gemini-2.5-flash book.pdf
@@ -38,13 +38,19 @@ Translate (example)
 # Generate bilingual alternating EPUB:
 ./translatebook.sh --bilingual-style alternating --output-format epub book.pdf
 
+# Keep HTML only (skip DOCX/EPUB/PDF generation in step 7):
+./translatebook.sh --output-format html book.pdf
+
 Configuration
-- See docs/config.example.json for runtime options and threshold settings (model selection, chunk-size).
+- See config/config.json.example for runtime options and threshold settings (model selection, chunk-size).
 - Quota DB: ~/.config/translatebook/quota.db
+
+Notes
+- `output_pageXXXX.md` files from step 3 are translated text only.
+- Bilingual content appears after step 4 (`output.md`) where source + translation are merged.
 
 Acknowledgements
 This project was forked and reworked from https://github.com/wizlijun/claude_translater — many ideas and parts of the original pipeline informed BookWeaver. Thanks to the original author and contributors.
 
 License
 MIT - see LICENSE
-

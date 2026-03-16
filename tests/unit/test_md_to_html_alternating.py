@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 
@@ -33,3 +34,19 @@ Hello world.
     assert "class=\"source-text\"" in html
     assert "class=\"translated-text\"" in html
 
+
+def test_step5_parse_args_accepts_bilingual_style(monkeypatch):
+    module = _load_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "05_md_to_html.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--bilingual-style",
+            "alternating",
+        ],
+    )
+    args = module.parse_args()
+    assert args.bilingual_style == "alternating"

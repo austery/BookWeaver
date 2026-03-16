@@ -86,7 +86,7 @@ OPTIONS:
     --model MODEL          Force model for step 3 (gemini-2.5-pro|gemini-2.5-flash|gemini-2.5-flash-lite)
     --sample-only          Run sample translation steps only (steps 3-4)
     --output-format FORMAT Preferred final format (epub|pdf|docx|html, default: epub)
-    --bilingual-style STYLE Bilingual layout style (alternating|sidebyside, default: alternating)
+    --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)
     --benchmark            Run benchmark_models.py after conversion and exit
     --quota-status         Print today's quota usage and exit
     --dry-run              Show what would be done without executing
@@ -378,6 +378,16 @@ parse_args() {
         log_error "Start step ($STEP_START) cannot be greater than end step ($STEP_END)"
         exit 2
     fi
+
+    if [[ ! "$OUTPUT_FORMAT" =~ ^(epub|pdf|docx|html|all)$ ]]; then
+        log_error "Invalid output format: $OUTPUT_FORMAT (must be epub|pdf|docx|html|all)"
+        exit 2
+    fi
+
+    if [[ ! "$BILINGUAL_STYLE" =~ ^(alternating)$ ]]; then
+        log_error "Invalid bilingual style: $BILINGUAL_STYLE (supported: alternating)"
+        exit 2
+    fi
 }
 
 # Execute Python script with error handling
@@ -576,11 +586,11 @@ main() {
     local step_descriptions=(
         "Environment preparation and parameter parsing"
         "Split file to markdown and extract images"
-        "Translate markdown files using Claude API"
+        "Translate markdown files using Gemini CLI"
         "Merge translated markdown files"
         "Convert markdown to HTML with template"
         "Generate and insert table of contents"
-        "Generate DOCX and EPUB files in temp directory"
+        "Generate final format files in temp directory"
     )
     
     local step_scripts=(
@@ -761,7 +771,7 @@ main() {
                     
                     if [[ "$DRY_RUN" == true ]]; then
                         local base_temp_dir="${INPUT_FILE%.*}_temp"
-                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[4]} --temp-dir \"$base_temp_dir\""
+                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                     else
                         # Ensure virtual environment is activated before running Python scripts
                         local venv_dir="${SCRIPT_DIR}/venv"
@@ -772,7 +782,7 @@ main() {
                         # Use input file name to determine temp directory
                         local base_temp_dir="${INPUT_FILE%.*}_temp"
                         
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[4]} --temp-dir \"$base_temp_dir\""
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                         
                         if [[ "$VERBOSE" == true ]]; then
                             log_info "Executing: $cmd"
@@ -784,6 +794,33 @@ main() {
                         fi
                         
                         log_success "Step 5 completed: ${step_descriptions[4]}"
+                    fi
+                elif [[ $i -eq 7 ]]; then
+                    # Special handling for step 7 (format generation) to pass temp directory and output format
+                    log_step "7" "${step_descriptions[6]}"
+
+                    if [[ "$DRY_RUN" == true ]]; then
+                        local base_temp_dir="${INPUT_FILE%.*}_temp"
+                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
+                    else
+                        local venv_dir="${SCRIPT_DIR}/venv"
+                        if [[ -d "$venv_dir" ]]; then
+                            source "$venv_dir/bin/activate"
+                        fi
+
+                        local base_temp_dir="${INPUT_FILE%.*}_temp"
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
+
+                        if [[ "$VERBOSE" == true ]]; then
+                            log_info "Executing: $cmd"
+                        fi
+
+                        if ! eval $cmd; then
+                            log_error "Step 7 failed: ${step_descriptions[6]}"
+                            exit 1
+                        fi
+
+                        log_success "Step 7 completed: ${step_descriptions[6]}"
                     fi
                 else
                     execute_python_script "${step_scripts[$((i-1))]}" "$i" "${step_descriptions[$((i-1))]}"

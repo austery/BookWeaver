@@ -7,6 +7,7 @@ Uses existing html2docx.sh and html2epub.sh scripts to generate files in temp di
 import os
 import sys
 import subprocess
+import argparse
 from pathlib import Path
 
 def log_info(message):
@@ -164,6 +165,34 @@ def load_config():
         log_warning(f"Could not read config file {config_file}: {e}")
         return None
 
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Step 7: Generate final output formats from HTML"
+    )
+    parser.add_argument(
+        "--temp-dir",
+        default=None,
+        help="Temp directory path. If omitted, auto-detect from *_temp/config.txt",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=["docx", "epub", "pdf", "html", "all"],
+        default="all",
+        help="Format to generate. 'html' means skip conversions in step 7.",
+    )
+    return parser.parse_args()
+
+
+def resolve_output_formats(output_format: str) -> list[str]:
+    """Resolve requested output format into concrete generation targets."""
+    if output_format == "all":
+        return ["docx", "epub", "pdf"]
+    if output_format == "html":
+        return []
+    return [output_format]
+
 def generate_docx_with_script(html_file, temp_dir, metadata=None):
     """Generate DOCX file using calibre_html_publish.py script"""
     # Create output filename in temp directory - use book.docx as requested
@@ -298,7 +327,14 @@ def generate_pdf_with_script(html_file, temp_dir, metadata=None):
 
 def main():
     """Main function"""
-    log_info("Starting Step 7: Generate DOCX, EPUB, and PDF files")
+    args = parse_arguments()
+    requested_formats = resolve_output_formats(args.output_format)
+    if requested_formats:
+        log_info(
+            f"Starting Step 7: Generate {', '.join(fmt.upper() for fmt in requested_formats)}"
+        )
+    else:
+        log_info("Starting Step 7: Output format is HTML, skipping format conversion")
     
     # Load configuration
     config = load_config()
@@ -307,7 +343,7 @@ def main():
         sys.exit(1)
     
     # Get temp directory
-    temp_dir = config.get('temp_dir')
+    temp_dir = args.temp_dir or config.get('temp_dir')
     output_lang = config.get('output_lang', 'zh')
     
     # If temp_dir not specified in config, try to determine from config file location
@@ -369,10 +405,21 @@ def main():
     if publisher:
         book_metadata['publisher'] = publisher
     
-    # Generate all formats using calibre_html_publish.py
-    docx_file = generate_docx_with_script(html_file, temp_dir, book_metadata)
-    epub_file = generate_epub_with_script(html_file, temp_dir, book_metadata)
-    pdf_file = generate_pdf_with_script(html_file, temp_dir, book_metadata)
+    if not requested_formats:
+        log_success("No format conversion requested (output-format=html).")
+        log_success(f"HTML remains available at: {html_file}")
+        return
+
+    docx_file = None
+    epub_file = None
+    pdf_file = None
+
+    if "docx" in requested_formats:
+        docx_file = generate_docx_with_script(html_file, temp_dir, book_metadata)
+    if "epub" in requested_formats:
+        epub_file = generate_epub_with_script(html_file, temp_dir, book_metadata)
+    if "pdf" in requested_formats:
+        pdf_file = generate_pdf_with_script(html_file, temp_dir, book_metadata)
     
     # Report results
     generated_files = []

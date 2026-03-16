@@ -77,6 +77,12 @@ def parse_args() -> argparse.Namespace:
         default="book.html",
         help="Output html file name inside temp dir (default: book.html)",
     )
+    parser.add_argument(
+        "--bilingual-style",
+        choices=["alternating"],
+        default="alternating",
+        help="Bilingual layout style (currently only: alternating)",
+    )
     return parser.parse_args()
 
 
@@ -97,4 +103,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

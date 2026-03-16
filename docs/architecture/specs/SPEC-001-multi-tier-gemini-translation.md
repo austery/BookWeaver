@@ -151,14 +151,14 @@ Modules:
 
 Acceptance:
 - [ ] `./translatebook.sh --help` lists all new parameters
-- [ ] `./translatebook.sh --model gemini-pro book.pdf` works
+- [ ] `./translatebook.sh --model gemini-2.5-pro book.pdf` works
 - [ ] `./translatebook.sh --benchmark book.pdf` generates thresholds
 - [ ] Existing workflows (no parameters) still work (backward compatible)
 
 ## 5. Acceptance Criteria
 
 Project is complete when:
-- [ ] **Functional**: `./translatebook.sh --model gemini-flash book.pdf` produces EPUB with bilingual alternating format
+- [ ] **Functional**: `./translatebook.sh --model gemini-2.5-flash book.pdf` produces EPUB with bilingual alternating format
 - [ ] **Quality**: Flash-translated chunks at < 5K chars show acceptable quality (no manual post-edit needed)
 - [ ] **Efficiency**: Pro-tier used only for chunks > 10K chars (verified by quota database)
 - [ ] **Compatibility**: Generated EPUB renders correctly in Calibre, Apple Books, Kindle
@@ -222,8 +222,8 @@ def test_select_pro_for_large_chunks():
 # test_translate_md.py (integration)
 def test_translate_md_respects_model_override():
     """CLI --model parameter overrides config file."""
-    # Run: 03_translate_md.py --model gemini-pro chunk.md
-    # Verify output_chunk.md is created and model was gemini-pro
+    # Run: 03_translate_md.py --model gemini-2.5-pro chunk.md
+    # Verify output_chunk.md is created and model was gemini-2.5-pro
 ```
 
 #### Phase 2 Tests
@@ -259,8 +259,8 @@ def test_initialize_quota_db():
     # Verify tables exist: quota_usage
     
 def test_track_model_usage():
-    """Record gemini-pro usage increment."""
-    tracker.record_usage(model='gemini-pro', tier='pro', tokens=1000, date='2026-03-16')
+    """Record gemini-2.5-pro usage increment."""
+    tracker.record_usage(model='gemini-2.5-pro', tier='pro', tokens=1000, date='2026-03-16')
     # Verify database entry
 
 # test_benchmark_models.py
@@ -327,7 +327,7 @@ def test_benchmark_creates_json_output():
 
 ## 9. Related
 
-- **Code**: `/Users/leipeng/Documents/Projects/claude_translater/` (current)
+- **Code**: `/Users/leipeng/Documents/Projects/BookWeaver/` (current)
 - **Test Plan**: See Section 6 "Test-Driven Development Plan"
 - **Related Project**: `/Users/leipeng/Documents/Projects/translate-book/` (Skills-based alternative, not recommended)
 
