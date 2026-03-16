@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+
+# Virtual env / tooling
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime temp/output (book processing artifacts)
+*_temp/
+output/
+*.log
+
+# Local config overrides (keep example files tracked)
+config/config.json
+

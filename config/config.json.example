@@ -1,0 +1,21 @@
+{
+  "default_model": "gemini-2.5-flash",
+  "model_thresholds": {
+    "small": {
+      "max_chars": 5000,
+      "model": "gemini-2.5-flash"
+    },
+    "medium": {
+      "max_chars": 10000,
+      "model": "gemini-2.5-flash"
+    },
+    "large": {
+      "max_chars": null,
+      "model": "gemini-2.5-pro"
+    }
+  },
+  "output_format": "epub",
+  "bilingual_style": "alternating",
+  "enable_fallback": true
+}
+
