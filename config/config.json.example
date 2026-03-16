@@ -1,5 +1,10 @@
 {
   "default_model": "gemini-2.5-flash",
+  "model_aliases": {
+    "pro": "gemini-2.5-pro",
+    "flash": "gemini-2.5-flash",
+    "lite": "gemini-2.5-flash-lite"
+  },
   "model_thresholds": {
     "small": {
       "max_chars": 5000,
@@ -16,6 +21,9 @@
   },
   "output_format": "epub",
   "bilingual_style": "alternating",
+  "prompt_profile": "default",
+  "prompt_templates": {
+    "default": "config/prompts/default_prompt.txt"
+  },
   "enable_fallback": true
 }
-

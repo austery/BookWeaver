@@ -83,7 +83,7 @@ OPTIONS:
     --reinstall-packages   Reinstall Python packages in virtual environment
     --start-step NUM       Start from step NUM (1-7, default: 1)
     --end-step NUM         End at step NUM (1-7, default: 7)
-    --model MODEL          Force model for step 3 (gemini-2.5-pro|gemini-2.5-flash|gemini-2.5-flash-lite)
+    --model MODEL          Force model for step 3 (alias: pro|flash|lite, or any full model name)
     --sample-only          Run sample translation steps only (steps 3-4)
     --output-format FORMAT Preferred final format (epub|pdf|docx|html, default: epub)
     --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)

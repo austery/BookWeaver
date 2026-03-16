@@ -38,6 +38,8 @@ which pandoc
 
 # Force model for step 3
 ./translatebook.sh --model gemini-2.5-flash --output-format epub /path/to/book.epub
+# Alias also supported:
+./translatebook.sh --model flash --output-format epub /path/to/book.epub
 
 # HTML only (skip format conversion in step 7)
 ./translatebook.sh --output-format html /path/to/book.epub
@@ -64,7 +66,8 @@ python3 03_translate_md.py --temp-dir <sample_temp_dir> --model gemini-2.5-flash
 
 The translation prompt is defined in:
 
-- `03_translate_md.py` → `create_translation_prompt(output_lang, custom_prompt=None)`
+- `03_translate_md.py` → `create_translation_prompt(...)`
+- external template file: `config/prompts/default_prompt.txt`
 
 You can append extra instructions with:
 
@@ -81,6 +84,8 @@ You can append extra instructions with:
 ## Config
 
 - Runtime config template: `config/config.json.example`
+- model alias mapping (`pro` / `flash` / `lite`) is configurable in `model_aliases`
+- prompt profile/path is configurable via `prompt_profile` + `prompt_templates`
 - Quota DB: `~/.config/translatebook/quota.db`
 
 ## Acknowledgements

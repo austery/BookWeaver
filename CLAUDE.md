@@ -22,6 +22,7 @@ This is a concise contributor guide. User-facing usage is in `README.md`.
 Translation prompt is defined in:
 
 - `03_translate_md.py` → `create_translation_prompt(...)`
+- `config/prompts/default_prompt.txt` (external template, configurable)
 
 Extra user constraints are appended by `-p/--prompt`.
 
@@ -30,6 +31,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - Step 3 output is translation-only (`output_pageXXXX.md`)
 - Bilingual merged content is produced at Step 4 (`output.md`)
 - `--output-format` is handled in Step 7 (`html` skips conversion)
+- `--model` supports aliases (`pro|flash|lite`) and full model names via config mapping
 
 ## Dev verification
 

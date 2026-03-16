@@ -112,6 +112,19 @@ def load_runtime_config():
     if "default_model" not in config:
         config["default_model"] = "gemini-2.5-flash"
 
+    if "prompt_profile" not in config:
+        config["prompt_profile"] = "default"
+
+    if "prompt_templates" not in config:
+        config["prompt_templates"] = {"default": "config/prompts/default_prompt.txt"}
+
+    if "model_aliases" not in config:
+        config["model_aliases"] = {
+            "pro": "gemini-2.5-pro",
+            "flash": "gemini-2.5-flash",
+            "lite": "gemini-2.5-flash-lite",
+        }
+
     return config
 
 def get_language_name(lang_code):
@@ -134,63 +147,81 @@ def get_language_name(lang_code):
     }
     return lang_map.get(lang_code.lower(), lang_code)
 
-def create_translation_prompt(output_lang, custom_prompt=None):
-    """Create translation prompt with optional custom additions"""
+def _default_prompt_template_path() -> Path:
+    script_dir = Path(__file__).resolve().parent
+    return script_dir / "config" / "prompts" / "default_prompt.txt"
+
+
+def load_prompt_template(runtime_config: dict[str, Any] | None = None) -> str:
+    """Load prompt template from config path, fallback to bundled default."""
+    config = runtime_config or {}
+    profile = config.get("prompt_profile", "default")
+    templates = config.get("prompt_templates", {})
+
+    candidate_path: Path | None = None
+    if isinstance(templates, dict):
+        raw_path = templates.get(profile)
+        if isinstance(raw_path, str) and raw_path.strip():
+            candidate = Path(raw_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = Path(__file__).resolve().parent / candidate
+            candidate_path = candidate
+
+    if candidate_path and candidate_path.exists():
+        return candidate_path.read_text(encoding="utf-8")
+
+    default_path = _default_prompt_template_path()
+    if default_path.exists():
+        return default_path.read_text(encoding="utf-8")
+
+    raise FileNotFoundError(
+        f"Prompt template not found. Tried: {candidate_path} and {default_path}"
+    )
+
+
+def create_translation_prompt(
+    output_lang, custom_prompt=None, runtime_config: dict[str, Any] | None = None
+):
+    """Create translation prompt from external template with optional custom additions."""
     lang_name = get_language_name(output_lang)
-    
-    base_prompt = f"""请翻译markdown文件为 {lang_name}. 
-IMPORTANT REQUIREMENTS:
-1.	严格保持 Markdown 格式不变，包括标题、链接、图片引用等
-2.	仅翻译文字内容，保留所有 Markdown 语法和文件名
-3.	删除页码、空链接、不必要的字符和如: 行末的'\\' 
-4.	删除只有数字的行，那可能是页码
-5. 保证格式和语义准确翻译内容自然流畅
-6.	只输出翻译后的正文内容，不要有任何说明、提示、注释或对话内容。
-7.  CRITICAL OUTPUT FORMAT: 你的回复必须严格遵循以下格式：
-    - 第一行必须是：<!-- START -->
-    - 然后是翻译后的markdown内容
-    - 最后一行必须是：<!-- END -->
-    - 不要在这些标记之前或之后添加任何说明、警告、代码块标记或其他内容
-    - 绝对不要输出任何markdown代码块标记（如```markdown或```）
-    - 不要输出任何解释性文字或元数据
-    - 不要输出"我来帮您翻译"、"以下是翻译结果"等开场白
-    - 不要输出任何关于翻译质量、注意事项的说明
-    - 严格按照：<!-- START -->[翻译内容]<!-- END --> 的格式输出
-    - 如果输出不符合此格式，系统将重新请求翻译
-8.  表达清晰简洁，不要使用复杂的句式。请严格按顺序翻译，不要跳过任何内容。
-9.  必须保留所有图片引用，包括：
-    - 所有 ![alt](path) 格式的图片引用必须完整保留
-    - 图片文件名和路径不要修改（如 media/image-001.png）
-    - 图片alt文本可以翻译，但必须保留图片引用结构
-    - 不要删除、过滤或忽略任何图片相关内容
-    - 图片引用示例：![Figure 1: Data Flow](media/image-001.png) → ![图1：数据流](media/image-001.png)
-10. 智能识别和处理多级标题，按照以下规则添加markdown标记：
-    - 主标题（书名、章节名等）使用 # 标记
-    - 一级标题（大节标题）使用 ## 标记  
-    - 二级标题（小节标题）使用 ### 标记
-    - 三级标题（子标题）使用 #### 标记
-    - 四级及以下标题使用 ##### 标记
-11. 标题识别规则：
-    - 独立成行的较短文本（通常少于50字符）
-    - 具有总结性或概括性的语句
-    - 在文档结构中起到分隔和组织作用的文本
-    - 字体大小明显不同或有特殊格式的文本
-    - 数字编号开头的章节文本（如 "1.1 概述"、"第三章"等）
-12. 标题层级判断：
-    - 根据上下文和内容重要性判断标题层级
-    - 章节类标题通常为高层级（# 或 ##）
-    - 小节、子节标题依次降级（### #### #####）
-    - 保持同一文档内标题层级的一致性
-13. 注意事项：
-    - 不要过度添加标题标记，只对真正的标题文本添加
-    - 正文段落不要添加标题标记
-    - 如果原文已有markdown标题标记，保持其层级结构"""
+
+    template = load_prompt_template(runtime_config)
+    custom_block = ""
     if custom_prompt:
-        base_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
-    
-    base_prompt += "\n\n markdown文件正文:"
-    
-    return base_prompt
+        custom_block = f"\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
+
+    prompt = template.replace("{TARGET_LANGUAGE}", lang_name).replace(
+        "{CUSTOM_INSTRUCTIONS_BLOCK}", custom_block
+    )
+    return prompt
+
+
+def resolve_model_name(model_name: str, runtime_config: dict[str, Any] | None = None) -> str:
+    """Resolve user-facing aliases to concrete model names."""
+    raw = (model_name or "").strip()
+    if not raw:
+        raise ValueError("model name must not be empty")
+
+    aliases: dict[str, str] = {}
+    if runtime_config:
+        raw_aliases = runtime_config.get("model_aliases")
+        if isinstance(raw_aliases, dict):
+            aliases.update(
+                {
+                    str(k).strip().lower(): str(v).strip()
+                    for k, v in raw_aliases.items()
+                    if str(k).strip() and str(v).strip()
+                }
+            )
+
+    if not aliases:
+        aliases = {
+            "pro": "gemini-2.5-pro",
+            "flash": "gemini-2.5-flash",
+            "lite": "gemini-2.5-flash-lite",
+        }
+
+    return aliases.get(raw.lower(), raw)
 
 def translate_with_claude_cli(text, output_lang, custom_prompt=None, max_retries=3):
     """Translate text using Claude CLI with retry mechanism and real-time output"""
@@ -360,10 +391,10 @@ def translate_with_claude_cli(text, output_lang, custom_prompt=None, max_retries
     return None
 
 def translate_with_gemini_cli(
-    text, output_lang, model, custom_prompt=None, max_retries=3
+    text, output_lang, model, custom_prompt=None, max_retries=3, runtime_config=None
 ):
     """Translate text using Gemini CLI via GeminiProvider."""
-    prompt = create_translation_prompt(output_lang, custom_prompt)
+    prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config)
 
     for attempt in range(max_retries):
         if attempt > 0:
@@ -460,6 +491,7 @@ def translate_markdown_files(
             output_lang,
             selected_model,
             custom_prompt,
+            runtime_config=runtime_config,
         )
         
         if translated_content:
@@ -519,9 +551,8 @@ def parse_arguments():
 
     parser.add_argument(
         "--model",
-        choices=["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
         default=None,
-        help="Force model for all chunks. If omitted, dynamic selection from config is used.",
+        help="Force model for all chunks. Supports aliases (pro|flash|lite) and full model names.",
     )
     
     return parser.parse_args()
@@ -552,7 +583,13 @@ def main():
     print(f"Target language: {output_lang}")
     runtime_config = load_runtime_config()
     if args.model:
-        print(f"Forced model from CLI: {args.model}")
+        resolved_model = resolve_model_name(args.model, runtime_config)
+        if resolved_model != args.model:
+            print(f"Forced model alias resolved: {args.model} -> {resolved_model}")
+        else:
+            print(f"Forced model from CLI: {resolved_model}")
+    else:
+        resolved_model = None
     
     if args.prompt:
         print(f"Custom prompt: {args.prompt}")
@@ -575,7 +612,7 @@ def main():
         temp_dir,
         output_lang,
         args.prompt,
-        forced_model=args.model,
+        forced_model=resolved_model,
         runtime_config=runtime_config,
     )
     

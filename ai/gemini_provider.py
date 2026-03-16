@@ -4,7 +4,7 @@ import subprocess
 from dataclasses import dataclass
 
 
-VALID_MODELS: set[str] = {
+KNOWN_MODELS: set[str] = {
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
@@ -16,8 +16,8 @@ class GeminiProvider:
     model: str
 
     def __post_init__(self) -> None:
-        if self.model not in VALID_MODELS:
-            raise ValueError(f"Unsupported Gemini model: {self.model}")
+        if not self.model or not self.model.strip():
+            raise ValueError("Gemini model must be a non-empty string")
 
     def translate_chunk(
         self,
@@ -45,4 +45,3 @@ class GeminiProvider:
             raise RuntimeError(f"Gemini CLI failed: {stderr}")
 
         return (result.stdout or "").strip()
-
