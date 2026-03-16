@@ -38,9 +38,109 @@ def test_step3_parse_arguments_accepts_model(monkeypatch):
     assert args.model == "gemini-2.5-pro"
 
 
+def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch):
+    module = _load_step3_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--model",
+            "gemini-3-pro-preview",
+        ],
+    )
+    args = module.parse_arguments()
+    assert args.model == "gemini-3-pro-preview"
+
+
 def test_step3_load_runtime_config_has_default_model():
     module = _load_step3_module()
     config = module.load_runtime_config()
     assert isinstance(config, dict)
     assert config.get("default_model"), "Expected default_model in runtime config"
 
+
+def test_step3_create_translation_prompt_from_external_template(tmp_path):
+    module = _load_step3_module()
+    template_path = tmp_path / "prompt.txt"
+    template_path.write_text(
+        "Translate to {TARGET_LANGUAGE}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:",
+        encoding="utf-8",
+    )
+    config = {
+        "prompt_profile": "default",
+        "prompt_templates": {"default": str(template_path)},
+    }
+    prompt = module.create_translation_prompt(
+        "zh",
+        "extra-rule",
+        runtime_config=config,
+    )
+    assert "ADDITIONAL INSTRUCTIONS" in prompt
+
+
+def test_step3_resolve_model_name_supports_alias():
+    module = _load_step3_module()
+    config = {"model_aliases": {"pro": "gemini-2.5-pro"}}
+    assert module.resolve_model_name("pro", config) == "gemini-2.5-pro"
+
+
+def test_step3_fallback_chain_selects_first_available():
+    module = _load_step3_module()
+
+    class FakeProbe:
+        def __init__(self) -> None:
+            self.last_probe_errors = {"gemini-2.5-pro": "not available"}
+
+        def probe(self, candidates: list[str]) -> dict[str, bool]:
+            assert candidates == ["gemini-2.5-pro", "gemini-2.5-flash"]
+            return {"gemini-2.5-pro": False, "gemini-2.5-flash": True}
+
+    config = {
+        "model_aliases": {
+            "pro": "gemini-2.5-pro",
+            "flash": "gemini-2.5-flash",
+        },
+        "fallback_chain": ["flash"],
+        "model_probe": {"enabled": True},
+    }
+
+    selected_model = module.select_model_with_fallback("pro", config, probe=FakeProbe())
+    assert selected_model == "gemini-2.5-flash"
+
+
+def test_step3_prompt_without_placeholder_still_appends_custom_block(tmp_path):
+    module = _load_step3_module()
+    template_path = tmp_path / "prompt.txt"
+    template_path.write_text("Translate to {TARGET_LANGUAGE}\nBody:", encoding="utf-8")
+    config = {
+        "prompt_profile": "default",
+        "prompt_templates": {"default": str(template_path)},
+    }
+
+    prompt = module.create_translation_prompt(
+        "zh",
+        custom_prompt="be concise",
+        runtime_config=config,
+    )
+    assert "ADDITIONAL INSTRUCTIONS" in prompt
+
+
+def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch):
+    module = _load_step3_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--preview-model-selection",
+            "--skip-probe",
+        ],
+    )
+    args = module.parse_arguments()
+    assert args.preview_model_selection is True
+    assert args.skip_probe is True

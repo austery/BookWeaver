@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ai.gemini_provider import GeminiProvider
+from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
 
 def load_config(temp_dir):
@@ -111,6 +112,33 @@ def load_runtime_config():
 
     if "default_model" not in config:
         config["default_model"] = "gemini-2.5-flash"
+    if "prompt_profile" not in config:
+        config["prompt_profile"] = "default"
+    prompt_templates = config.get("prompt_templates")
+    if not isinstance(prompt_templates, dict):
+        prompt_templates = {}
+    prompt_templates.setdefault("default", "config/prompts/default_prompt.txt")
+    prompt_templates.setdefault("ebook", "config/prompts/ebook_prompt.txt")
+    config["prompt_templates"] = prompt_templates
+    model_aliases = config.get("model_aliases")
+    if not isinstance(model_aliases, dict):
+        model_aliases = {}
+    config["model_aliases"] = model_aliases
+    fallback_chain = config.get("fallback_chain")
+    if not isinstance(fallback_chain, list):
+        fallback_chain = []
+    config["fallback_chain"] = fallback_chain
+    model_probe = config.get("model_probe")
+    if not isinstance(model_probe, dict):
+        model_probe = {}
+    model_probe.setdefault("enabled", True)
+    model_probe.setdefault("cache_ttl_seconds", 3600)
+    model_probe.setdefault("cache_path", "~/.cache/bookweaver/model_probe_cache.json")
+    model_probe.setdefault(
+        "candidates",
+        ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+    )
+    config["model_probe"] = model_probe
 
     return config
 
@@ -134,69 +162,190 @@ def get_language_name(lang_code):
     }
     return lang_map.get(lang_code.lower(), lang_code)
 
-def create_translation_prompt(output_lang, custom_prompt=None):
-    """Create translation prompt with optional custom additions"""
-    lang_name = get_language_name(output_lang)
-    
-    base_prompt = f"""请翻译markdown文件为 {lang_name}. 
-IMPORTANT REQUIREMENTS:
-1.	严格保持 Markdown 格式不变，包括标题、链接、图片引用等
-2.	仅翻译文字内容，保留所有 Markdown 语法和文件名
-3.	删除页码、空链接、不必要的字符和如: 行末的'\\' 
-4.	删除只有数字的行，那可能是页码
-5. 保证格式和语义准确翻译内容自然流畅
-6.	只输出翻译后的正文内容，不要有任何说明、提示、注释或对话内容。
-7.  CRITICAL OUTPUT FORMAT: 你的回复必须严格遵循以下格式：
-    - 第一行必须是：<!-- START -->
-    - 然后是翻译后的markdown内容
-    - 最后一行必须是：<!-- END -->
-    - 不要在这些标记之前或之后添加任何说明、警告、代码块标记或其他内容
-    - 绝对不要输出任何markdown代码块标记（如```markdown或```）
-    - 不要输出任何解释性文字或元数据
-    - 不要输出"我来帮您翻译"、"以下是翻译结果"等开场白
-    - 不要输出任何关于翻译质量、注意事项的说明
-    - 严格按照：<!-- START -->[翻译内容]<!-- END --> 的格式输出
-    - 如果输出不符合此格式，系统将重新请求翻译
-8.  表达清晰简洁，不要使用复杂的句式。请严格按顺序翻译，不要跳过任何内容。
-9.  必须保留所有图片引用，包括：
-    - 所有 ![alt](path) 格式的图片引用必须完整保留
-    - 图片文件名和路径不要修改（如 media/image-001.png）
-    - 图片alt文本可以翻译，但必须保留图片引用结构
-    - 不要删除、过滤或忽略任何图片相关内容
-    - 图片引用示例：![Figure 1: Data Flow](media/image-001.png) → ![图1：数据流](media/image-001.png)
-10. 智能识别和处理多级标题，按照以下规则添加markdown标记：
-    - 主标题（书名、章节名等）使用 # 标记
-    - 一级标题（大节标题）使用 ## 标记  
-    - 二级标题（小节标题）使用 ### 标记
-    - 三级标题（子标题）使用 #### 标记
-    - 四级及以下标题使用 ##### 标记
-11. 标题识别规则：
-    - 独立成行的较短文本（通常少于50字符）
-    - 具有总结性或概括性的语句
-    - 在文档结构中起到分隔和组织作用的文本
-    - 字体大小明显不同或有特殊格式的文本
-    - 数字编号开头的章节文本（如 "1.1 概述"、"第三章"等）
-12. 标题层级判断：
-    - 根据上下文和内容重要性判断标题层级
-    - 章节类标题通常为高层级（# 或 ##）
-    - 小节、子节标题依次降级（### #### #####）
-    - 保持同一文档内标题层级的一致性
-13. 注意事项：
-    - 不要过度添加标题标记，只对真正的标题文本添加
-    - 正文段落不要添加标题标记
-    - 如果原文已有markdown标题标记，保持其层级结构"""
-    if custom_prompt:
-        base_prompt += f"\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
-    
-    base_prompt += "\n\n markdown文件正文:"
-    
-    return base_prompt
+def load_prompt_template(runtime_config: dict[str, Any] | None = None) -> str:
+    """Load prompt template using profile name from runtime config."""
+    script_dir = Path(__file__).resolve().parent
+    config = runtime_config or {}
+    profile = str(config.get("prompt_profile", "default"))
+    configured_templates = config.get("prompt_templates")
+    templates: dict[str, str] = {
+        "default": "config/prompts/default_prompt.txt",
+        "ebook": "config/prompts/ebook_prompt.txt",
+    }
+    if isinstance(configured_templates, dict):
+        templates.update(
+            {
+                key: value
+                for key, value in configured_templates.items()
+                if isinstance(key, str) and isinstance(value, str) and value.strip()
+            }
+        )
 
-def translate_with_claude_cli(text, output_lang, custom_prompt=None, max_retries=3):
+    template_path_raw = templates.get(profile) or templates.get("default")
+    if not template_path_raw:
+        raise ValueError("No prompt template path configured")
+
+    template_path = Path(template_path_raw)
+    if not template_path.is_absolute():
+        template_path = script_dir / template_path
+
+    if not template_path.exists():
+        raise FileNotFoundError(f"Prompt template not found: {template_path}")
+
+    template_content = template_path.read_text(encoding="utf-8").strip()
+    if not template_content:
+        raise ValueError(f"Prompt template is empty: {template_path}")
+    return template_content
+
+
+def resolve_model_name(
+    requested_model: str, runtime_config: dict[str, Any] | None = None
+) -> str:
+    """Resolve a model alias to the concrete model name."""
+    if not isinstance(requested_model, str) or not requested_model.strip():
+        raise ValueError("requested_model must be a non-empty string")
+
+    config = runtime_config or {}
+    aliases_raw = config.get("model_aliases")
+    aliases: dict[str, str] = {}
+    if isinstance(aliases_raw, dict):
+        aliases = {
+            key: value.strip()
+            for key, value in aliases_raw.items()
+            if isinstance(key, str) and isinstance(value, str) and value.strip()
+        }
+
+    resolved_model = requested_model.strip()
+    visited: set[str] = set()
+    while resolved_model in aliases:
+        if resolved_model in visited:
+            raise ValueError(f"Model alias cycle detected at '{resolved_model}'")
+        visited.add(resolved_model)
+        resolved_model = aliases[resolved_model]
+    return resolved_model
+
+
+def build_model_candidates(
+    requested_model: str, runtime_config: dict[str, Any] | None = None
+) -> list[str]:
+    """Build requested->fallback ordered candidate model list."""
+    config = runtime_config or {}
+    candidates: list[str] = [resolve_model_name(requested_model, config)]
+
+    if bool(config.get("enable_fallback", True)):
+        fallback_chain = config.get("fallback_chain")
+        if isinstance(fallback_chain, list):
+            for raw_fallback in fallback_chain:
+                if not isinstance(raw_fallback, str) or not raw_fallback.strip():
+                    continue
+                resolved_fallback = resolve_model_name(raw_fallback, config)
+                if resolved_fallback not in candidates:
+                    candidates.append(resolved_fallback)
+    return candidates
+
+
+def _create_model_probe(runtime_config: dict[str, Any]) -> ModelProbe | None:
+    probe_config_raw = runtime_config.get("model_probe")
+    if not isinstance(probe_config_raw, dict):
+        return None
+    if not bool(probe_config_raw.get("enabled", True)):
+        return None
+
+    ttl_raw = probe_config_raw.get("cache_ttl_seconds", 3600)
+    ttl_seconds = 3600
+    if isinstance(ttl_raw, (int, float)):
+        ttl_seconds = int(ttl_raw)
+
+    cache_path_raw = probe_config_raw.get("cache_path", "~/.cache/bookweaver/model_probe_cache.json")
+    cache_path = Path(str(cache_path_raw)).expanduser()
+    return ModelProbe(cache_path=cache_path, ttl_seconds=max(ttl_seconds, 0))
+
+
+def select_model_with_fallback(
+    requested_model: str,
+    runtime_config: dict[str, Any] | None = None,
+    probe: ModelProbe | None = None,
+) -> str:
+    """Select first available model from requested->fallback chain."""
+    config = runtime_config or {}
+    candidates = build_model_candidates(requested_model, config)
+    if not candidates:
+        raise RuntimeError("No model candidates available")
+
+    probe_config_raw = config.get("model_probe")
+    probe_enabled = True
+    if isinstance(probe_config_raw, dict):
+        probe_enabled = bool(probe_config_raw.get("enabled", True))
+
+    if not probe_enabled:
+        return candidates[0]
+
+    effective_probe = probe if probe is not None else _create_model_probe(config)
+    if effective_probe is None:
+        return candidates[0]
+
+    availability = effective_probe.probe(candidates)
+    for candidate in candidates:
+        if availability.get(candidate, False):
+            return candidate
+
+    errors_raw = getattr(effective_probe, "last_probe_errors", {})
+    errors: dict[str, str] = errors_raw if isinstance(errors_raw, dict) else {}
+    attempted = ", ".join(candidates)
+    error_details = "; ".join(
+        f"{model}: {errors[model]}" for model in candidates if model in errors
+    )
+    if not error_details:
+        error_details = "No stderr details from probe"
+    raise RuntimeError(
+        f"No available Gemini model after probe. Attempted: {attempted}. Errors: {error_details}"
+    )
+
+
+def print_model_selection_preview(
+    requested_model: str, runtime_config: dict[str, Any]
+) -> None:
+    """Print model resolution details without translating files."""
+    resolved_model = resolve_model_name(requested_model, runtime_config)
+    candidates = build_model_candidates(requested_model, runtime_config)
+    print("Model selection preview:")
+    print(f"  Requested: {requested_model}")
+    if resolved_model != requested_model:
+        print(f"  Alias resolved: {requested_model} -> {resolved_model}")
+    print(f"  Candidates: {' -> '.join(candidates)}")
+    selected_model = select_model_with_fallback(requested_model, runtime_config)
+    if selected_model != resolved_model:
+        print(f"  Fallback selected: {resolved_model} -> {selected_model}")
+    print(f"  Final selected model: {selected_model}")
+
+
+def create_translation_prompt(output_lang, custom_prompt=None, runtime_config=None):
+    """Create translation prompt with optional custom additions."""
+    lang_name = get_language_name(output_lang)
+    template = load_prompt_template(runtime_config)
+    has_custom_placeholder = "{CUSTOM_INSTRUCTIONS_BLOCK}" in template
+    custom_block = f"ADDITIONAL INSTRUCTIONS:\n{custom_prompt}" if custom_prompt else ""
+
+    prompt = template.replace("{TARGET_LANGUAGE}", lang_name)
+    if has_custom_placeholder:
+        prompt = prompt.replace("{CUSTOM_INSTRUCTIONS_BLOCK}", custom_block)
+    elif custom_block:
+        prompt = f"{prompt.rstrip()}\n\n{custom_block}"
+
+    prompt = prompt.rstrip()
+    return f"{prompt}\n\n markdown文件正文:"
+
+def translate_with_claude_cli(
+    text,
+    output_lang,
+    custom_prompt=None,
+    max_retries=3,
+    runtime_config=None,
+):
     """Translate text using Claude CLI with retry mechanism and real-time output"""
     
     # Create translation prompt
-    prompt = create_translation_prompt(output_lang, custom_prompt)
+    prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config=runtime_config)
     
     def run_claude_with_realtime_output(full_input, attempt_num):
         """Run Claude CLI and show real-time output"""
@@ -360,10 +509,10 @@ def translate_with_claude_cli(text, output_lang, custom_prompt=None, max_retries
     return None
 
 def translate_with_gemini_cli(
-    text, output_lang, model, custom_prompt=None, max_retries=3
+    text, output_lang, model, custom_prompt=None, max_retries=3, runtime_config=None
 ):
     """Translate text using Gemini CLI via GeminiProvider."""
-    prompt = create_translation_prompt(output_lang, custom_prompt)
+    prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config=runtime_config)
 
     for attempt in range(max_retries):
         if attempt > 0:
@@ -396,7 +545,9 @@ def translate_markdown_files(
         print(f"Using custom prompt: {custom_prompt[:100]}...")
 
     config = runtime_config or {}
+    print(f"Prompt profile: {config.get('prompt_profile', 'default')}")
     selector = None
+    probe = _create_model_probe(config)
     thresholds = config.get("model_thresholds")
     if isinstance(thresholds, dict):
         try:
@@ -454,12 +605,30 @@ def translate_markdown_files(
             else:
                 selected_model = config.get("default_model", "gemini-2.5-flash")
 
+        requested_model = selected_model
+        try:
+            selected_model = select_model_with_fallback(
+                requested_model,
+                config,
+                probe=probe,
+            )
+        except Exception as e:
+            print(f"    Error selecting model for {filename}: {e}")
+            failed_count += 1
+            continue
+
+        resolved_requested_model = resolve_model_name(requested_model, config)
+        if resolved_requested_model != requested_model:
+            print(f"    Model alias resolved: {requested_model} -> {resolved_requested_model}")
+        if selected_model != resolved_requested_model:
+            print(f"    Model fallback selected: {resolved_requested_model} -> {selected_model}")
         print(f"    Model: {selected_model}")
         translated_content = translate_with_gemini_cli(
             content,
             output_lang,
             selected_model,
             custom_prompt,
+            runtime_config=config,
         )
         
         if translated_content:
@@ -519,9 +688,20 @@ def parse_arguments():
 
     parser.add_argument(
         "--model",
-        choices=["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
         default=None,
-        help="Force model for all chunks. If omitted, dynamic selection from config is used.",
+        help="Force model for all chunks. Accepts aliases or full model names.",
+    )
+
+    parser.add_argument(
+        "--preview-model-selection",
+        action="store_true",
+        help="Preview prompt profile and model resolution chain without translating files.",
+    )
+
+    parser.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help="Disable model probe (useful for no-side-effect previews).",
     )
     
     return parser.parse_args()
@@ -536,23 +716,49 @@ def main():
     # Check Gemini CLI availability
     if not check_gemini_cli():
         sys.exit(1)
-    
+
+    runtime_config = load_runtime_config()
+    print(f"Prompt profile: {runtime_config.get('prompt_profile', 'default')}")
+    fallback_chain = runtime_config.get("fallback_chain")
+    if isinstance(fallback_chain, list) and fallback_chain:
+        print(f"Fallback chain: {' -> '.join(str(item) for item in fallback_chain)}")
+    probe_config = runtime_config.get("model_probe")
+    if isinstance(probe_config, dict) and bool(probe_config.get("enabled", True)):
+        print(
+            "Model probe: enabled "
+            f"(ttl={probe_config.get('cache_ttl_seconds', 3600)}s, "
+            f"cache={probe_config.get('cache_path', '~/.cache/bookweaver/model_probe_cache.json')})"
+        )
+    if args.model:
+        print(f"Forced model from CLI: {args.model}")
+
+    if args.preview_model_selection:
+        preview_runtime_config = runtime_config
+        if args.skip_probe:
+            preview_runtime_config = _deep_merge_dict(
+                runtime_config,
+                {"model_probe": {"enabled": False}},
+            )
+            print("Model probe: disabled for preview")
+        requested_model = args.model or str(
+            preview_runtime_config.get("default_model", "gemini-2.5-flash")
+        )
+        print_model_selection_preview(requested_model, preview_runtime_config)
+        return
+
     # Find temp directory
     temp_dir = args.temp_dir
     if not os.path.exists(temp_dir):
         print(f"Error: Specified temp directory not found: {temp_dir}")
         sys.exit(1)
-    
+
     print(f"Using temp directory: {temp_dir}")
-    
+
     # Load configuration
     config = load_config(temp_dir)
     output_lang = args.output_lang or config['output_lang']
-    
+
     print(f"Target language: {output_lang}")
-    runtime_config = load_runtime_config()
-    if args.model:
-        print(f"Forced model from CLI: {args.model}")
     
     if args.prompt:
         print(f"Custom prompt: {args.prompt}")

@@ -16,11 +16,7 @@ def test_gemini_provider_accepts_valid_model():
     assert provider.model == "gemini-2.5-flash"
 
 
-def test_gemini_provider_rejects_invalid_model():
+def test_gemini_provider_accepts_unknown_model_name():
     module = importlib.import_module("ai.gemini_provider")
-    try:
-        module.GeminiProvider(model="bad-model")
-    except ValueError:
-        return
-    raise AssertionError("Expected ValueError for invalid model")
-
+    provider = module.GeminiProvider(model="gemini-3-pro-preview")
+    assert provider.model == "gemini-3-pro-preview"
