@@ -31,8 +31,8 @@ Hello world.
     html = module.render_alternating_bilingual_html(md)
     assert "Hello world." in html
     assert "你好，世界。" in html
-    assert "class=\"source-text\"" in html
-    assert "class=\"translated-text\"" in html
+    assert 'class="source-text"' in html
+    assert 'class="translated-text"' in html
 
 
 def test_step5_parse_args_accepts_bilingual_style(monkeypatch):

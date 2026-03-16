@@ -16,4 +16,3 @@ def sample_chunk_en():
         "The rapid advancement of artificial intelligence has transformed "
         "multiple sectors of society."
     )
-

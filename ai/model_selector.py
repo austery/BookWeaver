@@ -42,4 +42,3 @@ class ModelSelector:
         if self.medium.max_chars is not None and chunk_size < self.medium.max_chars:
             return self.medium.model
         return self.large.model
-

@@ -4,19 +4,12 @@ import subprocess
 from dataclasses import dataclass
 
 
-KNOWN_MODELS: set[str] = {
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-}
-
-
 @dataclass(slots=True)
 class GeminiProvider:
     model: str
 
     def __post_init__(self) -> None:
-        if not self.model or not self.model.strip():
+        if not isinstance(self.model, str) or not self.model.strip():
             raise ValueError("Gemini model must be a non-empty string")
 
     def translate_chunk(

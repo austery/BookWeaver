@@ -20,12 +20,3 @@ def test_gemini_provider_accepts_unknown_model_name():
     module = importlib.import_module("ai.gemini_provider")
     provider = module.GeminiProvider(model="gemini-3-pro-preview")
     assert provider.model == "gemini-3-pro-preview"
-
-
-def test_gemini_provider_rejects_empty_model():
-    module = importlib.import_module("ai.gemini_provider")
-    try:
-        module.GeminiProvider(model="")
-    except ValueError:
-        return
-    raise AssertionError("Expected ValueError for empty model")

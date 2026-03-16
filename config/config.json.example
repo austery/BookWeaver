@@ -1,10 +1,5 @@
 {
   "default_model": "gemini-2.5-flash",
-  "model_aliases": {
-    "pro": "gemini-2.5-pro",
-    "flash": "gemini-2.5-flash",
-    "lite": "gemini-2.5-flash-lite"
-  },
   "model_thresholds": {
     "small": {
       "max_chars": 5000,
@@ -19,11 +14,31 @@
       "model": "gemini-2.5-pro"
     }
   },
+  "model_aliases": {
+    "pro": "gemini-2.5-pro",
+    "flash": "gemini-2.5-flash",
+    "lite": "gemini-2.5-flash-lite"
+  },
+  "fallback_chain": [
+    "flash",
+    "lite"
+  ],
   "output_format": "epub",
   "bilingual_style": "alternating",
+  "enable_fallback": true,
   "prompt_profile": "default",
   "prompt_templates": {
-    "default": "config/prompts/default_prompt.txt"
+    "default": "config/prompts/default_prompt.txt",
+    "ebook": "config/prompts/ebook_prompt.txt"
   },
-  "enable_fallback": true
+  "model_probe": {
+    "enabled": true,
+    "cache_ttl_seconds": 3600,
+    "cache_path": "~/.cache/bookweaver/model_probe_cache.json",
+    "candidates": [
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite"
+    ]
+  }
 }

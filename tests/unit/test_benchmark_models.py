@@ -13,4 +13,3 @@ def test_sample_chunk_files_selects_head_middle_tail(temp_dir: Path):
     selected = sample_chunk_files(temp_dir=temp_dir, sample_count=3)
     names = [p.name for p in selected]
     assert names == ["page0001.md", "page0004.md", "page0007.md"]
-

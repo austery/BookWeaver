@@ -36,10 +36,9 @@ which pandoc
 # Full pipeline
 ./translatebook.sh --output-format epub /path/to/book.epub
 
-# Force model for step 3
-./translatebook.sh --model gemini-2.5-flash --output-format epub /path/to/book.epub
-# Alias also supported:
+# Force model for step 3 (alias or full model name)
 ./translatebook.sh --model flash --output-format epub /path/to/book.epub
+./translatebook.sh --model gemini-3-pro-preview --output-format epub /path/to/book.epub
 
 # HTML only (skip format conversion in step 7)
 ./translatebook.sh --output-format html /path/to/book.epub
@@ -62,12 +61,33 @@ python3 03_translate_md.py --temp-dir <sample_temp_dir> --model gemini-2.5-flash
 5. `06_add_toc.py` (TOC)
 6. `07_generate_formats.py` (EPUB/DOCX/PDF generation)
 
+## Quality gate (lint and test)
+
+Run the same checks locally before pushing:
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+```
+
+CI uses workflow `lint-and-test` with a strict order:
+
+1. lint (`ruff check` + `ruff format --check`)
+2. test (`pytest`) after lint passes
+
+If lint or tests fail, the CI gate is blocking and the change is not merge-ready.
+See `docs/architecture/specs/SPEC-003-lint-quality-gates.md` for the formal policy.
+
 ## Prompt definition
 
-The translation prompt is defined in:
+Prompt rendering is profile-driven:
 
-- `03_translate_md.py` → `create_translation_prompt(...)`
-- external template file: `config/prompts/default_prompt.txt`
+- `config/prompts/default_prompt.txt`
+- `config/prompts/ebook_prompt.txt`
+- runtime keys in `config/config.json.example`:
+  - `prompt_profile`
+  - `prompt_templates`
 
 You can append extra instructions with:
 
@@ -80,12 +100,15 @@ You can append extra instructions with:
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
 - `--bilingual-style` currently supports only `alternating`.
+- Model selection in Step 3 uses: requested model (or alias) -> `fallback_chain` -> probe availability.
+- Gemini provider no longer uses a hardcoded static allow-list.
 
 ## Config
 
 - Runtime config template: `config/config.json.example`
-- model alias mapping (`pro` / `flash` / `lite`) is configurable in `model_aliases`
-- prompt profile/path is configurable via `prompt_profile` + `prompt_templates`
+- Model aliases: `model_aliases` (`pro|flash|lite`)
+- Probe cache config: `model_probe.cache_path` / `model_probe.cache_ttl_seconds`
+- Ordered fallback: `fallback_chain`
 - Quota DB: `~/.config/translatebook/quota.db`
 
 ## Acknowledgements

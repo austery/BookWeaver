@@ -83,7 +83,7 @@ OPTIONS:
     --reinstall-packages   Reinstall Python packages in virtual environment
     --start-step NUM       Start from step NUM (1-7, default: 1)
     --end-step NUM         End at step NUM (1-7, default: 7)
-    --model MODEL          Force model for step 3 (alias: pro|flash|lite, or any full model name)
+    --model MODEL          Force model or alias for step 3 (e.g. pro|flash|lite or full model name)
     --sample-only          Run sample translation steps only (steps 3-4)
     --output-format FORMAT Preferred final format (epub|pdf|docx|html, default: epub)
     --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)
@@ -639,7 +639,16 @@ main() {
                 log_step "3" "${step_descriptions[2]}"
                 
                 if [[ "$DRY_RUN" == true ]]; then
-                    log_info "[DRY RUN] Would execute: python3 ${step_scripts[2]} -p \"$CUSTOM_PROMPT\""
+                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"${INPUT_FILE%.*}_temp\" -p \"$CUSTOM_PROMPT\""
+                    if [[ -n "$MODEL_OVERRIDE" ]]; then
+                        cmd="$cmd --model \"$MODEL_OVERRIDE\""
+                    fi
+                    log_info "[DRY RUN] Would execute: $cmd"
+                    local preview_cmd="$cmd --preview-model-selection --skip-probe"
+                    log_info "[DRY RUN] Previewing prompt profile and model selection..."
+                    if ! eval $preview_cmd; then
+                        log_warning "[DRY RUN] Model selection preview failed"
+                    fi
                 else
                     # Ensure virtual environment is activated before running Python scripts
                     local venv_dir="${SCRIPT_DIR}/venv"
@@ -708,7 +717,16 @@ main() {
                     log_step "3" "${step_descriptions[2]}"
                     
                     if [[ "$DRY_RUN" == true ]]; then
-                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[2]}"
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"${INPUT_FILE%.*}_temp\""
+                        if [[ -n "$MODEL_OVERRIDE" ]]; then
+                            cmd="$cmd --model \"$MODEL_OVERRIDE\""
+                        fi
+                        log_info "[DRY RUN] Would execute: $cmd"
+                        local preview_cmd="$cmd --preview-model-selection --skip-probe"
+                        log_info "[DRY RUN] Previewing prompt profile and model selection..."
+                        if ! eval $preview_cmd; then
+                            log_warning "[DRY RUN] Model selection preview failed"
+                        fi
                     else
                         # Ensure virtual environment is activated before running Python scripts
                         local venv_dir="${SCRIPT_DIR}/venv"
