@@ -16,6 +16,8 @@ __pycache__/
 
 # Runtime temp/output (book processing artifacts)
 *_temp/
+tmp/
+*_sample/
 output/
 *.log
 
