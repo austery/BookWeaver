@@ -16,6 +16,15 @@ def test_roundtrip_script_exists() -> None:
     assert Path("08_epub_roundtrip_baseline.py").exists()
 
 
+def test_translatebook_help_includes_epub_translate_roundtrip_mode() -> None:
+    content = Path("translatebook.sh").read_text(encoding="utf-8")
+    assert "--epub-translate-roundtrip" in content
+
+
+def test_translate_roundtrip_script_exists() -> None:
+    assert Path("09_epub_translate_roundtrip.py").exists()
+
+
 def _build_min_epub(path: Path) -> None:
     with zipfile.ZipFile(path, "w") as zip_file:
         zip_file.writestr(

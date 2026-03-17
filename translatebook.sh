@@ -30,6 +30,7 @@ BILINGUAL_STYLE="alternating"
 BENCHMARK_MODE=false
 QUOTA_STATUS_MODE=false
 EPUB_BASELINE=false
+EPUB_TRANSLATE_ROUNDTRIP=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -91,6 +92,7 @@ OPTIONS:
     --benchmark            Run benchmark_models.py after conversion and exit
     --quota-status         Print today's quota usage and exit
     --epub-baseline        Run EPUB roundtrip baseline mode and exit
+    --epub-translate-roundtrip Run EPUB package-aware translation roundtrip mode and exit
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -343,6 +345,10 @@ parse_args() {
                 EPUB_BASELINE=true
                 shift
                 ;;
+            --epub-translate-roundtrip)
+                EPUB_TRANSLATE_ROUNDTRIP=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -469,6 +475,7 @@ show_config() {
     echo "  Benchmark mode: $BENCHMARK_MODE"
     echo "  Quota status mode: $QUOTA_STATUS_MODE"
     echo "  EPUB baseline mode: $EPUB_BASELINE"
+    echo "  EPUB translate roundtrip mode: $EPUB_TRANSLATE_ROUNDTRIP"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -565,6 +572,67 @@ main() {
         fi
 
         log_success "EPUB baseline completed: ${baseline_output}"
+        exit 0
+    fi
+
+    if [[ "$EPUB_TRANSLATE_ROUNDTRIP" == true ]]; then
+        if [[ "${INPUT_FILE}" != *.epub ]] && [[ "${INPUT_FILE}" != *.EPUB ]]; then
+            log_error "--epub-translate-roundtrip requires an EPUB input file"
+            exit 2
+        fi
+
+        local translate_output="${base_temp_dir}/translated_roundtrip.epub"
+        local translate_script="${SCRIPT_DIR}/09_epub_translate_roundtrip.py"
+
+        if [[ ! -f "$translate_script" ]]; then
+            log_error "Translate roundtrip script not found: $translate_script"
+            exit 3
+        fi
+
+        if ! command -v python3 &> /dev/null; then
+            log_error "Python 3 is required but not installed"
+            exit 3
+        fi
+
+        local cmd=(
+            python3 "$translate_script" "$INPUT_FILE"
+            --output "$translate_output"
+            --output-lang "$OUTPUT_LANG"
+            --bilingual-style "$BILINGUAL_STYLE"
+        )
+        if [[ -n "$MODEL_OVERRIDE" ]]; then
+            cmd+=(--model "$MODEL_OVERRIDE")
+        fi
+        if [[ -n "$CUSTOM_PROMPT" ]]; then
+            cmd+=(-p "$CUSTOM_PROMPT")
+        fi
+
+        local translate_cmd_display
+        translate_cmd_display="$(printf '%q ' "${cmd[@]}")"
+
+        log_step "translate-roundtrip" "EPUB package-aware translation roundtrip"
+        if [[ "$DRY_RUN" == true ]]; then
+            log_info "[DRY RUN] Would execute: $translate_cmd_display"
+            exit 0
+        fi
+
+        setup_venv
+        if ! command -v gemini &> /dev/null; then
+            log_error "Gemini CLI not found"
+            log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
+            exit 4
+        fi
+
+        if [[ "$VERBOSE" == true ]]; then
+            log_info "Executing: $translate_cmd_display"
+        fi
+
+        if ! "${cmd[@]}"; then
+            log_error "EPUB translate roundtrip failed"
+            exit 1
+        fi
+
+        log_success "EPUB translate roundtrip completed: ${translate_output}"
         exit 0
     fi
 
