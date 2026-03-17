@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from ai.bilingual_merger import BilingualMerger
@@ -16,13 +17,33 @@ def _natural_sort_key(path: Path) -> tuple[int, str]:
 
 
 def _read_files(paths: list[Path]) -> list[str]:
+    """Read markdown files with error handling."""
     contents: list[str] = []
     for path in paths:
-        contents.append(path.read_text(encoding="utf-8").strip())
+        try:
+            contents.append(path.read_text(encoding="utf-8").strip())
+        except FileNotFoundError:
+            raise FileNotFoundError(f"File not found: {path}")
+        except IOError as e:
+            raise IOError(f"Error reading {path}: {e}")
     return contents
 
 
 def merge_markdown_files(temp_dir: Path, output_name: str = "output.md") -> Path:
+    """Merge source and translation markdown files into bilingual output (Step 4).
+
+    Args:
+        temp_dir: Directory containing page*.md and output_page*.md files
+        output_name: Name of output file (default: output.md)
+
+    Returns:
+        Path to the merged bilingual markdown file
+
+    Raises:
+        SystemExit: If files missing or counts don't match
+        FileNotFoundError: If source/translation files cannot be read
+        IOError: If output file cannot be written
+    """
     source_files = sorted(temp_dir.glob("page*.md"), key=_natural_sort_key)
     source_files = [p for p in source_files if not p.name.startswith("output_")]
     translated_files = sorted(temp_dir.glob("output_page*.md"), key=_natural_sort_key)
@@ -36,12 +57,22 @@ def merge_markdown_files(temp_dir: Path, output_name: str = "output.md") -> Path
             f"Translation incomplete: source={len(source_files)}, translated={len(translated_files)}"
         )
 
-    originals = _read_files(source_files)
-    translations = _read_files(translated_files)
+    try:
+        originals = _read_files(source_files)
+        translations = _read_files(translated_files)
+    except (FileNotFoundError, IOError) as e:
+        print(f"❌ Error reading input files: {e}", file=sys.stderr)
+        raise
+
     merged = BilingualMerger().merge(original_chunks=originals, translated_chunks=translations)
 
     out_path = temp_dir / output_name
-    out_path.write_text(merged, encoding="utf-8")
+    try:
+        out_path.write_text(merged, encoding="utf-8")
+    except IOError as e:
+        print(f"❌ Error writing output file {out_path}: {e}", file=sys.stderr)
+        raise
+
     return out_path
 
 
