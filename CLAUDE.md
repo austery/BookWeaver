@@ -33,7 +33,12 @@ Extra user constraints are appended by `-p/--prompt`.
 - Bilingual merged content is produced at Step 4 (`output.md`)
 - `--output-format` is handled in Step 7 (`html` skips conversion)
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
-- Step 3 model selection: requested -> alias resolution -> probe availability -> fallback chain
+- Step 3 model selection:
+  1. Chunk size (if thresholds configured) → ModelSelector
+  2. CLI --model parameter override
+  3. Alias resolution (pro → gemini-3-pro-preview)
+  4. Probe availability check (test if model accessible)
+  5. Fallback chain (try alternatives if requested unavailable)
 - CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
 
 ## Dev verification
