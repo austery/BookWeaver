@@ -595,7 +595,7 @@ main() {
         fi
 
         local cmd=(
-            python3 "$translate_script" "$INPUT_FILE"
+            python3 -u "$translate_script" "$INPUT_FILE"
             --output "$translate_output"
             --output-lang "$OUTPUT_LANG"
             --bilingual-style "$BILINGUAL_STYLE"
@@ -617,6 +617,7 @@ main() {
         fi
 
         setup_venv
+        log_info "Starting translate roundtrip (progress logs will show per spine document)..."
         if ! command -v gemini &> /dev/null; then
             log_error "Gemini CLI not found"
             log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
