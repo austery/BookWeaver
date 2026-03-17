@@ -47,6 +47,52 @@ class PackageValidationReport:
     errors: list[str]
 
 
+@dataclass(frozen=True, slots=True)
+class TranslatableSegment:
+    text: str
+
+
+_SKIP_TEXT_TAGS = {"script", "style"}
+
+
+def _local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[1]
+    return tag
+
+
+def _find_body(root: ET.Element) -> ET.Element | None:
+    for node in root.iter():
+        if _local_name(node.tag) == "body":
+            return node
+    return None
+
+
+def _collect_translatable_text_slots(
+    body: ET.Element,
+) -> list[tuple[ET.Element, str, str]]:
+    slots: list[tuple[ET.Element, str, str]] = []
+
+    def walk(node: ET.Element, skip: bool) -> None:
+        local_tag = _local_name(node.tag)
+        current_skip = skip or local_tag in _SKIP_TEXT_TAGS
+
+        if not current_skip:
+            text = node.text or ""
+            if text.strip():
+                slots.append((node, "text", text))
+
+        for child in list(node):
+            walk(child, current_skip)
+            if not current_skip:
+                tail = child.tail or ""
+                if tail.strip():
+                    slots.append((child, "tail", tail))
+
+    walk(body, False)
+    return slots
+
+
 def _clone_zip_info(info: zipfile.ZipInfo) -> zipfile.ZipInfo:
     clone = zipfile.ZipInfo(filename=info.filename, date_time=info.date_time)
     clone.compress_type = info.compress_type
@@ -158,9 +204,21 @@ def load_epub_package(epub_path: Path) -> EpubPackageModel:
     )
 
 
-def repack_epub(source_epub: Path, output_epub: Path) -> None:
+def repack_epub_with_overrides(
+    source_epub: Path,
+    output_epub: Path,
+    file_overrides: dict[str, bytes] | None = None,
+) -> None:
+    overrides = file_overrides or {}
     with zipfile.ZipFile(source_epub, "r") as source_zip:
         infos = source_zip.infolist()
+        known_paths = {info.filename for info in infos}
+        unknown_overrides = sorted(path for path in overrides if path not in known_paths)
+        if unknown_overrides:
+            raise ValueError(
+                f"Override paths not found in source EPUB: {', '.join(unknown_overrides)}"
+            )
+
         mimetype_info = next((info for info in infos if info.filename == "mimetype"), None)
         if mimetype_info is None:
             raise ValueError("EPUB missing required file: mimetype")
@@ -169,13 +227,20 @@ def repack_epub(source_epub: Path, output_epub: Path) -> None:
         output_epub.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output_epub, "w") as output_zip:
             if mimetype_info is not None:
-                mimetype_bytes = source_zip.read(mimetype_info.filename)
+                mimetype_bytes = overrides.get(
+                    mimetype_info.filename, source_zip.read(mimetype_info.filename)
+                )
                 cloned = _clone_zip_info(mimetype_info)
                 cloned.compress_type = zipfile.ZIP_STORED
                 output_zip.writestr(cloned, mimetype_bytes)
 
             for info in remaining_infos:
-                output_zip.writestr(_clone_zip_info(info), source_zip.read(info.filename))
+                content = overrides.get(info.filename, source_zip.read(info.filename))
+                output_zip.writestr(_clone_zip_info(info), content)
+
+
+def repack_epub(source_epub: Path, output_epub: Path) -> None:
+    repack_epub_with_overrides(source_epub, output_epub, file_overrides=None)
 
 
 def validate_package_structure(model: EpubPackageModel) -> PackageValidationReport:
@@ -240,3 +305,31 @@ def resolve_opf_href(opf_path: str, href: str) -> str:
     if str(opf_dir) == ".":
         return posixpath.normpath(href)
     return posixpath.normpath(posixpath.join(str(opf_dir), href))
+
+
+def extract_translatable_segments(xhtml: str) -> list[TranslatableSegment]:
+    root = ET.fromstring(xhtml)
+    body = _find_body(root)
+    if body is None:
+        return []
+    return [TranslatableSegment(text=text) for _, _, text in _collect_translatable_text_slots(body)]
+
+
+def patch_xhtml_alternating(xhtml: str, translations: list[str]) -> str:
+    root = ET.fromstring(xhtml)
+    body = _find_body(root)
+    if body is None:
+        if translations:
+            raise ValueError("translation count does not match translatable segments")
+        return xhtml
+
+    slots = _collect_translatable_text_slots(body)
+    if len(slots) != len(translations):
+        raise ValueError(
+            f"translation count mismatch: expected {len(slots)}, got {len(translations)}"
+        )
+
+    for (node, attr, source_text), translation in zip(slots, translations, strict=True):
+        setattr(node, attr, f"{source_text}\n{translation}")
+
+    return ET.tostring(root, encoding="unicode")

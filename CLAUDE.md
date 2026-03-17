@@ -17,6 +17,7 @@ This is a concise contributor guide. User-facing usage is in `README.md`.
 - `05_md_to_html.py` — render bilingual alternating HTML
 - `07_generate_formats.py` — export requested final formats
 - `08_epub_roundtrip_baseline.py` — EPUB baseline roundtrip (zero text mutation)
+- `09_epub_translate_roundtrip.py` — EPUB package-aware translation roundtrip
 
 ## Prompt source
 
@@ -33,6 +34,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - Step 3 output is translation-only (`output_pageXXXX.md`)
 - Bilingual merged content is produced at Step 4 (`output.md`)
 - `--epub-baseline` triggers a dedicated baseline path and exits after generating `baseline_roundtrip.epub`
+- `--epub-translate-roundtrip` triggers package-aware EPUB translation and exits after generating `translated_roundtrip.epub`
 - `--output-format` is handled in Step 7 (`html` skips conversion)
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
 - Step 3 model selection:
@@ -43,6 +45,7 @@ Extra user constraints are appended by `-p/--prompt`.
   5. Fallback chain (try alternatives if requested unavailable)
 - CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
 - Baseline quality contract and limits are defined in `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md`
+- Translate roundtrip quality contract and limits are defined in `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md`
 
 ## Dev verification
 

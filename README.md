@@ -45,9 +45,13 @@ which pandoc
 
 # EPUB baseline roundtrip (no translation, zero text mutation)
 ./translatebook.sh --epub-baseline /path/to/book.epub
+
+# EPUB package-aware translate roundtrip (bilingual alternating)
+./translatebook.sh --epub-translate-roundtrip --olang zh /path/to/book.epub
 ```
 
 Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
+Translate roundtrip mode writes output to `<input_basename>_temp/translated_roundtrip.epub`.
 
 ### 3.1) Resume after interruption (recommended)
 
@@ -126,6 +130,9 @@ You can append extra instructions with:
 - `--epub-baseline` runs a dedicated roundtrip path and exits early from translation/rendering steps.
 - Baseline output is `<temp_dir>/baseline_roundtrip.epub` and preserves source package content (no text mutation).
 - Baseline parser extracts OPF path, cover metadata pointer, and spine order for structural validation.
+- `--epub-translate-roundtrip` runs a package-aware translation path and exits early from the legacy markdown pipeline.
+- Translate roundtrip output is `<temp_dir>/translated_roundtrip.epub`.
+- Translate roundtrip currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
 - Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
@@ -144,6 +151,16 @@ You can append extra instructions with:
 - OPF spine order remains unchanged.
 
 See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline policy and limits.
+
+## EPUB translate roundtrip acceptance checklist
+
+- Generated EPUB exists at `<temp_dir>/translated_roundtrip.epub`.
+- Spine XHTML content contains both source and translated text in alternating order.
+- TOC/nav resource files remain unmodified in package-aware translation mode.
+- Cover/toc/spine pointers remain resolvable.
+- Fragment links and manifest asset references pass strict validation.
+
+See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for translation roundtrip scope and limits.
 
 ## Config
 
