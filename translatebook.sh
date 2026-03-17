@@ -29,6 +29,7 @@ OUTPUT_FORMAT="epub"
 BILINGUAL_STYLE="alternating"
 BENCHMARK_MODE=false
 QUOTA_STATUS_MODE=false
+EPUB_BASELINE=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -89,6 +90,7 @@ OPTIONS:
     --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)
     --benchmark            Run benchmark_models.py after conversion and exit
     --quota-status         Print today's quota usage and exit
+    --epub-baseline        Run EPUB roundtrip baseline mode and exit
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -337,6 +339,10 @@ parse_args() {
                 QUOTA_STATUS_MODE=true
                 shift
                 ;;
+            --epub-baseline)
+                EPUB_BASELINE=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -462,6 +468,7 @@ show_config() {
     echo "  Bilingual style: $BILINGUAL_STYLE"
     echo "  Benchmark mode: $BENCHMARK_MODE"
     echo "  Quota status mode: $QUOTA_STATUS_MODE"
+    echo "  EPUB baseline mode: $EPUB_BASELINE"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -517,16 +524,55 @@ main() {
     # Show configuration
     show_config
     
+    if [[ "$QUOTA_STATUS_MODE" == true ]]; then
+        show_quota_status
+        exit 0
+    fi
+
+    if [[ "$EPUB_BASELINE" == true ]]; then
+        if [[ "${INPUT_FILE}" != *.epub ]] && [[ "${INPUT_FILE}" != *.EPUB ]]; then
+            log_error "--epub-baseline requires an EPUB input file"
+            exit 2
+        fi
+
+        local baseline_output="${base_temp_dir}/baseline_roundtrip.epub"
+        local baseline_script="${SCRIPT_DIR}/08_epub_roundtrip_baseline.py"
+        local baseline_cmd_display="python3 ${baseline_script} \"$INPUT_FILE\" --output \"$baseline_output\""
+
+        if [[ ! -f "$baseline_script" ]]; then
+            log_error "Baseline script not found: $baseline_script"
+            exit 3
+        fi
+
+        if ! command -v python3 &> /dev/null; then
+            log_error "Python 3 is required but not installed"
+            exit 3
+        fi
+
+        log_step "baseline" "Roundtrip EPUB baseline mode (no text mutation)"
+        if [[ "$DRY_RUN" == true ]]; then
+            log_info "[DRY RUN] Would execute: $baseline_cmd_display"
+            exit 0
+        fi
+
+        if [[ "$VERBOSE" == true ]]; then
+            log_info "Executing: $baseline_cmd_display"
+        fi
+
+        if ! python3 "$baseline_script" "$INPUT_FILE" --output "$baseline_output"; then
+            log_error "EPUB baseline roundtrip failed"
+            exit 1
+        fi
+
+        log_success "EPUB baseline completed: ${baseline_output}"
+        exit 0
+    fi
+
     # Setup Python virtual environment
     setup_venv
     
     # Check dependencies
     check_dependencies
-
-    if [[ "$QUOTA_STATUS_MODE" == true ]]; then
-        show_quota_status
-        exit 0
-    fi
     
     # Clean temp directory if requested
     clean_temp_directory "$base_temp_dir"

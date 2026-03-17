@@ -42,7 +42,12 @@ which pandoc
 
 # HTML only (skip format conversion in step 7)
 ./translatebook.sh --output-format html /path/to/book.epub
+
+# EPUB baseline roundtrip (no translation, zero text mutation)
+./translatebook.sh --epub-baseline /path/to/book.epub
 ```
+
+Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
 
 ### 3.1) Resume after interruption (recommended)
 
@@ -118,14 +123,27 @@ You can append extra instructions with:
 
 ## Important behavior notes
 
+- `--epub-baseline` runs a dedicated roundtrip path and exits early from translation/rendering steps.
+- Baseline output is `<temp_dir>/baseline_roundtrip.epub` and preserves source package content (no text mutation).
+- Baseline parser extracts OPF path, cover metadata pointer, and spine order for structural validation.
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
+- Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
 - `--bilingual-style` currently supports only `alternating`.
-- Step 6 can build TOC from markdown-style heading lines in HTML paragraphs and auto-creates a TOC container when missing.
+- Step 6 can build TOC from markdown-style heading lines in HTML paragraphs, auto-creates a TOC container when missing, and defaults TOC entries to chapter-level (`h1`) headings.
 - Step 7 resolves HTML input in order: `book_doc.html` -> `book.html` -> newest `*.html` in temp dir.
 - Step 7 format conversion uses Calibre `ebook-convert` directly (no external publish script required).
 - Model selection in Step 3 uses: requested model (or alias) -> `fallback_chain` -> probe availability.
 - Gemini provider no longer uses a hardcoded static allow-list.
+
+## EPUB baseline acceptance checklist
+
+- Cover metadata pointer (`meta name="cover"`) remains resolvable after roundtrip.
+- TOC/nav links stay clickable (no broken fragment links in validated docs).
+- Manifest asset paths remain present (no missing image/css/font files).
+- OPF spine order remains unchanged.
+
+See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline policy and limits.
 
 ## Config
 
