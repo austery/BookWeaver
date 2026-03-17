@@ -478,8 +478,8 @@ def main():
         try:
             file_size = os.path.getsize(html_file)
             print(f"Final file size: {file_size:,} bytes")
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️  TOC generation error: {e}", file=sys.stderr)
 
         print("\n=== Step 6 Complete! ===")
         print(f"Your HTML file with TOC is ready: {html_file}")

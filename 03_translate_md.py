@@ -569,8 +569,8 @@ def main():
                 if os.path.getsize(output_file) < 50:
                     os.remove(output_file)
                     print(f"  Removed: {os.path.basename(output_file)}")
-            except:
-                pass
+            except Exception as e:
+                print(f"⚠️  Cleanup error: {e}", file=sys.stderr)
 
     # Translate markdown files
     translate_markdown_files(
