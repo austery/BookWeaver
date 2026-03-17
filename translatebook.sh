@@ -186,10 +186,10 @@ setup_venv() {
         
         if [[ -f "$requirements_file" ]]; then
             log_info "Installing packages from requirements.txt..."
-            pip install -r "$requirements_file"
+            uv pip install -r "$requirements_file"
         else
             log_info "Installing essential packages..."
-            pip install python-docx PyMuPDF ebooklib beautifulsoup4 lxml markdown Pillow pdf2image pypandoc
+            uv pip install python-docx PyMuPDF ebooklib beautifulsoup4 lxml markdown Pillow pdf2image pypandoc
         fi
         
         if [[ $? -ne 0 ]]; then
