@@ -162,6 +162,14 @@ See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline p
 
 See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for translation roundtrip scope and limits.
 
+### Translation strategy reference
+
+This mode is kept as a separate feature path and currently translates per extracted text segment from spine XHTML.
+
+Design reference for future prompt/segmentation optimization:
+
+- Immersive Translate `1.26.6` (paragraph-structure-preserving prompt style).
+
 ## Config
 
 - Runtime config template: `config/config.json.example`
