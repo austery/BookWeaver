@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """
 Step 1: Environment preparation and parameter parsing
 Creates temp directory and parses command line arguments
 """
+from __future__ import annotations
 
 import argparse
 import os

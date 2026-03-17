@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """
 Step 6: Generate and insert TOC (Table of Contents) into HTML
 Analyzes headings in HTML and creates a navigable TOC
 Usage: 06_add_toc.py [-o output_file]
 """
+from __future__ import annotations
 
 import os
 import sys

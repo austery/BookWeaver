@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """
 Step 2: Split original file into markdown by pages/chapters
 Supports PDF, DOCX, and EPUB formats
 """
+from __future__ import annotations
 
 import os
 import sys
