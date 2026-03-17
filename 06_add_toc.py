@@ -4,12 +4,14 @@ Step 6: Generate and insert TOC (Table of Contents) into HTML
 Analyzes headings in HTML and creates a navigable TOC
 Usage: 06_add_toc.py [-o output_file]
 """
+
 from __future__ import annotations
 
 import os
 import sys
 import re
 import argparse
+from html import unescape
 from pathlib import Path
 
 # Try to import BeautifulSoup, fallback to regex if not available
@@ -19,6 +21,22 @@ try:
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False
+
+
+MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
+
+
+def parse_markdown_heading(text):
+    """Parse markdown heading syntax and return (level, title)."""
+    normalized = unescape(text).strip()
+    match = MARKDOWN_HEADING_PATTERN.match(normalized)
+    if not match:
+        return None
+    level = len(match.group(1))
+    title = match.group(2).strip()
+    if not title:
+        return None
+    return level, title
 
 
 def load_config(temp_dir):
@@ -53,8 +71,12 @@ def extract_headings(soup):
 
     # Find all heading tags
     for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        if heading.find_parent(id="table-of-contents") is not None:
+            continue
         level = int(heading.name[1])  # Extract number from h1, h2, etc.
         text = heading.get_text().strip()
+        if text.lower() == "table of contents":
+            continue
 
         if not text:
             continue
@@ -68,6 +90,23 @@ def extract_headings(soup):
         # Store heading info
         heading_info = {"level": level, "text": text, "id": heading_id, "element": heading}
 
+        headings.append(heading_info)
+        toc_data.append(heading_info)
+
+    # Fallback: support markdown-style headings rendered as paragraphs.
+    for paragraph in soup.find_all("p"):
+        classes = paragraph.get("class") or []
+        if "translated-text" in classes and "source-text" not in classes:
+            continue
+
+        parsed = parse_markdown_heading(paragraph.get_text().strip())
+        if not parsed:
+            continue
+
+        level, title = parsed
+        heading_id = generate_heading_id(title, headings)
+        paragraph["id"] = heading_id
+        heading_info = {"level": level, "text": title, "id": heading_id, "element": paragraph}
         headings.append(heading_info)
         toc_data.append(heading_info)
 
@@ -262,15 +301,26 @@ def insert_toc_into_html(html_file):
 
     # Find the toc-content div and insert TOC there
     toc_content_div = soup.find("div", class_="toc-content")
-    if toc_content_div:
-        # Clear existing content and insert new TOC
-        toc_content_div.clear()
-        toc_soup = BeautifulSoup(toc_html, "html.parser")
-        toc_content_div.append(toc_soup)
-        print("✓ TOC inserted into sidebar")
-    else:
-        print("Warning: .toc-content div not found, TOC not inserted")
-        return False
+    if not toc_content_div:
+        body = soup.find("body")
+        if body is None:
+            print("Error: <body> not found, cannot insert TOC container")
+            return False
+        toc_wrapper = soup.new_tag("div", id="table-of-contents")
+        toc_title = soup.new_tag("h2")
+        toc_title.string = "Table of Contents"
+        toc_content_div = soup.new_tag("div", attrs={"class": "toc-content"})
+        toc_wrapper.append(toc_title)
+        toc_wrapper.append(toc_content_div)
+        body.insert(0, toc_wrapper)
+        body.insert(1, soup.new_tag("hr", attrs={"class": "content-separator"}))
+        print("ℹ️ .toc-content div not found, inserted default TOC container")
+
+    # Clear existing content and insert new TOC
+    toc_content_div.clear()
+    toc_soup = BeautifulSoup(toc_html, "html.parser")
+    toc_content_div.append(toc_soup)
+    print("✓ TOC inserted into sidebar")
 
     # Save updated HTML
     try:
@@ -288,6 +338,10 @@ def insert_toc_into_html(html_file):
 def generate_toc_summary(html_file):
     """Generate summary of TOC structure"""
     print("Generating TOC summary...")
+
+    if not BS4_AVAILABLE:
+        print("TOC summary skipped: BeautifulSoup not available")
+        return
 
     try:
         with open(html_file, "r", encoding="utf-8") as f:
@@ -339,37 +393,84 @@ def insert_toc_with_regex(html_file):
         print(f"Error reading HTML file: {e}")
         return False
 
-    # Extract headings using regex
-    heading_pattern = r"<(h[1-6])(?:[^>]*)>(.*?)</\1>"
-    headings = re.findall(heading_pattern, html_content, re.IGNORECASE | re.DOTALL)
+    heading_data = []
 
-    if not headings:
+    # Extract native HTML headings first.
+    heading_pattern = r"<(h[1-6])([^>]*)>(.*?)</\1>"
+
+    def _replace_heading(match):
+        tag = match.group(1)
+        attrs = match.group(2) or ""
+        text = match.group(3)
+        level = int(tag[1])
+        clean_text = unescape(re.sub(r"<[^>]+>", "", text)).strip()
+        if not clean_text:
+            return match.group(0)
+        if clean_text.lower() == "table of contents":
+            return match.group(0)
+        heading_id = generate_heading_id(clean_text, heading_data)
+        if re.search(r'\sid\s*=\s*["\'][^"\']*["\']', attrs, flags=re.IGNORECASE):
+            new_attrs = re.sub(
+                r'\sid\s*=\s*["\'][^"\']*["\']',
+                f' id="{heading_id}"',
+                attrs,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+        else:
+            new_attrs = f'{attrs} id="{heading_id}"'
+        heading_data.append({"level": level, "text": clean_text, "id": heading_id})
+        return f"<{tag}{new_attrs}>{text}</{tag}>"
+
+    html_content = re.sub(
+        heading_pattern,
+        _replace_heading,
+        html_content,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Fallback: extract markdown-style headings from paragraph lines.
+    if not heading_data:
+        paragraph_pattern = r"<p([^>]*)>(.*?)</p>"
+
+        def _replace_paragraph(match):
+            attrs = match.group(1) or ""
+            text = match.group(2)
+            attrs_lower = attrs.lower()
+            if "translated-text" in attrs_lower and "source-text" not in attrs_lower:
+                return match.group(0)
+            clean_text = unescape(re.sub(r"<[^>]+>", "", text)).strip()
+            parsed = parse_markdown_heading(clean_text)
+            if not parsed:
+                return match.group(0)
+            level, title = parsed
+            heading_id = generate_heading_id(title, heading_data)
+            if re.search(r'\sid\s*=\s*["\'][^"\']*["\']', attrs, flags=re.IGNORECASE):
+                new_attrs = re.sub(
+                    r'\sid\s*=\s*["\'][^"\']*["\']',
+                    f' id="{heading_id}"',
+                    attrs,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            else:
+                new_attrs = f'{attrs} id="{heading_id}"'
+            heading_data.append({"level": level, "text": title, "id": heading_id})
+            return f"<p{new_attrs}>{text}</p>"
+
+        html_content = re.sub(
+            paragraph_pattern,
+            _replace_paragraph,
+            html_content,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+
+    if not heading_data:
         print("No headings found in HTML file")
         return False
 
-    print(f"Found {len(headings)} headings")
-
-    # Generate simple TOC HTML
-    toc_html = "<ul>\n"
-
-    for i, (tag, text) in enumerate(headings):
-        level = int(tag[1])  # Extract number from h1, h2, etc.
-        # Clean text from any HTML tags
-        clean_text = re.sub(r"<[^>]+>", "", text).strip()
-        heading_id = f"heading-{i + 1}"
-
-        # Add ID to the heading in the content
-        old_heading = f"<{tag}>{text}</{tag}>"
-        new_heading = f'<{tag} id="{heading_id}">{text}</{tag}>'
-        html_content = html_content.replace(old_heading, new_heading, 1)
-
-        # Add to TOC with proper indentation
-        if level > 1:
-            for _ in range(level - 1):
-                toc_html += "  "
-        toc_html += f'<li><a href="#{heading_id}">{clean_text}</a></li>\n'
-
-    toc_html += "</ul>\n"
+    print(f"Found {len(heading_data)} headings")
+    toc_html = generate_simple_toc_html(heading_data)
 
     # Find and replace the toc-content div
     toc_content_pattern = r'(<div[^>]*class="toc-content[^"]*"[^>]*>).*?(</div>)'
@@ -380,8 +481,26 @@ def insert_toc_with_regex(html_file):
         )
         print("✓ TOC inserted into sidebar")
     else:
-        print("Warning: .toc-content div not found, TOC not inserted")
-        return False
+        toc_block = (
+            '<div id="table-of-contents">\n'
+            "  <h2>Table of Contents</h2>\n"
+            f'  <div class="toc-content">\n{toc_html}  </div>\n'
+            "</div>\n"
+            '<hr class="content-separator" />\n'
+        )
+        body_pattern = r"(<body[^>]*>)"
+        if re.search(body_pattern, html_content, re.IGNORECASE):
+            html_content = re.sub(
+                body_pattern,
+                r"\1\n" + toc_block,
+                html_content,
+                count=1,
+                flags=re.IGNORECASE,
+            )
+            print("ℹ️ .toc-content div not found, inserted default TOC container")
+        else:
+            print("Warning: <body> not found, TOC not inserted")
+            return False
 
     # Save updated HTML
     try:

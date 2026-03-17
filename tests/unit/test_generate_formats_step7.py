@@ -42,3 +42,30 @@ def test_step7_resolve_output_formats_for_epub():
 def test_step7_resolve_output_formats_for_html():
     module = _load_module()
     assert module.resolve_output_formats("html") == []
+
+
+def test_step7_resolve_html_input_prefers_book_html_when_book_doc_missing(temp_dir):
+    module = _load_module()
+    (temp_dir / "book.html").write_text("<html></html>", encoding="utf-8")
+    selected = module.resolve_html_input_file(str(temp_dir))
+    assert selected.endswith("book.html")
+
+
+def test_step7_generate_epub_uses_ebook_convert(monkeypatch, temp_dir):
+    module = _load_module()
+    html_file = temp_dir / "book.html"
+    html_file.write_text("<html></html>", encoding="utf-8")
+    output_file = temp_dir / "book.epub"
+
+    calls = []
+
+    def fake_run(cmd, check, capture_output, text):
+        calls.append(cmd)
+        output_file.write_text("ok", encoding="utf-8")
+        return type("Result", (), {"stdout": "done"})()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    generated = module.generate_epub_with_script(str(html_file), str(temp_dir), {})
+    assert generated == str(output_file)
+    assert calls
+    assert calls[0][0] == "ebook-convert"

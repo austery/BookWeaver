@@ -3,13 +3,14 @@
 Step 7: Generate DOCX and EPUB files in temp directory
 Uses existing html2docx.sh and html2epub.sh scripts to generate files in temp directory
 """
+
 from __future__ import annotations
 
 import os
 import sys
 import subprocess
 import argparse
-from pathlib import Path
+import glob
 
 
 def log_info(message):
@@ -207,8 +208,59 @@ def resolve_output_formats(output_format: str) -> list[str]:
     return [output_format]
 
 
+def resolve_html_input_file(temp_dir: str) -> str:
+    """Resolve source HTML file for format conversion."""
+    preferred_names = ["book_doc.html", "book.html"]
+    for name in preferred_names:
+        candidate = os.path.join(temp_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+
+    html_files = glob.glob(os.path.join(temp_dir, "*.html"))
+    if html_files:
+        return max(html_files, key=os.path.getmtime)
+
+    raise FileNotFoundError(f"No HTML files found in temp directory: {temp_dir}")
+
+
+def _run_ebook_convert(
+    html_file: str, output_file: str, metadata: dict[str, str] | None = None
+) -> bool:
+    """Convert HTML into a target format using Calibre ebook-convert."""
+    cmd = ["ebook-convert", html_file, output_file]
+    meta = metadata or {}
+    title = meta.get("title")
+    creator = meta.get("creator")
+    publisher = meta.get("publisher")
+    if title:
+        cmd.extend(["--title", title])
+    if creator:
+        cmd.extend(["--authors", creator])
+    if publisher:
+        cmd.extend(["--publisher", publisher])
+
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.strip() if isinstance(e.stderr, str) else str(e.stderr)
+        log_error(f"ebook-convert failed: {stderr}")
+        if e.stdout:
+            log_info(f"ebook-convert output: {e.stdout}")
+        return False
+
+    if os.path.exists(output_file):
+        if result.stdout:
+            log_info(f"ebook-convert output: {result.stdout}")
+        return True
+
+    log_error(f"Conversion finished but output file not found: {output_file}")
+    if result.stdout:
+        log_info(f"ebook-convert output: {result.stdout}")
+    return False
+
+
 def generate_docx_with_script(html_file, temp_dir, metadata=None):
-    """Generate DOCX file using calibre_html_publish.py script"""
+    """Generate DOCX file using ebook-convert."""
     # Create output filename in temp directory - use book.docx as requested
     docx_file = os.path.join(temp_dir, "book.docx")
 
@@ -219,41 +271,15 @@ def generate_docx_with_script(html_file, temp_dir, metadata=None):
         log_success(f"Found existing DOCX: {docx_file} ({file_size} bytes)")
         return docx_file
 
-    log_info("Generating DOCX file using calibre_html_publish.py...")
-
-    # Get script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    publish_script = os.path.join(script_dir, "calibre_html_publish.py")
-
-    if not os.path.exists(publish_script):
-        log_error(f"calibre_html_publish.py script not found at: {publish_script}")
-        return None
-
-    try:
-        # Run calibre_html_publish.py script with output filename
-        cmd = ["python3", publish_script, html_file, "-o", docx_file]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-        if os.path.exists(docx_file):
-            log_success(f"DOCX file created: {docx_file}")
-            return docx_file
-        else:
-            log_error("DOCX file was not created")
-            if result.stdout:
-                log_info(f"Script output: {result.stdout}")
-            return None
-    except subprocess.CalledProcessError as e:
-        log_error(f"Failed to generate DOCX: {e.stderr}")
-        if e.stdout:
-            log_info(f"Script output: {e.stdout}")
-        return None
-    except Exception as e:
-        log_error(f"Error running calibre_html_publish.py: {e}")
-        return None
+    log_info("Generating DOCX file using ebook-convert...")
+    if _run_ebook_convert(html_file, docx_file, metadata):
+        log_success(f"DOCX file created: {docx_file}")
+        return docx_file
+    return None
 
 
 def generate_epub_with_script(html_file, temp_dir, metadata=None):
-    """Generate EPUB file using calibre_html_publish.py script"""
+    """Generate EPUB file using ebook-convert."""
     # Create output filename in temp directory - use book.epub as requested
     epub_file = os.path.join(temp_dir, "book.epub")
 
@@ -264,41 +290,15 @@ def generate_epub_with_script(html_file, temp_dir, metadata=None):
         log_success(f"Found existing EPUB: {epub_file} ({file_size} bytes)")
         return epub_file
 
-    log_info("Generating EPUB file using calibre_html_publish.py...")
-
-    # Get script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    publish_script = os.path.join(script_dir, "calibre_html_publish.py")
-
-    if not os.path.exists(publish_script):
-        log_error(f"calibre_html_publish.py script not found at: {publish_script}")
-        return None
-
-    try:
-        # Run calibre_html_publish.py script with output filename
-        cmd = ["python3", publish_script, html_file, "-o", epub_file]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-        if os.path.exists(epub_file):
-            log_success(f"EPUB file created: {epub_file}")
-            return epub_file
-        else:
-            log_error("EPUB file was not created")
-            if result.stdout:
-                log_info(f"Script output: {result.stdout}")
-            return None
-    except subprocess.CalledProcessError as e:
-        log_error(f"Failed to generate EPUB: {e.stderr}")
-        if e.stdout:
-            log_info(f"Script output: {e.stdout}")
-        return None
-    except Exception as e:
-        log_error(f"Error running calibre_html_publish.py: {e}")
-        return None
+    log_info("Generating EPUB file using ebook-convert...")
+    if _run_ebook_convert(html_file, epub_file, metadata):
+        log_success(f"EPUB file created: {epub_file}")
+        return epub_file
+    return None
 
 
 def generate_pdf_with_script(html_file, temp_dir, metadata=None):
-    """Generate PDF file using calibre_html_publish.py script"""
+    """Generate PDF file using ebook-convert."""
     # Create output filename in temp directory - use book.pdf as requested
     pdf_file = os.path.join(temp_dir, "book.pdf")
 
@@ -309,37 +309,11 @@ def generate_pdf_with_script(html_file, temp_dir, metadata=None):
         log_success(f"Found existing PDF: {pdf_file} ({file_size} bytes)")
         return pdf_file
 
-    log_info("Generating PDF file using calibre_html_publish.py...")
-
-    # Get script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    publish_script = os.path.join(script_dir, "calibre_html_publish.py")
-
-    if not os.path.exists(publish_script):
-        log_error(f"calibre_html_publish.py script not found at: {publish_script}")
-        return None
-
-    try:
-        # Run calibre_html_publish.py script with output filename
-        cmd = ["python3", publish_script, html_file, "-o", pdf_file]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-
-        if os.path.exists(pdf_file):
-            log_success(f"PDF file created: {pdf_file}")
-            return pdf_file
-        else:
-            log_error("PDF file was not created")
-            if result.stdout:
-                log_info(f"Script output: {result.stdout}")
-            return None
-    except subprocess.CalledProcessError as e:
-        log_error(f"Failed to generate PDF: {e.stderr}")
-        if e.stdout:
-            log_info(f"Script output: {e.stdout}")
-        return None
-    except Exception as e:
-        log_error(f"Error running calibre_html_publish.py: {e}")
-        return None
+    log_info("Generating PDF file using ebook-convert...")
+    if _run_ebook_convert(html_file, pdf_file, metadata):
+        log_success(f"PDF file created: {pdf_file}")
+        return pdf_file
+    return None
 
 
 def main():
@@ -383,24 +357,12 @@ def main():
             log_error("No temp directory found and none specified in config.")
             sys.exit(1)
 
-    # Use book_doc.html from the base_temp directory as input for format conversion
-    html_file = os.path.join(temp_dir, "book_doc.html")
-
-    # Check if book_doc.html exists
-    if not os.path.exists(html_file):
-        log_error(f"HTML file not found: {html_file}")
+    try:
+        html_file = resolve_html_input_file(temp_dir)
+    except FileNotFoundError as e:
+        log_error(str(e))
         log_error("Please ensure step 5 (HTML generation) completed successfully.")
-
-        # Try to find alternative HTML files in temp directory
-        import glob
-
-        html_files = glob.glob(os.path.join(temp_dir, "*.html"))
-        if html_files:
-            html_file = max(html_files, key=os.path.getmtime)
-            log_info(f"Found alternative HTML file: {html_file}")
-        else:
-            log_error("No HTML files found in temp directory.")
-            sys.exit(1)
+        sys.exit(1)
 
     # Extract metadata from config (title should already be translated in step 5)
     original_title = config.get("original_title", "")

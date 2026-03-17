@@ -390,6 +390,14 @@ parse_args() {
     fi
 }
 
+# Resolve temp directory name based on input basename (matches 01_convert_to_htmlz.py)
+resolve_temp_dir() {
+    local input_file_path="${1:-$INPUT_FILE}"
+    local input_file_name
+    input_file_name="$(basename "$input_file_path")"
+    echo "${input_file_name%.*}_temp"
+}
+
 # Execute Python script with error handling
 execute_python_script() {
     local script_name="$1"
@@ -426,8 +434,8 @@ execute_python_script() {
 
 # Clean temporary directory
 clean_temp_directory() {
+    local temp_dir="${1:-$(resolve_temp_dir "$INPUT_FILE")}"
     if [[ "$CLEAN_TEMP" == true ]]; then
-        local temp_dir="${INPUT_FILE%.*}_temp"
         if [[ -d "$temp_dir" ]]; then
             log_info "Cleaning temporary directory: $temp_dir"
             if [[ "$DRY_RUN" == false ]]; then
@@ -502,6 +510,9 @@ main() {
         STEP_START=3
         STEP_END=4
     fi
+
+    local base_temp_dir
+    base_temp_dir="$(resolve_temp_dir "$INPUT_FILE")"
     
     # Show configuration
     show_config
@@ -518,7 +529,7 @@ main() {
     fi
     
     # Clean temp directory if requested
-    clean_temp_directory
+    clean_temp_directory "$base_temp_dir"
     
     # Record start time
     local start_time=$(date +%s)
@@ -565,7 +576,6 @@ main() {
     fi
 
     if [[ "$BENCHMARK_MODE" == true ]]; then
-        local base_temp_dir="${INPUT_FILE%.*}_temp"
         local benchmark_cmd="python3 ${SCRIPT_DIR}/benchmark_models.py --temp-dir \"$base_temp_dir\" --output-lang \"$OUTPUT_LANG\""
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY RUN] Would execute: $benchmark_cmd"
@@ -639,7 +649,10 @@ main() {
                 log_step "3" "${step_descriptions[2]}"
                 
                 if [[ "$DRY_RUN" == true ]]; then
-                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"${INPUT_FILE%.*}_temp\" -p \"$CUSTOM_PROMPT\""
+                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" -p \"$CUSTOM_PROMPT\""
+                    if [[ "$SKIP_EXISTING" == false ]]; then
+                        cmd="$cmd --no-resume"
+                    fi
                     if [[ -n "$MODEL_OVERRIDE" ]]; then
                         cmd="$cmd --model \"$MODEL_OVERRIDE\""
                     fi
@@ -656,13 +669,13 @@ main() {
                         source "$venv_dir/bin/activate"
                     fi
                     
-                    # Use input file name to determine temp directory
-                    local base_temp_dir="${INPUT_FILE%.*}_temp"
-                    
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" -p \"$CUSTOM_PROMPT\""
-                        if [[ -n "$MODEL_OVERRIDE" ]]; then
-                            cmd="$cmd --model \"$MODEL_OVERRIDE\""
-                        fi
+                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" -p \"$CUSTOM_PROMPT\""
+                    if [[ "$SKIP_EXISTING" == false ]]; then
+                        cmd="$cmd --no-resume"
+                    fi
+                    if [[ -n "$MODEL_OVERRIDE" ]]; then
+                        cmd="$cmd --model \"$MODEL_OVERRIDE\""
+                    fi
                     
                     if [[ "$VERBOSE" == true ]]; then
                         log_info "Executing: $cmd"
@@ -689,9 +702,6 @@ main() {
                         source "$venv_dir/bin/activate"
                     fi
                     
-                    # Use input file name to determine temp directory
-                    local base_temp_dir="${INPUT_FILE%.*}_temp"
-                    
                     if [[ ! -d "$base_temp_dir" ]]; then
                         log_error "Temp directory not found: $base_temp_dir"
                         exit 1
@@ -717,7 +727,10 @@ main() {
                     log_step "3" "${step_descriptions[2]}"
                     
                     if [[ "$DRY_RUN" == true ]]; then
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"${INPUT_FILE%.*}_temp\""
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\""
+                        if [[ "$SKIP_EXISTING" == false ]]; then
+                            cmd="$cmd --no-resume"
+                        fi
                         if [[ -n "$MODEL_OVERRIDE" ]]; then
                             cmd="$cmd --model \"$MODEL_OVERRIDE\""
                         fi
@@ -734,10 +747,10 @@ main() {
                             source "$venv_dir/bin/activate"
                         fi
                         
-                        # Use input file name to determine temp directory
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
-                        
                         local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\""
+                        if [[ "$SKIP_EXISTING" == false ]]; then
+                            cmd="$cmd --no-resume"
+                        fi
                         if [[ -n "$MODEL_OVERRIDE" ]]; then
                             cmd="$cmd --model \"$MODEL_OVERRIDE\""
                         fi
@@ -758,7 +771,6 @@ main() {
                     log_step "4" "${step_descriptions[3]}"
                     
                     if [[ "$DRY_RUN" == true ]]; then
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         log_info "[DRY RUN] Would execute: python3 ${step_scripts[3]} --temp-dir \"$base_temp_dir\""
                     else
                         # Ensure virtual environment is activated before running Python scripts
@@ -766,9 +778,6 @@ main() {
                         if [[ -d "$venv_dir" ]]; then
                             source "$venv_dir/bin/activate"
                         fi
-                        
-                        # Use input file name to determine temp directory
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         
                         local cmd="python3 ${SCRIPT_DIR}/${step_scripts[3]} --temp-dir \"$base_temp_dir\""
                         
@@ -788,7 +797,6 @@ main() {
                     log_step "5" "${step_descriptions[4]}"
                     
                     if [[ "$DRY_RUN" == true ]]; then
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         log_info "[DRY RUN] Would execute: python3 ${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                     else
                         # Ensure virtual environment is activated before running Python scripts
@@ -796,9 +804,6 @@ main() {
                         if [[ -d "$venv_dir" ]]; then
                             source "$venv_dir/bin/activate"
                         fi
-                        
-                        # Use input file name to determine temp directory
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         
                         local cmd="python3 ${SCRIPT_DIR}/${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                         
@@ -818,7 +823,6 @@ main() {
                     log_step "7" "${step_descriptions[6]}"
 
                     if [[ "$DRY_RUN" == true ]]; then
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         log_info "[DRY RUN] Would execute: python3 ${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
                     else
                         local venv_dir="${SCRIPT_DIR}/venv"
@@ -826,7 +830,6 @@ main() {
                             source "$venv_dir/bin/activate"
                         fi
 
-                        local base_temp_dir="${INPUT_FILE%.*}_temp"
                         local cmd="python3 ${SCRIPT_DIR}/${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
 
                         if [[ "$VERBOSE" == true ]]; then
@@ -860,7 +863,7 @@ main() {
     if [[ "$DRY_RUN" == false ]]; then
         echo -e "${GREEN}✓ Input file:${NC} $INPUT_FILE"
         echo -e "${GREEN}✓ Execution time:${NC} ${duration}s"
-        echo -e "${GREEN}✓ Files generated in temp directory:${NC} ${INPUT_FILE%.*}_temp/"
+        echo -e "${GREEN}✓ Files generated in temp directory:${NC} ${base_temp_dir}/"
     else
         echo -e "${YELLOW}Note: This was a dry run. No files were modified.${NC}"
     fi
@@ -872,5 +875,7 @@ main() {
 # Handle interruption
 trap 'log_error "Script interrupted by user"; exit 1' INT TERM
 
-# Run main function with all arguments
-main "$@"
+# Run main function only when executed directly (not when sourced by tests)
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

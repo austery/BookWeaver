@@ -3,6 +3,7 @@
 Step 3: Translate markdown files using Gemini CLI
 Translates each pageXXXX.md file to output_pageXXXX.md
 """
+
 from __future__ import annotations
 
 import os
@@ -35,6 +36,7 @@ def load_config(temp_dir: str) -> dict[str, Any]:
                 config[key] = value
 
     return config
+
 
 def check_gemini_cli() -> bool:
     """Check if Gemini CLI is available"""
@@ -295,7 +297,9 @@ def print_model_selection_preview(requested_model: str, runtime_config: dict[str
     print(f"  Final selected model: {selected_model}")
 
 
-def create_translation_prompt(output_lang: str, custom_prompt: str | None = None, runtime_config: dict[str, Any] | None = None) -> str:
+def create_translation_prompt(
+    output_lang: str, custom_prompt: str | None = None, runtime_config: dict[str, Any] | None = None
+) -> str:
     """Create translation prompt with optional custom additions."""
     lang_name = get_language_name(output_lang)
     template = load_prompt_template(runtime_config)
@@ -313,7 +317,12 @@ def create_translation_prompt(output_lang: str, custom_prompt: str | None = None
 
 
 def translate_with_gemini_cli(
-    text: str, output_lang: str, model: str, custom_prompt: str | None = None, max_retries: int = 3, runtime_config: dict[str, Any] | None = None
+    text: str,
+    output_lang: str,
+    model: str,
+    custom_prompt: str | None = None,
+    max_retries: int = 3,
+    runtime_config: dict[str, Any] | None = None,
 ) -> str | None:
     """Translate text using Gemini CLI via GeminiProvider."""
     prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config=runtime_config)
@@ -340,9 +349,38 @@ def translate_with_gemini_cli(
     return None
 
 
+def append_progress_log(
+    log_path: Path,
+    *,
+    filename: str,
+    status: str,
+    elapsed_seconds: float,
+    model: str | None = None,
+    message: str | None = None,
+) -> None:
+    """Append a JSONL progress entry for resumable translation visibility."""
+    record: dict[str, Any] = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+        "filename": filename,
+        "status": status,
+        "elapsed_seconds": round(max(elapsed_seconds, 0.0), 3),
+    }
+    if model:
+        record["model"] = model
+    if message:
+        record["message"] = message
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def translate_markdown_files(
-    temp_dir, output_lang, custom_prompt=None, forced_model=None, runtime_config=None
-):
+    temp_dir: str,
+    output_lang: str,
+    custom_prompt: str | None = None,
+    forced_model: str | None = None,
+    runtime_config: dict[str, Any] | None = None,
+    resume: bool = True,
+) -> None:
     """Translate all markdown files in temp directory"""
     print(f"Translating markdown files to {output_lang}...")
     if custom_prompt:
@@ -350,6 +388,7 @@ def translate_markdown_files(
 
     config = runtime_config or {}
     print(f"Prompt profile: {config.get('prompt_profile', 'default')}")
+    print(f"Resume mode: {'enabled' if resume else 'disabled'}")
     selector = None
     probe = _create_model_probe(config)
     thresholds = config.get("model_thresholds")
@@ -371,16 +410,26 @@ def translate_markdown_files(
     translated_count = 0
     skipped_count = 0
     failed_count = 0
+    start_time = time.perf_counter()
+    progress_log_path = Path(temp_dir) / "translation_progress.log"
+    print(f"Progress log: {progress_log_path}")
 
     for i, md_file in enumerate(md_files, 1):
+        file_start_time = time.perf_counter()
         filename = os.path.basename(md_file)
         output_filename = f"output_{filename}"
         output_path = os.path.join(temp_dir, output_filename)
 
-        # Skip if output file already exists
-        if os.path.exists(output_path):
+        # Skip if output file already exists (resume mode)
+        if resume and os.path.exists(output_path):
             print(f"  [{i}/{total_files}] Skipping {filename} (already translated)")
             skipped_count += 1
+            append_progress_log(
+                progress_log_path,
+                filename=filename,
+                status="skipped_existing",
+                elapsed_seconds=time.perf_counter() - file_start_time,
+            )
             continue
 
         print(f"  [{i}/{total_files}] Translating {filename}...")
@@ -392,6 +441,13 @@ def translate_markdown_files(
         except Exception as e:
             print(f"    Error reading {filename}: {e}")
             failed_count += 1
+            append_progress_log(
+                progress_log_path,
+                filename=filename,
+                status="failed_read",
+                elapsed_seconds=time.perf_counter() - file_start_time,
+                message=str(e),
+            )
             continue
 
         # Skip if file is empty or very short
@@ -400,6 +456,12 @@ def translate_markdown_files(
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(content)
             skipped_count += 1
+            append_progress_log(
+                progress_log_path,
+                filename=filename,
+                status="skipped_short",
+                elapsed_seconds=time.perf_counter() - file_start_time,
+            )
             continue
 
         selected_model = forced_model
@@ -419,6 +481,13 @@ def translate_markdown_files(
         except Exception as e:
             print(f"    Error selecting model for {filename}: {e}")
             failed_count += 1
+            append_progress_log(
+                progress_log_path,
+                filename=filename,
+                status="failed_model_selection",
+                elapsed_seconds=time.perf_counter() - file_start_time,
+                message=str(e),
+            )
             continue
 
         resolved_requested_model = resolve_model_name(requested_model, config)
@@ -438,27 +507,54 @@ def translate_markdown_files(
         if translated_content:
             # Save translated content
             try:
-                with open(output_path, "w", encoding="utf-8") as f:
+                temp_output_path = f"{output_path}.tmp"
+                with open(temp_output_path, "w", encoding="utf-8") as f:
                     f.write(translated_content)
+                os.replace(temp_output_path, output_path)
                 print(f"    ✓ Translated and saved to {output_filename}")
                 translated_count += 1
+                append_progress_log(
+                    progress_log_path,
+                    filename=filename,
+                    status="translated",
+                    elapsed_seconds=time.perf_counter() - file_start_time,
+                    model=selected_model,
+                )
             except Exception as e:
                 print(f"    Error saving {output_filename}: {e}")
                 failed_count += 1
+                append_progress_log(
+                    progress_log_path,
+                    filename=filename,
+                    status="failed_save",
+                    elapsed_seconds=time.perf_counter() - file_start_time,
+                    model=selected_model,
+                    message=str(e),
+                )
         else:
             # Translation failed after all retries - skip file creation completely
             print(f"    ✗ Failed to translate {filename} after retries, skipping file creation")
             failed_count += 1
+            append_progress_log(
+                progress_log_path,
+                filename=filename,
+                status="failed_translation",
+                elapsed_seconds=time.perf_counter() - file_start_time,
+                model=selected_model,
+            )
 
         # Add delay to avoid rate limits
         if i < total_files:
             time.sleep(0.5)  # Reduced delay for CLI
 
+    total_elapsed = time.perf_counter() - start_time
     print(f"\nTranslation complete:")
     print(f"  Translated: {translated_count}")
     print(f"  Skipped: {skipped_count}")
     print(f"  Failed: {failed_count}")
     print(f"  Total: {total_files}")
+    print(f"  Elapsed: {total_elapsed:.1f}s")
+    print(f"  Progress log: {progress_log_path}")
 
 
 def parse_arguments():
@@ -498,6 +594,12 @@ def parse_arguments():
         "--skip-probe",
         action="store_true",
         help="Disable model probe (useful for no-side-effect previews).",
+    )
+
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Disable resume mode and re-translate even when output_page*.md already exists.",
     )
 
     return parser.parse_args()
@@ -580,6 +682,7 @@ def main() -> None:
         args.prompt,
         forced_model=args.model,
         runtime_config=runtime_config,
+        resume=not args.no_resume,
     )
 
     print("\n=== Step 3 Complete ===")

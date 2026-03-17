@@ -44,6 +44,27 @@ which pandoc
 ./translatebook.sh --output-format html /path/to/book.epub
 ```
 
+### 3.1) Resume after interruption (recommended)
+
+Step 3 (`03_translate_md.py`) now resumes by default:
+
+- Existing `output_pageXXXX.md` files are skipped automatically
+- Progress is written to `<temp_dir>/translation_progress.log` (JSONL)
+- Step 3 prints total elapsed time at completion
+
+Common commands:
+
+```bash
+# Continue from translation to the end (skip already translated pages)
+./translatebook.sh --start-step 3 --output-format epub /path/to/book.epub
+
+# Continue from merge if Step 3 already finished
+./translatebook.sh --start-step 4 --output-format epub /path/to/book.epub
+
+# Force re-translation of every page (disable resume)
+./translatebook.sh --start-step 3 --no-skip --output-format epub /path/to/book.epub
+```
+
 ### 4) Sample workflow (first 3 chunks)
 
 ```bash
@@ -100,6 +121,9 @@ You can append extra instructions with:
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
 - `--bilingual-style` currently supports only `alternating`.
+- Step 6 can build TOC from markdown-style heading lines in HTML paragraphs and auto-creates a TOC container when missing.
+- Step 7 resolves HTML input in order: `book_doc.html` -> `book.html` -> newest `*.html` in temp dir.
+- Step 7 format conversion uses Calibre `ebook-convert` directly (no external publish script required).
 - Model selection in Step 3 uses: requested model (or alias) -> `fallback_chain` -> probe availability.
 - Gemini provider no longer uses a hardcoded static allow-list.
 

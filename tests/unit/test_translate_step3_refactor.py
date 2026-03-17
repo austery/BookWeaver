@@ -144,3 +144,48 @@ def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch):
     args = module.parse_arguments()
     assert args.preview_model_selection is True
     assert args.skip_probe is True
+
+
+def test_step3_parse_arguments_supports_no_resume(monkeypatch):
+    module = _load_step3_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--no-resume",
+        ],
+    )
+    args = module.parse_arguments()
+    assert args.no_resume is True
+
+
+def test_step3_translate_markdown_files_can_disable_resume(monkeypatch, temp_dir):
+    module = _load_step3_module()
+
+    page_file = temp_dir / "page0001.md"
+    page_file.write_text("Hello world", encoding="utf-8")
+    output_file = temp_dir / "output_page0001.md"
+    output_file.write_text("old translation", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module, "select_model_with_fallback", lambda *args, **kwargs: "gemini-2.5-flash"
+    )
+    monkeypatch.setattr(
+        module, "translate_with_gemini_cli", lambda *args, **kwargs: "new translation"
+    )
+    monkeypatch.setattr(module.time, "sleep", lambda *_: None)
+
+    module.translate_markdown_files(
+        str(temp_dir),
+        "zh",
+        runtime_config={"default_model": "gemini-2.5-flash"},
+        resume=False,
+    )
+
+    assert output_file.read_text(encoding="utf-8") == "new translation"
+    progress_log = temp_dir / "translation_progress.log"
+    assert progress_log.exists()
+    assert "page0001.md" in progress_log.read_text(encoding="utf-8")
