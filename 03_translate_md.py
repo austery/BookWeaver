@@ -3,6 +3,7 @@
 Step 3: Translate markdown files using Gemini CLI
 Translates each pageXXXX.md file to output_pageXXXX.md
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -19,7 +20,7 @@ from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
 
 
-def load_config(temp_dir):
+def load_config(temp_dir: str) -> dict[str, Any]:
     """Load configuration from step 1"""
     config_file = os.path.join(temp_dir, "config.txt")
     if not os.path.exists(config_file):
@@ -35,7 +36,7 @@ def load_config(temp_dir):
 
     return config
 
-def check_gemini_cli():
+def check_gemini_cli() -> bool:
     """Check if Gemini CLI is available"""
     try:
         result = subprocess.run(["gemini", "--version"], capture_output=True, text=True, timeout=10)
@@ -68,7 +69,7 @@ def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str
     return result
 
 
-def load_runtime_config():
+def load_runtime_config() -> dict[str, Any]:
     """Load config from bundled example and user override."""
     script_dir = Path(__file__).resolve().parent
     bundled_config_path = script_dir / "config" / "config.json.example"
@@ -118,7 +119,7 @@ def load_runtime_config():
     return config
 
 
-def get_language_name(lang_code):
+def get_language_name(lang_code: str) -> str:
     """Convert language code to full name"""
     lang_map = {
         "zh": "Chinese",
@@ -294,7 +295,7 @@ def print_model_selection_preview(requested_model: str, runtime_config: dict[str
     print(f"  Final selected model: {selected_model}")
 
 
-def create_translation_prompt(output_lang, custom_prompt=None, runtime_config=None):
+def create_translation_prompt(output_lang: str, custom_prompt: str | None = None, runtime_config: dict[str, Any] | None = None) -> str:
     """Create translation prompt with optional custom additions."""
     lang_name = get_language_name(output_lang)
     template = load_prompt_template(runtime_config)
@@ -312,8 +313,8 @@ def create_translation_prompt(output_lang, custom_prompt=None, runtime_config=No
 
 
 def translate_with_gemini_cli(
-    text, output_lang, model, custom_prompt=None, max_retries=3, runtime_config=None
-):
+    text: str, output_lang: str, model: str, custom_prompt: str | None = None, max_retries: int = 3, runtime_config: dict[str, Any] | None = None
+) -> str | None:
     """Translate text using Gemini CLI via GeminiProvider."""
     prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config=runtime_config)
 
@@ -502,7 +503,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Main function"""
     print("=== Book Translation Tool - Step 3: Translate Markdown (Gemini CLI) ===")
 

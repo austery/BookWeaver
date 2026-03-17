@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Step 7: Generate DOCX and EPUB files in temp directory
 Uses existing html2docx.sh and html2epub.sh scripts to generate files in temp directory
