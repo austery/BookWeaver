@@ -1,4 +1,7 @@
 import importlib
+import subprocess
+
+import pytest
 
 
 def test_gemini_provider_module_exists():
@@ -20,3 +23,31 @@ def test_gemini_provider_accepts_unknown_model_name():
     module = importlib.import_module("ai.gemini_provider")
     provider = module.GeminiProvider(model="gemini-3-pro-preview")
     assert provider.model == "gemini-3-pro-preview"
+
+
+def test_translate_chunk_raises_on_nonzero_return_code(monkeypatch):
+    """Test that GeminiProvider.translate_chunk raises RuntimeError with stderr when CLI fails."""
+    module = importlib.import_module("ai.gemini_provider")
+    provider = module.GeminiProvider(model="gemini-3-pro-preview")
+
+    # Mock subprocess.run to return error
+    def mock_run(*args, **kwargs):
+        result = subprocess.CompletedProcess(
+            args=["gemini"],
+            returncode=1,
+            stdout="",
+            stderr="API error: model not found"
+        )
+        return result
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    # Verify it raises RuntimeError with stderr included
+    with pytest.raises(RuntimeError) as exc_info:
+        provider.translate_chunk(
+            text="test chunk",
+            chunk_size=100,
+            system_prompt="Translate to Chinese"
+        )
+
+    assert "API error" in str(exc_info.value)

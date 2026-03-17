@@ -50,3 +50,24 @@ def test_step5_parse_args_accepts_bilingual_style(monkeypatch):
     )
     args = module.parse_args()
     assert args.bilingual_style == "alternating"
+
+
+def test_parse_alternating_segments_missing_marker():
+    """Test that parse_alternating_segments handles missing translation marker gracefully."""
+    module = _load_module()
+    # Input without the "**中文译文**" marker
+    markdown = "## Segment 1\nSome English text\n---\n"
+    result = module.parse_alternating_segments(markdown)
+    # Should return some result (empty or with defaults)
+    assert result is not None
+
+
+def test_paragraphs_html_escapes_html_chars():
+    """Test that HTML special characters are properly escaped to prevent XSS."""
+    module = _load_module()
+    # Input with HTML special characters
+    text = "<script>alert('xss')</script> & \"quotes\""
+    result = module._paragraphs_html(text, css_class="source-text")
+    # Should escape the HTML or contain safe output
+    assert "<script>" not in result
+    assert "script" in result.lower() or "&lt;" in result
