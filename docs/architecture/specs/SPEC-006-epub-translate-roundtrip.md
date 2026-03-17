@@ -81,3 +81,7 @@ Strict fail-fast contract:
 - **Entrypoints**: `translatebook.sh`, `09_epub_translate_roundtrip.py`, `ai/epub_translate_roundtrip.py`
 - **Utilities**: `ai/epub_package.py`
 - **Tests**: `tests/unit/test_epub_baseline_cli.py`, `tests/unit/test_epub_translate_patcher.py`, `tests/unit/test_epub_translate_roundtrip.py`
+
+## 9. External Reference
+
+- Immersive Translate `1.26.6` is used as a translation UX/prompt reference point, especially for paragraph-structure-preserving translation output expectations.
