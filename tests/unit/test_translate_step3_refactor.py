@@ -55,6 +55,23 @@ def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch):
     assert args.model == "gemini-3-pro-preview"
 
 
+def test_step3_parse_arguments_accepts_workflow_mode(monkeypatch):
+    module = _load_step3_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--workflow-mode",
+            "orchestrated",
+        ],
+    )
+    args = module.parse_arguments()
+    assert args.workflow_mode == "orchestrated"
+
+
 def test_step3_load_runtime_config_has_default_model():
     module = _load_step3_module()
     config = module.load_runtime_config()

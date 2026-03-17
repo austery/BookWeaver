@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from ai.gemini_provider import GeminiProvider
+from ai.mode_contract import parse_workflow_mode
 from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
 
@@ -595,6 +596,11 @@ def parse_arguments():
         action="store_true",
         help="Disable model probe (useful for no-side-effect previews).",
     )
+    parser.add_argument(
+        "--workflow-mode",
+        default=None,
+        help="Workflow mode (fast, orchestrated, auto).",
+    )
 
     parser.add_argument(
         "--no-resume",
@@ -611,6 +617,11 @@ def main() -> None:
 
     # Parse arguments
     args = parse_arguments()
+    try:
+        workflow_mode = parse_workflow_mode(args.workflow_mode)
+    except ValueError as exc:
+        print(f"Error: {exc}")
+        sys.exit(2)
 
     # Check Gemini CLI availability
     if not check_gemini_cli():
@@ -630,6 +641,7 @@ def main() -> None:
         )
     if args.model:
         print(f"Forced model from CLI: {args.model}")
+    print(f"Workflow mode: {workflow_mode}")
 
     if args.preview_model_selection:
         preview_runtime_config = runtime_config
