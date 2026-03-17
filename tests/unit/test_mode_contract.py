@@ -1,3 +1,5 @@
+import pytest
+
 from ai.mode_contract import DEFAULT_WORKFLOW_MODE, parse_workflow_mode
 
 
@@ -7,10 +9,7 @@ def test_parse_workflow_mode_accepts_fast_and_orchestrated() -> None:
     assert DEFAULT_WORKFLOW_MODE == "fast"
 
 
-def test_parse_workflow_mode_rejects_unknown_value() -> None:
-    try:
-        parse_workflow_mode("unknown")
-    except ValueError as exc:
-        assert "workflow mode" in str(exc).lower()
-    else:
-        raise AssertionError("Expected ValueError for invalid mode")
+@pytest.mark.parametrize("value", ["unknown", "auto"])
+def test_parse_workflow_mode_rejects_unknown_values(value: str) -> None:
+    with pytest.raises(ValueError, match="Invalid workflow mode"):
+        parse_workflow_mode(value)
