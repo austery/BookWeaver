@@ -39,10 +39,12 @@ The default markdown-render-convert translation pipeline is effective for genera
 1. Load source EPUB package model.
 2. Select translatable spine XHTML documents.
 3. Extract body text segments and translate via Gemini CLI.
-4. Patch source XHTML with alternating bilingual text.
-5. Validate package structure, fragment links, and asset references strictly.
-6. Repack to `<temp_dir>/translated_roundtrip.epub`.
-7. Exit without running legacy step-based markdown pipeline.
+4. Batch segments per document using `%%` separators and parse translated output with strict segment-count checks.
+5. If segment counts mismatch, retry with binary split sub-batches until aligned or fail.
+6. Patch source XHTML with alternating bilingual text.
+7. Validate package structure, fragment links, and asset references strictly.
+8. Repack to `<temp_dir>/translated_roundtrip.epub`.
+9. Exit without running legacy step-based markdown pipeline.
 
 ## 4. Integrity and Failure Policy
 
@@ -59,12 +61,14 @@ Strict fail-fast contract:
 - nav/toc resources are preserved (not translated in this phase).
 - Resource paths and OPF ordering remain unchanged.
 - Mode is opt-in via `--epub-translate-roundtrip`; default workflow remains unchanged.
+- Model fallback chain is out of scope for this phase.
 
 ## 6. Acceptance Criteria
 
 - [x] `translatebook.sh` exposes and wires `--epub-translate-roundtrip`.
 - [x] `09_epub_translate_roundtrip.py` executes package-aware translate flow.
 - [x] Unit tests cover CLI contract, alternating patching, and workflow integrity behavior.
+- [x] Batch translation parser/retry tests cover `%%` alignment and split retry behavior.
 - [x] Output EPUB is generated as `<temp_dir>/translated_roundtrip.epub`.
 - [x] Repository quality gates pass (`ruff`, `pytest`, shell syntax, py_compile).
 
