@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+import re
 import zipfile
+from typing import Callable
 
 from ai.epub_package import (
     EpubPackageModel,
@@ -24,6 +25,24 @@ _MODEL_ALIASES = {
     "flash": "gemini-2.5-flash",
     "lite": "gemini-2.5-flash-lite",
 }
+_SEGMENT_DELIMITER = "%%"
+_BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
+_BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
+_IMMERSIVE_SYSTEM_PROMPT_TEMPLATE = """You are a professional {target_language} native translator who needs to fluently translate text into {target_language}.
+
+## Translation Rules
+1. Output only the translated content, without explanations or additional content (such as "Here's the translation:" or "Translation as follows:")
+2. The returned translation must maintain exactly the same number of paragraphs and format as the original text
+3. If the text contains HTML tags, consider where the tags should be placed in the translation while maintaining fluency
+4. For content that should not be translated (such as proper nouns, code, etc.), keep the original text.
+5. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output
+
+## OUTPUT FORMAT:
+- Single paragraph input -> Output translation directly (no separators, no extra text)
+- Multi-paragraph input -> Use %% as paragraph separator between translations
+"""
+_IMMERSIVE_SINGLE_PROMPT_TEMPLATE = "Translate to {target_language} (output translation only):"
+_IMMERSIVE_MULTI_PROMPT_TEMPLATE = "Translate to {target_language}:"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +68,20 @@ def _get_language_name(lang_code: str) -> str:
     return language_map.get(lang_code.lower(), lang_code)
 
 
-def _create_translation_prompt(output_lang: str, custom_prompt: str | None) -> str:
+def _create_translation_prompt(
+    output_lang: str,
+    custom_prompt: str | None,
+    *,
+    segment_count: int,
+) -> str:
     language_name = _get_language_name(output_lang)
-    base_prompt = (
-        "Translate the following EPUB text segment to "
-        f"{language_name}. Output only translated text without explanations."
-    )
+    base_prompt = _IMMERSIVE_SYSTEM_PROMPT_TEMPLATE.format(target_language=language_name)
+
+    user_prompt = _IMMERSIVE_SINGLE_PROMPT_TEMPLATE
+    if segment_count > 1:
+        user_prompt = _IMMERSIVE_MULTI_PROMPT_TEMPLATE
+    base_prompt = f"{base_prompt}\n{user_prompt.format(target_language=language_name)}"
+
     if custom_prompt:
         return f"{base_prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
     return base_prompt
@@ -65,6 +92,81 @@ def _resolve_model_name(model: str) -> str:
     if not resolved:
         raise ValueError("model must be a non-empty string")
     return resolved
+
+
+def join_segments_for_batch(segments: list[str]) -> str:
+    if not segments:
+        return ""
+    if len(segments) == 1:
+        return segments[0]
+    return _BATCH_SEPARATOR.join(segments)
+
+
+def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
+    if expected_count < 0:
+        raise ValueError("expected_count must be >= 0")
+    if expected_count == 0:
+        return []
+
+    normalized = output_text.strip()
+    if expected_count == 1:
+        if _BATCH_SEPARATOR in normalized or _BATCH_SPLIT_PATTERN.search(normalized):
+            raise ValueError("batch translation count mismatch: expected 1, got multiple")
+        return [normalized]
+
+    segments = [part.strip() for part in normalized.split(_BATCH_SEPARATOR)]
+    if len(segments) != expected_count:
+        segments = [part.strip() for part in _BATCH_SPLIT_PATTERN.split(normalized)]
+
+    if len(segments) != expected_count:
+        raise ValueError(
+            f"batch translation count mismatch: expected {expected_count}, got {len(segments)}"
+        )
+    return segments
+
+
+def translate_segments_with_batch_retry(
+    segments: list[str],
+    *,
+    translate_batch: TranslateFn,
+    context_label: str,
+    retry_depth: int = 0,
+) -> list[str]:
+    expected_count = len(segments)
+    if expected_count == 0:
+        return []
+
+    batch_text = join_segments_for_batch(segments)
+    translated_batch = str(translate_batch(batch_text))
+
+    try:
+        return split_batch_translation(translated_batch, expected_count=expected_count)
+    except ValueError as exc:
+        if expected_count == 1:
+            raise RuntimeError(
+                f"Batch translation alignment failed at minimal granularity for {context_label}: {exc}"
+            ) from exc
+
+        split_index = expected_count // 2
+        print(
+            f"[WARN] [{context_label}] Batch output mismatch at depth={retry_depth}, "
+            f"splitting {expected_count} -> {split_index}+{expected_count - split_index}",
+            flush=True,
+        )
+
+        left = translate_segments_with_batch_retry(
+            segments[:split_index],
+            translate_batch=translate_batch,
+            context_label=context_label,
+            retry_depth=retry_depth + 1,
+        )
+        right = translate_segments_with_batch_retry(
+            segments[split_index:],
+            translate_batch=translate_batch,
+            context_label=context_label,
+            retry_depth=retry_depth + 1,
+        )
+        return left + right
 
 
 def _read_zip_text(zip_file: zipfile.ZipFile, path: str) -> str:
@@ -133,7 +235,6 @@ def run_translate_roundtrip(
 
     resolved_model = _resolve_model_name(model)
     package_model = load_epub_package(source_epub)
-    prompt = _create_translation_prompt(output_lang, custom_prompt)
     provider = GeminiProvider(model=resolved_model)
     overrides: dict[str, bytes] = {}
     translated_segments = 0
@@ -161,17 +262,31 @@ def run_translate_roundtrip(
                 flush=True,
             )
 
-            translations: list[str] = []
-            for segment in segments:
+            segment_texts = [segment.text for segment in segments]
+            prompt = None
+            if translate_fn is None:
+                prompt = _create_translation_prompt(
+                    output_lang,
+                    custom_prompt,
+                    segment_count=len(segment_texts),
+                )
+
+            def batch_translate(batch_text: str) -> str:
                 if translate_fn is not None:
-                    translated = str(translate_fn(segment.text))
-                else:
-                    translated = provider.translate_chunk(
-                        text=segment.text,
-                        chunk_size=len(segment.text),
-                        system_prompt=prompt,
-                    )
-                translations.append(translated)
+                    return str(translate_fn(batch_text))
+                if prompt is None:
+                    raise RuntimeError("translation prompt must be initialized")
+                return provider.translate_chunk(
+                    text=batch_text,
+                    chunk_size=len(batch_text),
+                    system_prompt=prompt,
+                )
+
+            translations = translate_segments_with_batch_retry(
+                segment_texts,
+                translate_batch=batch_translate,
+                context_label=doc_path,
+            )
 
             patched_xhtml = patch_xhtml_alternating(source_xhtml, translations)
             overrides[doc_path] = patched_xhtml.encode("utf-8")

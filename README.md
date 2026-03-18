@@ -133,6 +133,9 @@ You can append extra instructions with:
 - `--epub-translate-roundtrip` runs a package-aware translation path and exits early from the legacy markdown pipeline.
 - Translate roundtrip output is `<temp_dir>/translated_roundtrip.epub`.
 - Translate roundtrip currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
+- Translate roundtrip uses per-document batch translation (`%%` segment separator) to reduce API call count versus per-segment calls.
+- If batch output segment count mismatches, it automatically falls back to binary split retry for that document.
+- Model fallback chain is intentionally out of scope for this phase.
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
 - Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
@@ -164,7 +167,7 @@ See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for translati
 
 ### Translation strategy reference
 
-This mode is kept as a separate feature path and currently translates per extracted text segment from spine XHTML.
+This mode is kept as a separate feature path and currently translates spine XHTML with per-document batching (`%%` separators), while preserving segment alignment.
 
 Design reference for future prompt/segmentation optimization:
 

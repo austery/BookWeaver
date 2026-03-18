@@ -7,8 +7,22 @@ import zipfile
 import pytest
 
 
-def _build_min_epub(path: Path, *, broken_fragment: bool = False) -> None:
+def _translate_with_batch_separator(text: str) -> str:
+    if "%%" in text:
+        parts = [part.strip() for part in text.split("\n\n%%\n\n")]
+        return "\n\n%%\n\n".join(f"ZH:{part}" for part in parts)
+    return f"ZH:{text}"
+
+
+def _build_min_epub(
+    path: Path,
+    *,
+    broken_fragment: bool = False,
+    paragraphs: list[str] | None = None,
+) -> None:
     fragment = "missing" if broken_fragment else "anchor"
+    body_paragraphs = paragraphs or ["Hello."]
+    body_html = "".join(f"<p>{text}</p>" for text in body_paragraphs)
     with zipfile.ZipFile(path, "w") as zip_file:
         zip_file.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
         zip_file.writestr(
@@ -36,7 +50,12 @@ def _build_min_epub(path: Path, *, broken_fragment: bool = False) -> None:
         )
         zip_file.writestr(
             "chapter1.xhtml",
-            f"<html xmlns='http://www.w3.org/1999/xhtml'><body><a href='chapter1.xhtml#{fragment}'>go</a><p id='anchor'>Hello.</p></body></html>",
+            (
+                "<html xmlns='http://www.w3.org/1999/xhtml'>"
+                f"<body><a href='chapter1.xhtml#{fragment}'>go</a>"
+                "<p id='anchor'>Anchor</p>"
+                f"{body_html}</body></html>"
+            ),
         )
         zip_file.writestr("toc.ncx", "<ncx><navMap></navMap></ncx>")
         zip_file.writestr("cover.jpg", "x")
@@ -60,7 +79,7 @@ def test_translate_roundtrip_rewrites_spine_xhtml_and_preserves_toc_file() -> No
             bilingual_style="alternating",
             model="gemini-2.5-flash",
             custom_prompt=None,
-            translate_fn=lambda text: f"ZH:{text}",
+            translate_fn=_translate_with_batch_separator,
         )
 
         assert result.output_epub.exists()
@@ -93,3 +112,66 @@ def test_translate_roundtrip_fails_on_integrity_error() -> None:
                 custom_prompt=None,
                 translate_fn=lambda text: f"ZH:{text}",
             )
+
+
+def test_translate_roundtrip_uses_batch_call_per_doc() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-batch.epub"
+        output_epub = Path(temp_dir) / "translated-batch.epub"
+        _build_min_epub(source_epub, paragraphs=["P1", "P2", "P3"])
+
+        call_count = 0
+
+        def batch_translate(text: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return _translate_with_batch_separator(text)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=batch_translate,
+        )
+
+        assert call_count == 1
+
+
+def test_translate_roundtrip_retries_with_split_on_batch_mismatch() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-retry.epub"
+        output_epub = Path(temp_dir) / "translated-retry.epub"
+        _build_min_epub(source_epub, paragraphs=["A", "B", "C", "D"])
+
+        calls: list[str] = []
+        mismatch_injected = False
+
+        def flaky_batch_translate(text: str) -> str:
+            nonlocal mismatch_injected
+            calls.append(text)
+            if "%%" not in text:
+                return _translate_with_batch_separator(text)
+            if not mismatch_injected:
+                mismatch_injected = True
+                return "BROKEN"
+            return _translate_with_batch_separator(text)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=flaky_batch_translate,
+        )
+
+        assert any("%%" in payload for payload in calls)
+        assert len(calls) > 1
