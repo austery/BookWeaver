@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import subprocess
 import zipfile
 from typing import Callable
 
@@ -137,19 +138,15 @@ def translate_segments_with_batch_retry(
         return []
 
     batch_text = join_segments_for_batch(segments)
-    translated_batch = str(translate_batch(batch_text))
-
-    try:
-        return split_batch_translation(translated_batch, expected_count=expected_count)
-    except ValueError as exc:
+    def split_and_retry(reason: str, exc: Exception) -> list[str]:
         if expected_count == 1:
             raise RuntimeError(
-                f"Batch translation alignment failed at minimal granularity for {context_label}: {exc}"
+                f"Batch translation failed at minimal granularity for {context_label}: {reason}"
             ) from exc
 
         split_index = expected_count // 2
         print(
-            f"[WARN] [{context_label}] Batch output mismatch at depth={retry_depth}, "
+            f"[WARN] [{context_label}] {reason} at depth={retry_depth}, "
             f"splitting {expected_count} -> {split_index}+{expected_count - split_index}",
             flush=True,
         )
@@ -167,6 +164,17 @@ def translate_segments_with_batch_retry(
             retry_depth=retry_depth + 1,
         )
         return left + right
+
+    try:
+        translated_batch = str(translate_batch(batch_text))
+    except subprocess.TimeoutExpired as exc:
+        timeout_value = exc.timeout if isinstance(exc.timeout, (int, float)) else "unknown"
+        return split_and_retry(f"Batch request timed out after {timeout_value}s", exc)
+
+    try:
+        return split_batch_translation(translated_batch, expected_count=expected_count)
+    except ValueError as exc:
+        return split_and_retry("Batch output mismatch", exc)
 
 
 def _read_zip_text(zip_file: zipfile.ZipFile, path: str) -> str:
