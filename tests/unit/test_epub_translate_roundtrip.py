@@ -194,7 +194,9 @@ def test_translate_roundtrip_retries_with_split_on_batch_timeout() -> None:
             calls.append(text)
             if "%%" in text and not timeout_injected:
                 timeout_injected = True
-                raise subprocess.TimeoutExpired(cmd=["gemini", "--model", "gemini-3-pro-preview"], timeout=180)
+                raise subprocess.TimeoutExpired(
+                    cmd=["gemini", "--model", "gemini-3-pro-preview"], timeout=180
+                )
             return _translate_with_batch_separator(text)
 
         run_translate_roundtrip(

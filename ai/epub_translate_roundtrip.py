@@ -138,6 +138,7 @@ def translate_segments_with_batch_retry(
         return []
 
     batch_text = join_segments_for_batch(segments)
+
     def split_and_retry(reason: str, exc: Exception) -> list[str]:
         if expected_count == 1:
             raise RuntimeError(
