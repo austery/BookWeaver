@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 import tempfile
 import zipfile
 
@@ -174,4 +175,37 @@ def test_translate_roundtrip_retries_with_split_on_batch_mismatch() -> None:
         )
 
         assert any("%%" in payload for payload in calls)
+        assert len(calls) > 1
+
+
+def test_translate_roundtrip_retries_with_split_on_batch_timeout() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-timeout.epub"
+        output_epub = Path(temp_dir) / "translated-timeout.epub"
+        _build_min_epub(source_epub, paragraphs=["A", "B", "C", "D"])
+
+        calls: list[str] = []
+        timeout_injected = False
+
+        def timeout_then_translate(text: str) -> str:
+            nonlocal timeout_injected
+            calls.append(text)
+            if "%%" in text and not timeout_injected:
+                timeout_injected = True
+                raise subprocess.TimeoutExpired(cmd=["gemini", "--model", "gemini-3-pro-preview"], timeout=180)
+            return _translate_with_batch_separator(text)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=timeout_then_translate,
+        )
+
+        assert timeout_injected
         assert len(calls) > 1
