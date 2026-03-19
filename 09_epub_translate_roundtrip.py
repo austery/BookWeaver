@@ -21,6 +21,11 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name")
     parser.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
+    parser.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="Optional checkpoint directory for resume; if omitted, no checkpoint is written",
+    )
     return parser.parse_args()
 
 
@@ -28,6 +33,9 @@ def main() -> None:
     args = parse_arguments()
     source_epub = Path(args.input_epub).expanduser().resolve()
     output_epub = Path(args.output).expanduser().resolve()
+    checkpoint_dir = (
+        Path(args.checkpoint_dir).expanduser().resolve() if args.checkpoint_dir else None
+    )
 
     result = run_translate_roundtrip(
         source_epub=source_epub,
@@ -36,6 +44,7 @@ def main() -> None:
         bilingual_style=args.bilingual_style,
         model=args.model,
         custom_prompt=args.prompt,
+        checkpoint_dir=checkpoint_dir,
     )
     print(
         f"Translated roundtrip generated: {result.output_epub} "

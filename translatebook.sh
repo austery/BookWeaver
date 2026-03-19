@@ -582,6 +582,7 @@ main() {
         fi
 
         local translate_output="${base_temp_dir}/translated_roundtrip.epub"
+        local checkpoint_dir="${base_temp_dir}/roundtrip_checkpoint"
         local translate_script="${SCRIPT_DIR}/09_epub_translate_roundtrip.py"
 
         if [[ ! -f "$translate_script" ]]; then
@@ -599,6 +600,7 @@ main() {
             --output "$translate_output"
             --output-lang "$OUTPUT_LANG"
             --bilingual-style "$BILINGUAL_STYLE"
+            --checkpoint-dir "$checkpoint_dir"
         )
         if [[ -n "$MODEL_OVERRIDE" ]]; then
             cmd+=(--model "$MODEL_OVERRIDE")

@@ -3,6 +3,7 @@
 Step 1: Environment preparation and parameter parsing
 Creates temp directory and parses command line arguments
 """
+
 from __future__ import annotations
 
 import argparse

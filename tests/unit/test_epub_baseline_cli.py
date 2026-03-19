@@ -19,6 +19,7 @@ def test_roundtrip_script_exists() -> None:
 def test_translatebook_help_includes_epub_translate_roundtrip_mode() -> None:
     content = Path("translatebook.sh").read_text(encoding="utf-8")
     assert "--epub-translate-roundtrip" in content
+    assert "--checkpoint-dir" in content
 
 
 def test_translate_roundtrip_script_exists() -> None:

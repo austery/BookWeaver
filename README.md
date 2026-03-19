@@ -74,6 +74,22 @@ Common commands:
 ./translatebook.sh --start-step 3 --no-skip --output-format epub /path/to/book.epub
 ```
 
+### 3.2) EPUB preflight check (optional, recommended)
+
+Before expensive translation runs, check EPUB quality first:
+
+```bash
+# If epubcheck is installed
+epubcheck /path/to/book.epub
+```
+
+If preflight reports structural/link issues (for example broken `href#fragment`),
+clean the book manually in tools like Sigil/Calibre first, then run BookWeaver.
+
+Note: translate-roundtrip now tolerates pre-existing source broken fragments
+(it only blocks newly introduced broken links), but source-quality cleanup is still
+recommended for better reader compatibility.
+
 ### 4) Sample workflow (first 3 chunks)
 
 ```bash

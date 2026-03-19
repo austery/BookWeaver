@@ -50,9 +50,18 @@ class PackageValidationReport:
 @dataclass(frozen=True, slots=True)
 class TranslatableSegment:
     text: str
+    block_path: tuple[int, ...]
+    tag_name: str
 
 
 _SKIP_TEXT_TAGS = {"script", "style"}
+_HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
+_HEADING_CLASS_HINTS = ("head", "title", "subhead")
+_TOC_DOC_HINTS = ("toc", "contents")
+_STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
+_TRANSLATION_CLASS = "bw-translation"
+_BLOCK_TAGS = {"p", "li", "blockquote", "td", "th", "dd"}
+_TABLE_CELL_TAGS = {"td", "th"}
 
 
 def _local_name(tag: str) -> str:
@@ -68,29 +77,184 @@ def _find_body(root: ET.Element) -> ET.Element | None:
     return None
 
 
-def _collect_translatable_text_slots(
+def _find_head(root: ET.Element) -> ET.Element | None:
+    for node in root.iter():
+        if _local_name(node.tag) == "head":
+            return node
+    return None
+
+
+def _tag_namespace(tag: str) -> str | None:
+    if tag.startswith("{") and "}" in tag:
+        return tag[1:].split("}", 1)[0]
+    return None
+
+
+def _qualified_tag(local_tag: str, namespace: str | None) -> str:
+    if namespace:
+        return f"{{{namespace}}}{local_tag}"
+    return local_tag
+
+
+def _is_toc_document(document_path: str | None) -> bool:
+    if not document_path:
+        return False
+    lowered = posixpath.basename(document_path).lower()
+    return any(hint in lowered for hint in _TOC_DOC_HINTS)
+
+
+def _is_heading_like_node(node: ET.Element) -> bool:
+    tag_name = _local_name(node.tag).lower()
+    if tag_name in _HEADING_TAGS:
+        return True
+
+    class_name = (node.get("class") or "").lower()
+    return any(hint in class_name for hint in _HEADING_CLASS_HINTS)
+
+
+def _should_render_translation(*, block_node: ET.Element, document_path: str | None) -> bool:
+    if _is_toc_document(document_path):
+        return False
+    return not _is_heading_like_node(block_node)
+
+
+def _determine_translation_sibling_tag(parent: ET.Element) -> str:
+    parent_tag = _local_name(parent.tag).lower()
+    if parent_tag in {"ul", "ol"}:
+        return "li"
+    if parent_tag == "dl":
+        return "dd"
+    return "p"
+
+
+def _insert_translation_block(
+    *,
+    block_node: ET.Element,
+    translation: str,
+    parent_map: dict[ET.Element, ET.Element],
+) -> None:
+    source_tag = _local_name(block_node.tag).lower()
+    namespace = _tag_namespace(block_node.tag)
+    if source_tag in _TABLE_CELL_TAGS:
+        translated_block = ET.Element(
+            _qualified_tag("div", namespace),
+            attrib={"class": _TRANSLATION_CLASS},
+        )
+        translated_block.text = translation
+        block_node.append(translated_block)
+        return
+
+    parent = parent_map.get(block_node)
+    if parent is None:
+        return
+
+    sibling_tag = _determine_translation_sibling_tag(parent)
+    translated_block = ET.Element(
+        _qualified_tag(sibling_tag, namespace),
+        attrib={"class": _TRANSLATION_CLASS},
+    )
+    translated_block.text = translation
+
+    children = list(parent)
+    block_index = children.index(block_node)
+    parent.insert(block_index + 1, translated_block)
+
+
+def _ensure_translation_style(root: ET.Element) -> None:
+    head = _find_head(root)
+    if head is None:
+        return
+    for node in head:
+        if _local_name(node.tag) == "style" and node.get("id") == _STYLE_ELEMENT_ID:
+            return
+
+    namespace = _tag_namespace(head.tag)
+    style = ET.Element(
+        _qualified_tag("style", namespace),
+        attrib={"id": _STYLE_ELEMENT_ID, "type": "text/css"},
+    )
+    style.text = ".bw-translation { margin-top: 0.2em; }"
+    head.append(style)
+
+
+def _build_parent_map(body: ET.Element) -> dict[ET.Element, ET.Element]:
+    return {child: parent for parent in body.iter() for child in list(parent)}
+
+
+def _has_skip_ancestor(node: ET.Element, parent_map: dict[ET.Element, ET.Element]) -> bool:
+    current = parent_map.get(node)
+    while current is not None:
+        if _local_name(current.tag).lower() in _SKIP_TEXT_TAGS:
+            return True
+        current = parent_map.get(current)
+    return False
+
+
+def _has_translatable_block_descendant(node: ET.Element) -> bool:
+    for descendant in node.iter():
+        if descendant is node:
+            continue
+        tag = _local_name(descendant.tag).lower()
+        if tag not in _BLOCK_TAGS:
+            continue
+        if "".join(descendant.itertext()).strip():
+            return True
+    return False
+
+
+def _node_path_from_body(
+    *,
     body: ET.Element,
-) -> list[tuple[ET.Element, str, str]]:
-    slots: list[tuple[ET.Element, str, str]] = []
+    node: ET.Element,
+    parent_map: dict[ET.Element, ET.Element],
+) -> tuple[int, ...]:
+    path: list[int] = []
+    current = node
+    while current is not body:
+        parent = parent_map.get(current)
+        if parent is None:
+            raise ValueError("node is not inside body")
+        children = list(parent)
+        path.append(children.index(current))
+        current = parent
+    path.reverse()
+    return tuple(path)
 
-    def walk(node: ET.Element, skip: bool) -> None:
-        local_tag = _local_name(node.tag)
-        current_skip = skip or local_tag in _SKIP_TEXT_TAGS
 
-        if not current_skip:
-            text = node.text or ""
-            if text.strip():
-                slots.append((node, "text", text))
+def _resolve_node_by_path(body: ET.Element, path: tuple[int, ...]) -> ET.Element | None:
+    current = body
+    for index in path:
+        children = list(current)
+        if index < 0 or index >= len(children):
+            return None
+        current = children[index]
+    return current
 
-        for child in list(node):
-            walk(child, current_skip)
-            if not current_skip:
-                tail = child.tail or ""
-                if tail.strip():
-                    slots.append((child, "tail", tail))
 
-    walk(body, False)
-    return slots
+def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableSegment]:
+    parent_map = _build_parent_map(body)
+    segments: list[TranslatableSegment] = []
+    for node in body.iter():
+        tag_name = _local_name(node.tag).lower()
+        if tag_name not in _BLOCK_TAGS:
+            continue
+        if _has_skip_ancestor(node, parent_map):
+            continue
+        if _is_heading_like_node(node):
+            continue
+        if _has_translatable_block_descendant(node):
+            continue
+        text = "".join(node.itertext()).strip()
+        if not text:
+            continue
+        segments.append(
+            TranslatableSegment(
+                text=text,
+                block_path=_node_path_from_body(body=body, node=node, parent_map=parent_map),
+                tag_name=tag_name,
+            )
+        )
+    return segments
 
 
 def _clone_zip_info(info: zipfile.ZipInfo) -> zipfile.ZipInfo:
@@ -312,10 +476,15 @@ def extract_translatable_segments(xhtml: str) -> list[TranslatableSegment]:
     body = _find_body(root)
     if body is None:
         return []
-    return [TranslatableSegment(text=text) for _, _, text in _collect_translatable_text_slots(body)]
+    return _collect_translatable_block_segments(body)
 
 
-def patch_xhtml_alternating(xhtml: str, translations: list[str]) -> str:
+def patch_xhtml_alternating(
+    xhtml: str,
+    translations: list[str],
+    *,
+    document_path: str | None = None,
+) -> str:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
     if body is None:
@@ -323,13 +492,36 @@ def patch_xhtml_alternating(xhtml: str, translations: list[str]) -> str:
             raise ValueError("translation count does not match translatable segments")
         return xhtml
 
-    slots = _collect_translatable_text_slots(body)
-    if len(slots) != len(translations):
+    segments = _collect_translatable_block_segments(body)
+    if len(segments) != len(translations):
         raise ValueError(
-            f"translation count mismatch: expected {len(slots)}, got {len(translations)}"
+            f"translation count mismatch: expected {len(segments)}, got {len(translations)}"
         )
 
-    for (node, attr, source_text), translation in zip(slots, translations, strict=True):
-        setattr(node, attr, f"{source_text}\n{translation}")
+    parent_map = _build_parent_map(body)
+    block_nodes: list[ET.Element] = []
+    for segment in segments:
+        block_node = _resolve_node_by_path(body, segment.block_path)
+        if block_node is None:
+            raise ValueError("translation block anchor not found")
+        block_nodes.append(block_node)
+
+    has_rendered_translation = False
+    for block_node, translation in zip(block_nodes, translations, strict=True):
+        if not _should_render_translation(
+            block_node=block_node,
+            document_path=document_path,
+        ):
+            continue
+
+        _insert_translation_block(
+            block_node=block_node,
+            translation=translation,
+            parent_map=parent_map,
+        )
+        has_rendered_translation = True
+
+    if has_rendered_translation:
+        _ensure_translation_style(root)
 
     return ET.tostring(root, encoding="unicode")
