@@ -33,10 +33,7 @@ def test_translate_chunk_raises_on_nonzero_return_code(monkeypatch):
     # Mock subprocess.run to return error
     def mock_run(*args, **kwargs):
         result = subprocess.CompletedProcess(
-            args=["gemini"],
-            returncode=1,
-            stdout="",
-            stderr="API error: model not found"
+            args=["gemini"], returncode=1, stdout="", stderr="API error: model not found"
         )
         return result
 
@@ -45,9 +42,7 @@ def test_translate_chunk_raises_on_nonzero_return_code(monkeypatch):
     # Verify it raises RuntimeError with stderr included
     with pytest.raises(RuntimeError) as exc_info:
         provider.translate_chunk(
-            text="test chunk",
-            chunk_size=100,
-            system_prompt="Translate to Chinese"
+            text="test chunk", chunk_size=100, system_prompt="Translate to Chinese"
         )
 
     assert "API error" in str(exc_info.value)

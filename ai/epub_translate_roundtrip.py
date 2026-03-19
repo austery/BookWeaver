@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
+import hashlib
 import re
 import subprocess
 import zipfile
@@ -53,6 +55,21 @@ class TranslateRoundtripResult:
     translated_docs: int
 
 
+@dataclass(frozen=True, slots=True)
+class CheckpointEntry:
+    doc_path: str
+    checkpoint_file: str
+    segments: int
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointSnapshot:
+    overrides: dict[str, bytes]
+    entries: dict[str, CheckpointEntry]
+    translated_segments: int
+    translated_docs: int
+
+
 def _get_language_name(lang_code: str) -> str:
     language_map = {
         "zh": "Chinese",
@@ -93,6 +110,204 @@ def _resolve_model_name(model: str) -> str:
     if not resolved:
         raise ValueError("model must be a non-empty string")
     return resolved
+
+
+def _compute_source_signature(source_epub: Path) -> str:
+    stat = source_epub.stat()
+    signature_payload = (f"{source_epub.resolve()}|{stat.st_size}|{stat.st_mtime_ns}").encode(
+        "utf-8"
+    )
+    return hashlib.sha256(signature_payload).hexdigest()
+
+
+def _checkpoint_state_file(checkpoint_dir: Path) -> Path:
+    return checkpoint_dir / "state.json"
+
+
+def _checkpoint_docs_dir(checkpoint_dir: Path) -> Path:
+    return checkpoint_dir / "docs"
+
+
+def _checkpoint_doc_filename(doc_path: str) -> str:
+    digest = hashlib.sha256(doc_path.encode("utf-8")).hexdigest()
+    return f"{digest}.xhtml"
+
+
+def _write_checkpoint_state(
+    *,
+    checkpoint_dir: Path,
+    source_signature: str,
+    output_lang: str,
+    bilingual_style: str,
+    model: str,
+    custom_prompt: str | None,
+    entries: dict[str, CheckpointEntry],
+) -> None:
+    state = {
+        "version": 1,
+        "source_signature": source_signature,
+        "output_lang": output_lang,
+        "bilingual_style": bilingual_style,
+        "model": model,
+        "custom_prompt": custom_prompt,
+        "completed_docs": [
+            {
+                "doc_path": entry.doc_path,
+                "checkpoint_file": entry.checkpoint_file,
+                "segments": entry.segments,
+            }
+            for entry in sorted(entries.values(), key=lambda item: item.doc_path)
+        ],
+    }
+    _checkpoint_state_file(checkpoint_dir).write_text(
+        json.dumps(state, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _load_checkpoint_snapshot(
+    *,
+    checkpoint_dir: Path | None,
+    source_signature: str,
+    output_lang: str,
+    bilingual_style: str,
+    model: str,
+    custom_prompt: str | None,
+) -> CheckpointSnapshot:
+    if checkpoint_dir is None:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+
+    state_file = _checkpoint_state_file(checkpoint_dir)
+    if not state_file.exists():
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+
+    raw_state = json.loads(state_file.read_text(encoding="utf-8"))
+    if not isinstance(raw_state, dict):
+        raise RuntimeError(f"Invalid checkpoint state format: {state_file}")
+
+    if raw_state.get("source_signature") != source_signature:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+    if raw_state.get("output_lang") != output_lang:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+    if raw_state.get("bilingual_style") != bilingual_style:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+    if raw_state.get("model") != model:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+    if raw_state.get("custom_prompt") != custom_prompt:
+        return CheckpointSnapshot(
+            overrides={},
+            entries={},
+            translated_segments=0,
+            translated_docs=0,
+        )
+
+    completed_docs = raw_state.get("completed_docs")
+    if not isinstance(completed_docs, list):
+        raise RuntimeError(f"Invalid checkpoint completed_docs format: {state_file}")
+
+    docs_dir = _checkpoint_docs_dir(checkpoint_dir)
+    overrides: dict[str, bytes] = {}
+    entries: dict[str, CheckpointEntry] = {}
+    translated_segments = 0
+    for item in completed_docs:
+        if not isinstance(item, dict):
+            raise RuntimeError(f"Invalid checkpoint entry format in {state_file}")
+        doc_path = item.get("doc_path")
+        checkpoint_file = item.get("checkpoint_file")
+        segments = item.get("segments")
+        if not isinstance(doc_path, str) or not isinstance(checkpoint_file, str):
+            raise RuntimeError(f"Invalid checkpoint entry fields in {state_file}")
+        if not isinstance(segments, int):
+            raise RuntimeError(f"Invalid checkpoint segment count in {state_file}")
+        checkpoint_path = docs_dir / checkpoint_file
+        if not checkpoint_path.exists():
+            raise RuntimeError(f"Checkpoint file missing: {checkpoint_path}")
+        overrides[doc_path] = checkpoint_path.read_bytes()
+        entries[doc_path] = CheckpointEntry(
+            doc_path=doc_path,
+            checkpoint_file=checkpoint_file,
+            segments=segments,
+        )
+        translated_segments += segments
+
+    return CheckpointSnapshot(
+        overrides=overrides,
+        entries=entries,
+        translated_segments=translated_segments,
+        translated_docs=len(entries),
+    )
+
+
+def _persist_checkpoint_doc(
+    *,
+    checkpoint_dir: Path | None,
+    source_signature: str,
+    output_lang: str,
+    bilingual_style: str,
+    model: str,
+    custom_prompt: str | None,
+    doc_path: str,
+    patched_xhtml_bytes: bytes,
+    segment_count: int,
+    entries: dict[str, CheckpointEntry],
+) -> dict[str, CheckpointEntry]:
+    if checkpoint_dir is None:
+        return entries
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    docs_dir = _checkpoint_docs_dir(checkpoint_dir)
+    docs_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = _checkpoint_doc_filename(doc_path)
+    checkpoint_path = docs_dir / filename
+    checkpoint_path.write_bytes(patched_xhtml_bytes)
+
+    updated_entries = dict(entries)
+    updated_entries[doc_path] = CheckpointEntry(
+        doc_path=doc_path,
+        checkpoint_file=filename,
+        segments=segment_count,
+    )
+    _write_checkpoint_state(
+        checkpoint_dir=checkpoint_dir,
+        source_signature=source_signature,
+        output_lang=output_lang,
+        bilingual_style=bilingual_style,
+        model=model,
+        custom_prompt=custom_prompt,
+        entries=updated_entries,
+    )
+    return updated_entries
 
 
 def join_segments_for_batch(segments: list[str]) -> str:
@@ -212,6 +427,7 @@ def _validate_integrity(
     model: EpubPackageModel,
     existing_paths: set[str],
     docs: dict[str, str],
+    allowed_broken_links: set[str] | None = None,
 ) -> None:
     errors: list[str] = []
     errors.extend(validate_package_structure(model).errors)
@@ -221,8 +437,10 @@ def _validate_integrity(
     for path in missing_assets:
         errors.append(f"missing manifest asset: {path}")
 
+    allowed = allowed_broken_links or set()
     broken_links = validate_fragment_links(docs).broken_links
-    for link in broken_links:
+    unexpected_broken_links = sorted(link for link in broken_links if link not in allowed)
+    for link in unexpected_broken_links:
         errors.append(f"broken fragment link: {link}")
 
     if errors:
@@ -238,6 +456,7 @@ def run_translate_roundtrip(
     model: str,
     custom_prompt: str | None = None,
     translate_fn: TranslateFn | None = None,
+    checkpoint_dir: Path | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -245,10 +464,21 @@ def run_translate_roundtrip(
     resolved_model = _resolve_model_name(model)
     package_model = load_epub_package(source_epub)
     provider = GeminiProvider(model=resolved_model)
-    overrides: dict[str, bytes] = {}
-    translated_segments = 0
-    translated_docs = 0
+    source_signature = _compute_source_signature(source_epub)
+    checkpoint = _load_checkpoint_snapshot(
+        checkpoint_dir=checkpoint_dir,
+        source_signature=source_signature,
+        output_lang=output_lang,
+        bilingual_style=bilingual_style,
+        model=resolved_model,
+        custom_prompt=custom_prompt,
+    )
+    overrides: dict[str, bytes] = dict(checkpoint.overrides)
+    checkpoint_entries: dict[str, CheckpointEntry] = dict(checkpoint.entries)
+    translated_segments = checkpoint.translated_segments
+    translated_docs = checkpoint.translated_docs
     spine_docs = _resolve_spine_xhtml_paths(package_model)
+    manifest_xhtml_paths = _resolve_manifest_xhtml_paths(package_model)
     print(
         f"[INFO] Loaded package: {source_epub.name}, "
         f"spine docs={len(spine_docs)}, model={resolved_model}",
@@ -256,7 +486,20 @@ def run_translate_roundtrip(
     )
 
     with zipfile.ZipFile(source_epub, "r") as source_zip:
+        source_docs: dict[str, str] = {
+            xhtml_path: _read_zip_text(source_zip, xhtml_path)
+            for xhtml_path in manifest_xhtml_paths
+        }
+        source_broken_links = set(validate_fragment_links(source_docs).broken_links)
+
         for doc_index, doc_path in enumerate(spine_docs, start=1):
+            if doc_path in checkpoint_entries:
+                print(
+                    f"[INFO] [{doc_index}/{len(spine_docs)}] "
+                    f"Resume skip {doc_path} (checkpoint hit)",
+                    flush=True,
+                )
+                continue
             source_xhtml = _read_zip_text(source_zip, doc_path)
             segments = extract_translatable_segments(source_xhtml)
             if not segments:
@@ -297,17 +540,34 @@ def run_translate_roundtrip(
                 context_label=doc_path,
             )
 
-            patched_xhtml = patch_xhtml_alternating(source_xhtml, translations)
-            overrides[doc_path] = patched_xhtml.encode("utf-8")
+            patched_xhtml = patch_xhtml_alternating(
+                source_xhtml,
+                translations,
+                document_path=doc_path,
+            )
+            patched_bytes = patched_xhtml.encode("utf-8")
+            overrides[doc_path] = patched_bytes
             translated_segments += len(segments)
             translated_docs += 1
+            checkpoint_entries = _persist_checkpoint_doc(
+                checkpoint_dir=checkpoint_dir,
+                source_signature=source_signature,
+                output_lang=output_lang,
+                bilingual_style=bilingual_style,
+                model=resolved_model,
+                custom_prompt=custom_prompt,
+                doc_path=doc_path,
+                patched_xhtml_bytes=patched_bytes,
+                segment_count=len(segments),
+                entries=checkpoint_entries,
+            )
             print(
                 f"[INFO] [{doc_index}/{len(spine_docs)}] Done {doc_path}",
                 flush=True,
             )
 
         docs: dict[str, str] = {}
-        for xhtml_path in _resolve_manifest_xhtml_paths(package_model):
+        for xhtml_path in manifest_xhtml_paths:
             if xhtml_path in overrides:
                 docs[xhtml_path] = overrides[xhtml_path].decode("utf-8")
             else:
@@ -317,6 +577,7 @@ def run_translate_roundtrip(
             model=package_model,
             existing_paths=set(source_zip.namelist()),
             docs=docs,
+            allowed_broken_links=source_broken_links,
         )
 
     repack_epub_with_overrides(source_epub, output_epub, overrides)

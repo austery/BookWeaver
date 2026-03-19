@@ -19,6 +19,7 @@ def _build_min_epub(
     path: Path,
     *,
     broken_fragment: bool = False,
+    missing_cover_asset: bool = False,
     paragraphs: list[str] | None = None,
 ) -> None:
     fragment = "missing" if broken_fragment else "anchor"
@@ -59,6 +60,46 @@ def _build_min_epub(
             ),
         )
         zip_file.writestr("toc.ncx", "<ncx><navMap></navMap></ncx>")
+        if not missing_cover_asset:
+            zip_file.writestr("cover.jpg", "x")
+
+
+def _build_two_chapter_epub(path: Path) -> None:
+    with zipfile.ZipFile(path, "w") as zip_file:
+        zip_file.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        zip_file.writestr(
+            "META-INF/container.xml",
+            """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>""",
+        )
+        zip_file.writestr(
+            "content.opf",
+            """<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Demo</dc:title><dc:language>en</dc:language><dc:identifier id="uid">id</dc:identifier>
+    <meta name="cover" content="cover-image"/>
+  </metadata>
+  <manifest>
+    <item id="cover-image" href="cover.jpg" media-type="image/jpeg"/>
+    <item id="toc" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="toc"><itemref idref="c1"/><itemref idref="c2"/></spine>
+</package>""",
+        )
+        zip_file.writestr(
+            "chapter1.xhtml",
+            ("<html xmlns='http://www.w3.org/1999/xhtml'><body><p>Doc1</p></body></html>"),
+        )
+        zip_file.writestr(
+            "chapter2.xhtml",
+            ("<html xmlns='http://www.w3.org/1999/xhtml'><body><p>Doc2</p></body></html>"),
+        )
+        zip_file.writestr("toc.ncx", "<ncx><navMap></navMap></ncx>")
         zip_file.writestr("cover.jpg", "x")
 
 
@@ -95,7 +136,7 @@ def test_translate_roundtrip_rewrites_spine_xhtml_and_preserves_toc_file() -> No
         assert "ZH:Hello." in chapter
 
 
-def test_translate_roundtrip_fails_on_integrity_error() -> None:
+def test_translate_roundtrip_allows_preexisting_broken_fragment_links() -> None:
     from ai.epub_translate_roundtrip import run_translate_roundtrip
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -103,7 +144,27 @@ def test_translate_roundtrip_fails_on_integrity_error() -> None:
         output_epub = Path(temp_dir) / "translated-broken.epub"
         _build_min_epub(source_epub, broken_fragment=True)
 
-        with pytest.raises(RuntimeError, match="broken fragment"):
+        result = run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=lambda text: f"ZH:{text}",
+        )
+        assert result.output_epub.exists()
+
+
+def test_translate_roundtrip_fails_on_missing_manifest_asset() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-missing-asset.epub"
+        output_epub = Path(temp_dir) / "translated-missing-asset.epub"
+        _build_min_epub(source_epub, missing_cover_asset=True)
+
+        with pytest.raises(RuntimeError, match="missing manifest asset"):
             run_translate_roundtrip(
                 source_epub=source_epub,
                 output_epub=output_epub,
@@ -211,3 +272,62 @@ def test_translate_roundtrip_retries_with_split_on_batch_timeout() -> None:
 
         assert timeout_injected
         assert len(calls) > 1
+
+
+def test_translate_roundtrip_resume_skips_completed_docs() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-resume.epub"
+        output_epub = Path(temp_dir) / "translated-resume.epub"
+        checkpoint_dir = Path(temp_dir) / "checkpoint"
+        _build_two_chapter_epub(source_epub)
+
+        first_call_count = 0
+
+        def fail_on_second_doc(batch_text: str) -> str:
+            nonlocal first_call_count
+            first_call_count += 1
+            if "Doc2" in batch_text:
+                raise RuntimeError("simulated interruption")
+            return f"R1:{batch_text}"
+
+        with pytest.raises(RuntimeError, match="simulated interruption"):
+            run_translate_roundtrip(
+                source_epub=source_epub,
+                output_epub=output_epub,
+                output_lang="zh",
+                bilingual_style="alternating",
+                model="gemini-2.5-flash",
+                custom_prompt=None,
+                translate_fn=fail_on_second_doc,
+                checkpoint_dir=checkpoint_dir,
+            )
+
+        assert first_call_count == 2
+
+        second_call_count = 0
+
+        def succeed_resume(batch_text: str) -> str:
+            nonlocal second_call_count
+            second_call_count += 1
+            return f"R2:{batch_text}"
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=succeed_resume,
+            checkpoint_dir=checkpoint_dir,
+        )
+
+        assert second_call_count == 1
+        with zipfile.ZipFile(output_epub, "r") as output_zip:
+            chapter1 = output_zip.read("chapter1.xhtml").decode("utf-8")
+            chapter2 = output_zip.read("chapter2.xhtml").decode("utf-8")
+
+        assert "R1:Doc1" in chapter1
+        assert "R2:Doc2" in chapter2
