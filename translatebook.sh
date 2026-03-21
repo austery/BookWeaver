@@ -614,9 +614,9 @@ main() {
         exit 0
     fi
 
-    if [[ "$EPUB_TRANSLATE_ROUNDTRIP" == true ]]; then
-        if [[ "${INPUT_FILE}" != *.epub ]] && [[ "${INPUT_FILE}" != *.EPUB ]]; then
-            log_error "--epub-translate-roundtrip requires an EPUB input file"
+    if [[ "$RESOLVED_WORKFLOW" == "epub" ]]; then
+        if ! is_epub_file "$INPUT_FILE"; then
+            log_error "workflow 'epub' requires an EPUB input file"
             exit 2
         fi
 
@@ -651,7 +651,7 @@ main() {
         local translate_cmd_display
         translate_cmd_display="$(printf '%q ' "${cmd[@]}")"
 
-        log_step "translate-roundtrip" "EPUB package-aware translation roundtrip"
+        log_step "workflow-epub" "EPUB package-preserving translation workflow"
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY RUN] Would execute: $translate_cmd_display"
             exit 0

@@ -87,3 +87,22 @@ def test_epub_baseline_dry_run_does_not_require_translation_dependencies() -> No
 def test_translatebook_help_includes_workflow_flag() -> None:
     content = Path("translatebook.sh").read_text(encoding="utf-8")
     assert "--workflow" in content
+
+
+def test_epub_default_dry_run_uses_epub_workflow() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+
+        completed = subprocess.run(
+            ["/bin/bash", "translatebook.sh", "--dry-run", str(input_epub)],
+            cwd=Path(__file__).resolve().parents[2],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ),
+            check=False,
+        )
+
+        assert completed.returncode == 0
+        assert "Resolved workflow: epub" in completed.stdout
+        assert "[STEP workflow-epub]" in completed.stdout
