@@ -31,6 +31,9 @@ BENCHMARK_MODE=false
 QUOTA_STATUS_MODE=false
 EPUB_BASELINE=false
 EPUB_TRANSLATE_ROUNDTRIP=false
+WORKFLOW_OVERRIDE=""
+RESOLVED_WORKFLOW=""
+USED_LEGACY_ROUNDTRIP_FLAG=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -68,8 +71,10 @@ show_help() {
 ${SCRIPT_NAME} v${VERSION} - Book Translation Tool
 
 DESCRIPTION:
-    Translates PDF, DOCX, or EPUB files to HTML using Gemini CLI.
-    Automatically runs all 7 steps in sequence.
+    Translates PDF, DOCX, or EPUB files with Gemini CLI.
+    Uses workflow-based execution:
+      - epub: package-preserving EPUB translation workflow
+      - markdown: markdown conversion workflow
     Creates and manages Python virtual environment automatically.
     Uses Calibre for unified file conversion via HTMLZ format.
 
@@ -91,8 +96,9 @@ OPTIONS:
     --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)
     --benchmark            Run benchmark_models.py after conversion and exit
     --quota-status         Print today's quota usage and exit
-    --epub-baseline        Run EPUB roundtrip baseline mode and exit
-    --epub-translate-roundtrip Run EPUB package-aware translation roundtrip mode and exit
+    --epub-baseline        Run EPUB baseline mode (no text mutation) and exit
+    --epub-translate-roundtrip Deprecated alias for --workflow epub
+    --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -111,11 +117,12 @@ NOTE:
     which creates optimized markdown chunks ready for translation.
 
 EXAMPLES:
-    # Basic usage
-    ${SCRIPT_NAME} book.pdf
+    # EPUB input defaults to package-preserving workflow
+    ${SCRIPT_NAME} book.epub
 
-    # Translate to English with custom output
-    ${SCRIPT_NAME} --olang en book.pdf
+    # Explicit workflow selection
+    ${SCRIPT_NAME} --workflow epub book.epub
+    ${SCRIPT_NAME} --workflow markdown book.pdf
 
     # Clean temp and run with verbose output
     ${SCRIPT_NAME} --clean -v book.epub
@@ -129,7 +136,10 @@ EXAMPLES:
     # Run only format conversion steps (5-7)
     ${SCRIPT_NAME} --start-step 5 --end-step 7 book.docx
 
-    # Dry run to see what would happen
+    # Deprecated alias (still supported)
+    ${SCRIPT_NAME} --epub-translate-roundtrip book.epub
+
+    # Dry run to see resolved workflow
     ${SCRIPT_NAME} --dry-run book.pdf
 
 REQUIREMENTS:
@@ -274,6 +284,20 @@ is_epub_file() {
     [[ "$input_file" == *.epub ]] || [[ "$input_file" == *.EPUB ]]
 }
 
+resolve_workflow_for_input() {
+    local input_file="$1"
+    local workflow_override="${2:-}"
+    if [[ -n "$workflow_override" ]]; then
+        echo "$workflow_override"
+        return 0
+    fi
+    if is_epub_file "$input_file"; then
+        echo "epub"
+    else
+        echo "markdown"
+    fi
+}
+
 is_supported_source_file() {
     local input_file="$1"
     is_epub_file "$input_file" || [[ "$input_file" == *.pdf ]] || [[ "$input_file" == *.PDF ]] || [[ "$input_file" == *.docx ]] || [[ "$input_file" == *.DOCX ]]
@@ -356,8 +380,18 @@ parse_args() {
                 shift
                 ;;
             --epub-translate-roundtrip)
+                if [[ -n "$WORKFLOW_OVERRIDE" ]] && [[ "$WORKFLOW_OVERRIDE" != "epub" ]]; then
+                    log_error "Conflict: --epub-translate-roundtrip cannot be used with --workflow $WORKFLOW_OVERRIDE"
+                    exit 2
+                fi
                 EPUB_TRANSLATE_ROUNDTRIP=true
+                WORKFLOW_OVERRIDE="epub"
+                USED_LEGACY_ROUNDTRIP_FLAG=true
                 shift
+                ;;
+            --workflow)
+                WORKFLOW_OVERRIDE="$2"
+                shift 2
                 ;;
             -v|--verbose)
                 VERBOSE=true
@@ -408,6 +442,11 @@ parse_args() {
 
     if [[ ! "$BILINGUAL_STYLE" =~ ^(alternating)$ ]]; then
         log_error "Invalid bilingual style: $BILINGUAL_STYLE (supported: alternating)"
+        exit 2
+    fi
+
+    if [[ -n "$WORKFLOW_OVERRIDE" ]] && [[ ! "$WORKFLOW_OVERRIDE" =~ ^(epub|markdown)$ ]]; then
+        log_error "Invalid workflow mode: $WORKFLOW_OVERRIDE (must be epub|markdown)"
         exit 2
     fi
 }
@@ -486,6 +525,8 @@ show_config() {
     echo "  Quota status mode: $QUOTA_STATUS_MODE"
     echo "  EPUB baseline mode: $EPUB_BASELINE"
     echo "  EPUB translate roundtrip mode: $EPUB_TRANSLATE_ROUNDTRIP"
+    echo "  Workflow override: ${WORKFLOW_OVERRIDE:-auto}"
+    echo "  Resolved workflow: $RESOLVED_WORKFLOW"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -537,9 +578,14 @@ main() {
 
     local base_temp_dir
     base_temp_dir="$(resolve_temp_dir "$INPUT_FILE")"
+    RESOLVED_WORKFLOW="$(resolve_workflow_for_input "$INPUT_FILE" "$WORKFLOW_OVERRIDE")"
     
     # Show configuration
     show_config
+
+    if [[ "$USED_LEGACY_ROUNDTRIP_FLAG" == true ]]; then
+        log_warning "Deprecated option: --epub-translate-roundtrip is kept for compatibility; use --workflow epub"
+    fi
     
     if [[ "$QUOTA_STATUS_MODE" == true ]]; then
         show_quota_status
@@ -585,9 +631,9 @@ main() {
         exit 0
     fi
 
-    if [[ "$EPUB_TRANSLATE_ROUNDTRIP" == true ]]; then
-        if [[ "${INPUT_FILE}" != *.epub ]] && [[ "${INPUT_FILE}" != *.EPUB ]]; then
-            log_error "--epub-translate-roundtrip requires an EPUB input file"
+    if [[ "$RESOLVED_WORKFLOW" == "epub" ]]; then
+        if ! is_epub_file "$INPUT_FILE"; then
+            log_error "workflow 'epub' requires an EPUB input file"
             exit 2
         fi
 
@@ -622,7 +668,7 @@ main() {
         local translate_cmd_display
         translate_cmd_display="$(printf '%q ' "${cmd[@]}")"
 
-        log_step "translate-roundtrip" "EPUB package-aware translation roundtrip"
+        log_step "workflow-epub" "EPUB package-preserving translation workflow"
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY RUN] Would execute: $translate_cmd_display"
             exit 0

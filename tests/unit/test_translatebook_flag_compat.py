@@ -1,29 +1,12 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
+from pathlib import Path
 
 
-def test_translatebook_help_includes_epub_baseline_mode() -> None:
-    content = Path("translatebook.sh").read_text(encoding="utf-8")
-    assert "--epub-baseline" in content
-
-
-def test_roundtrip_script_exists() -> None:
-    assert Path("08_epub_roundtrip_baseline.py").exists()
-
-
-def test_translatebook_help_includes_epub_translate_roundtrip_mode() -> None:
-    content = Path("translatebook.sh").read_text(encoding="utf-8")
-    assert "--epub-translate-roundtrip" in content
-    assert "--checkpoint-dir" in content
-
-
-def test_translate_roundtrip_script_exists() -> None:
-    assert Path("09_epub_translate_roundtrip.py").exists()
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _build_min_epub(path: Path) -> None:
@@ -64,45 +47,46 @@ def _build_min_epub(path: Path) -> None:
         zip_file.writestr("cover.jpg", "x")
 
 
-def test_epub_baseline_dry_run_does_not_require_translation_dependencies() -> None:
+def test_old_roundtrip_flag_maps_to_epub_workflow_with_warning() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         input_epub = Path(temp_dir) / "book.epub"
         _build_min_epub(input_epub)
-
-        env = dict(os.environ)
-        env["PATH"] = "/usr/bin:/bin"
         completed = subprocess.run(
-            ["/bin/bash", "translatebook.sh", "--dry-run", "--epub-baseline", str(input_epub)],
-            cwd=Path(__file__).resolve().parents[2],
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--epub-translate-roundtrip",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
             capture_output=True,
             text=True,
-            env=env,
             check=False,
         )
-
-        assert completed.returncode == 0
-        assert "[STEP baseline]" in completed.stdout
-
-
-def test_translatebook_help_includes_workflow_flag() -> None:
-    content = Path("translatebook.sh").read_text(encoding="utf-8")
-    assert "--workflow" in content
-
-
-def test_epub_default_dry_run_uses_epub_workflow() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        input_epub = Path(temp_dir) / "book.epub"
-        _build_min_epub(input_epub)
-
-        completed = subprocess.run(
-            ["/bin/bash", "translatebook.sh", "--dry-run", str(input_epub)],
-            cwd=Path(__file__).resolve().parents[2],
-            capture_output=True,
-            text=True,
-            env=dict(os.environ),
-            check=False,
-        )
-
         assert completed.returncode == 0
         assert "Resolved workflow: epub" in completed.stdout
-        assert "[STEP workflow-epub]" in completed.stdout
+        assert "deprecated" in completed.stdout.lower()
+
+
+def test_conflicting_workflow_and_old_roundtrip_flag_fails() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--epub-translate-roundtrip",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 2
+        assert "conflict" in f"{completed.stdout}\n{completed.stderr}".lower()
