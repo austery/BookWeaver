@@ -28,6 +28,8 @@ _MODEL_ALIASES = {
     "flash": "gemini-2.5-flash",
     "lite": "gemini-2.5-flash-lite",
 }
+_PRO_PREBATCH_MAX_CHARS = 18_000
+_PRO_PREBATCH_MAX_SEGMENTS = 36
 _SEGMENT_DELIMITER = "%%"
 _BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
 _BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
@@ -318,6 +320,44 @@ def join_segments_for_batch(segments: list[str]) -> str:
     return _BATCH_SEPARATOR.join(segments)
 
 
+def plan_segment_batches(
+    segments: list[str],
+    *,
+    max_batch_chars: int,
+    max_batch_segments: int,
+) -> list[list[str]]:
+    if max_batch_chars <= 0:
+        raise ValueError("max_batch_chars must be > 0")
+    if max_batch_segments <= 0:
+        raise ValueError("max_batch_segments must be > 0")
+    if not segments:
+        return []
+
+    planned_batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_chars = 0
+
+    for segment in segments:
+        segment_len = len(segment)
+        separator_len = len(_BATCH_SEPARATOR) if current_batch else 0
+        next_chars = current_chars + separator_len + segment_len
+        exceeds_limits = len(current_batch) >= max_batch_segments or next_chars > max_batch_chars
+
+        if current_batch and exceeds_limits:
+            planned_batches.append(current_batch)
+            current_batch = [segment]
+            current_chars = segment_len
+            continue
+
+        current_batch.append(segment)
+        current_chars = next_chars
+
+    if current_batch:
+        planned_batches.append(current_batch)
+
+    return planned_batches
+
+
 def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
     if expected_count < 0:
         raise ValueError("expected_count must be >= 0")
@@ -534,11 +574,36 @@ def run_translate_roundtrip(
                     system_prompt=prompt,
                 )
 
-            translations = translate_segments_with_batch_retry(
-                segment_texts,
-                translate_batch=batch_translate,
-                context_label=doc_path,
-            )
+            is_pro_model = resolved_model == _MODEL_ALIASES["pro"]
+            planned_batches = [segment_texts]
+            if is_pro_model:
+                planned_batches = plan_segment_batches(
+                    segment_texts,
+                    max_batch_chars=_PRO_PREBATCH_MAX_CHARS,
+                    max_batch_segments=_PRO_PREBATCH_MAX_SEGMENTS,
+                )
+                print(
+                    f"[INFO] [{doc_index}/{len(spine_docs)}] {doc_path} "
+                    f"planned_batches={len(planned_batches)}",
+                    flush=True,
+                )
+
+            translations: list[str] = []
+            for batch_index, batch_segments in enumerate(planned_batches, start=1):
+                if is_pro_model:
+                    batch_chars = len(join_segments_for_batch(batch_segments))
+                    print(
+                        f"[INFO] [{doc_path}] Translating batch "
+                        f"{batch_index}/{len(planned_batches)} "
+                        f"(segments={len(batch_segments)}, chars={batch_chars})",
+                        flush=True,
+                    )
+                translated_batch = translate_segments_with_batch_retry(
+                    batch_segments,
+                    translate_batch=batch_translate,
+                    context_label=doc_path,
+                )
+                translations.extend(translated_batch)
 
             patched_xhtml = patch_xhtml_alternating(
                 source_xhtml,

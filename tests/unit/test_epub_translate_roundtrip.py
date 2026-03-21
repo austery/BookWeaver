@@ -103,6 +103,36 @@ def _build_two_chapter_epub(path: Path) -> None:
         zip_file.writestr("cover.jpg", "x")
 
 
+def test_plan_segment_batches_enforces_limits_and_order() -> None:
+    from ai.epub_translate_roundtrip import plan_segment_batches
+
+    segments = [f"S{i}-" + ("x" * 500) for i in range(130)]
+    batches = plan_segment_batches(
+        segments,
+        max_batch_chars=18_000,
+        max_batch_segments=36,
+    )
+
+    assert [len(batch) for batch in batches] == [35, 35, 35, 25]
+    assert all(1 <= len(batch) <= 36 for batch in batches)
+    assert [item for batch in batches for item in batch] == segments
+
+
+def test_plan_segment_batches_allows_single_oversized_segment() -> None:
+    from ai.epub_translate_roundtrip import plan_segment_batches
+
+    oversized = "y" * 30_000
+    batches = plan_segment_batches(
+        [oversized, "ok"],
+        max_batch_chars=18_000,
+        max_batch_segments=36,
+    )
+
+    assert len(batches) == 2
+    assert batches[0] == [oversized]
+    assert batches[1] == ["ok"]
+
+
 def test_translate_roundtrip_rewrites_spine_xhtml_and_preserves_toc_file() -> None:
     from ai.epub_translate_roundtrip import run_translate_roundtrip
 
@@ -272,6 +302,90 @@ def test_translate_roundtrip_retries_with_split_on_batch_timeout() -> None:
 
         assert timeout_injected
         assert len(calls) > 1
+
+
+def test_translate_roundtrip_prebatches_pro_requests_before_retry() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-pro-prebatch.epub"
+        output_epub = Path(temp_dir) / "translated-pro-prebatch.epub"
+        paragraphs = [f"P{i}-" + ("x" * 500) for i in range(80)]
+        _build_min_epub(source_epub, paragraphs=paragraphs)
+
+        calls: list[str] = []
+
+        def batch_translate(text: str) -> str:
+            calls.append(text)
+            return _translate_with_batch_separator(text)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="pro",
+            custom_prompt=None,
+            translate_fn=batch_translate,
+        )
+
+        assert len(calls) > 1
+        assert max(len(payload.split("\n\n%%\n\n")) for payload in calls) <= 36
+
+
+def test_translate_roundtrip_flash_keeps_single_doc_batch() -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-flash-single-batch.epub"
+        output_epub = Path(temp_dir) / "translated-flash-single-batch.epub"
+        paragraphs = [f"P{i}-" + ("x" * 500) for i in range(80)]
+        _build_min_epub(source_epub, paragraphs=paragraphs)
+
+        call_count = 0
+
+        def batch_translate(text: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            return _translate_with_batch_separator(text)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="flash",
+            custom_prompt=None,
+            translate_fn=batch_translate,
+        )
+
+        assert call_count == 1
+
+
+def test_translate_roundtrip_logs_planned_batch_summary_for_pro(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book-log-prebatch.epub"
+        output_epub = Path(temp_dir) / "translated-log-prebatch.epub"
+        paragraphs = [f"P{i}-" + ("x" * 500) for i in range(80)]
+        _build_min_epub(source_epub, paragraphs=paragraphs)
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="pro",
+            custom_prompt=None,
+            translate_fn=_translate_with_batch_separator,
+        )
+
+        stdout = capsys.readouterr().out
+        assert "planned_batches=" in stdout
+        assert "batch 1/" in stdout
 
 
 def test_translate_roundtrip_resume_skips_completed_docs() -> None:
