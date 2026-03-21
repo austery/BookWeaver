@@ -33,6 +33,7 @@ EPUB_BASELINE=false
 EPUB_TRANSLATE_ROUNDTRIP=false
 WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
+USED_LEGACY_ROUNDTRIP_FLAG=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -373,7 +374,13 @@ parse_args() {
                 shift
                 ;;
             --epub-translate-roundtrip)
+                if [[ -n "$WORKFLOW_OVERRIDE" ]] && [[ "$WORKFLOW_OVERRIDE" != "epub" ]]; then
+                    log_error "Conflict: --epub-translate-roundtrip cannot be used with --workflow $WORKFLOW_OVERRIDE"
+                    exit 2
+                fi
                 EPUB_TRANSLATE_ROUNDTRIP=true
+                WORKFLOW_OVERRIDE="epub"
+                USED_LEGACY_ROUNDTRIP_FLAG=true
                 shift
                 ;;
             --workflow)
@@ -569,6 +576,10 @@ main() {
     
     # Show configuration
     show_config
+
+    if [[ "$USED_LEGACY_ROUNDTRIP_FLAG" == true ]]; then
+        log_warning "Deprecated option: --epub-translate-roundtrip is kept for compatibility; use --workflow epub"
+    fi
     
     if [[ "$QUOTA_STATUS_MODE" == true ]]; then
         show_quota_status
