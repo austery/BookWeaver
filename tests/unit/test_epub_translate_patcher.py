@@ -116,3 +116,22 @@ def test_patch_xhtml_alternating_preserves_default_xhtml_namespace_serialization
     source = "<html xmlns='http://www.w3.org/1999/xhtml'><body><p>Hello.</p></body></html>"
     patched = patch_xhtml_alternating(source, ["你好。"])
     assert "<html:" not in patched
+
+
+def test_patch_xhtml_alternating_keeps_table_cells_source_only() -> None:
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<table><thead><tr><th>OrderID</th><th>CustomerName</th></tr></thead>"
+        "<tbody><tr><td>100</td><td>Joe Reis</td></tr></tbody></table>"
+        "<p>After table.</p>"
+        "</body></html>"
+    )
+    patched = patch_xhtml_alternating(source, ["表后文本。"])
+    assert "OrderID" in patched and "CustomerName" in patched
+    assert "Joe Reis" in patched
+    assert "订单ID" not in patched
+    assert "客户姓名" not in patched
+    assert "乔·雷斯" not in patched
+    assert "表后文本。" in patched
