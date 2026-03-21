@@ -409,8 +409,13 @@ def repack_epub(source_epub: Path, output_epub: Path) -> None:
 def validate_package_structure(model: EpubPackageModel) -> PackageValidationReport:
     errors: list[str] = []
     manifest_item_ids = set(model.manifest_items)
+    manifest_hrefs = {item.href for item in model.manifest_items.values()}
 
-    if model.cover_item_id and model.cover_item_id not in manifest_item_ids:
+    if (
+        model.cover_item_id
+        and model.cover_item_id not in manifest_item_ids
+        and model.cover_item_id not in manifest_hrefs
+    ):
         errors.append(f"cover item id not found in manifest: {model.cover_item_id}")
 
     if model.toc_item_id and model.toc_item_id not in manifest_item_ids:
