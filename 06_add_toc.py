@@ -24,6 +24,22 @@ except ImportError:
 
 
 MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
+MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\([^)]+\)(?:\{[^}]*\})?")
+ATTR_LIST_SUFFIX_PATTERN = re.compile(r"\s+\{[^{}]*\}\s*$")
+TOC_MAX_LEVEL = 1
+
+
+def clean_heading_title(text):
+    """Normalize heading text for TOC labels and IDs."""
+    cleaned = unescape(text).strip()
+    cleaned = MARKDOWN_IMAGE_PATTERN.sub("", cleaned)
+    while True:
+        updated = ATTR_LIST_SUFFIX_PATTERN.sub("", cleaned)
+        if updated == cleaned:
+            break
+        cleaned = updated
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 
 def parse_markdown_heading(text):
@@ -33,7 +49,7 @@ def parse_markdown_heading(text):
     if not match:
         return None
     level = len(match.group(1))
-    title = match.group(2).strip()
+    title = clean_heading_title(match.group(2))
     if not title:
         return None
     return level, title
@@ -73,7 +89,12 @@ def extract_headings(soup):
     for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
         if heading.find_parent(id="table-of-contents") is not None:
             continue
+        classes = heading.get("class") or []
+        if "translated-text" in classes and "source-text" not in classes:
+            continue
         level = int(heading.name[1])  # Extract number from h1, h2, etc.
+        if level > TOC_MAX_LEVEL:
+            continue
         text = heading.get_text().strip()
         if text.lower() == "table of contents":
             continue
@@ -104,6 +125,8 @@ def extract_headings(soup):
             continue
 
         level, title = parsed
+        if level > TOC_MAX_LEVEL:
+            continue
         heading_id = generate_heading_id(title, headings)
         paragraph["id"] = heading_id
         heading_info = {"level": level, "text": title, "id": heading_id, "element": paragraph}
@@ -403,6 +426,8 @@ def insert_toc_with_regex(html_file):
         attrs = match.group(2) or ""
         text = match.group(3)
         level = int(tag[1])
+        if level > TOC_MAX_LEVEL:
+            return match.group(0)
         clean_text = unescape(re.sub(r"<[^>]+>", "", text)).strip()
         if not clean_text:
             return match.group(0)
@@ -444,6 +469,8 @@ def insert_toc_with_regex(html_file):
             if not parsed:
                 return match.group(0)
             level, title = parsed
+            if level > TOC_MAX_LEVEL:
+                return match.group(0)
             heading_id = generate_heading_id(title, heading_data)
             if re.search(r'\sid\s*=\s*["\'][^"\']*["\']', attrs, flags=re.IGNORECASE):
                 new_attrs = re.sub(

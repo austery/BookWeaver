@@ -2,8 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import re
 from html import escape
 from pathlib import Path
+
+
+MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
+MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<src>[^)]+)\)(?P<attrs>\{[^}]*\})?")
+ATTR_LIST_SUFFIX_PATTERN = re.compile(r"\s+\{[^{}]*\}\s*$")
 
 
 def parse_alternating_segments(markdown_text: str) -> list[tuple[str, str]]:
@@ -24,11 +30,83 @@ def parse_alternating_segments(markdown_text: str) -> list[tuple[str, str]]:
     return segments
 
 
+def _parse_attr_list(attr_text: str | None) -> tuple[str | None, list[str]]:
+    if not attr_text:
+        return None, []
+    tokens = attr_text.strip("{} ").split()
+    element_id: str | None = None
+    classes: list[str] = []
+    for token in tokens:
+        if token.startswith("#") and len(token) > 1:
+            element_id = token[1:]
+        elif token.startswith(".") and len(token) > 1:
+            classes.append(token[1:])
+    return element_id, classes
+
+
+def _strip_trailing_attr_lists(text: str) -> str:
+    cleaned = text.strip()
+    while True:
+        updated = ATTR_LIST_SUFFIX_PATTERN.sub("", cleaned)
+        if updated == cleaned:
+            break
+        cleaned = updated
+    return cleaned.strip()
+
+
+def _render_inline_markdown(text: str) -> str:
+    image_tokens: list[str] = []
+
+    def _replace_image(match: re.Match[str]) -> str:
+        src_raw = match.group("src").strip()
+        src = src_raw.split()[0] if src_raw else ""
+        alt = match.group("alt").strip()
+        element_id, classes = _parse_attr_list(match.group("attrs"))
+        attrs = [f'src="{escape(src, quote=True)}"', f'alt="{escape(alt, quote=True)}"']
+        if element_id:
+            attrs.append(f'id="{escape(element_id, quote=True)}"')
+        if classes:
+            attrs.append(f'class="{" ".join(escape(item, quote=True) for item in classes)}"')
+        image_tokens.append(f"<img {' '.join(attrs)} />")
+        return f"@@IMAGE_TOKEN_{len(image_tokens) - 1}@@"
+
+    text_with_tokens = MARKDOWN_IMAGE_PATTERN.sub(_replace_image, text)
+    escaped_text = escape(text_with_tokens)
+    escaped_text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped_text)
+    escaped_text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", escaped_text)
+
+    for idx, image_html in enumerate(image_tokens):
+        escaped_text = escaped_text.replace(f"@@IMAGE_TOKEN_{idx}@@", image_html)
+    return escaped_text
+
+
 def _paragraphs_html(text: str, css_class: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         return ""
-    return "\n".join(f'<p class="{css_class}">{escape(line)}</p>' for line in lines)
+
+    rendered_lines: list[str] = []
+    for line in lines:
+        if line.startswith("<!--") and line.endswith("-->"):
+            continue
+
+        heading_match = MARKDOWN_HEADING_PATTERN.match(line)
+        if heading_match:
+            level = len(heading_match.group(1))
+            heading_body = _strip_trailing_attr_lists(heading_match.group(2))
+            rendered_heading = _render_inline_markdown(heading_body)
+            if css_class == "source-text":
+                rendered_lines.append(
+                    f'<h{level} class="{css_class}">{rendered_heading}</h{level}>'
+                )
+            else:
+                rendered_lines.append(f'<p class="{css_class}">{rendered_heading}</p>')
+            continue
+
+        rendered_line = _render_inline_markdown(line)
+        rendered_lines.append(f'<p class="{css_class}">{rendered_line}</p>')
+
+    return "\n".join(rendered_lines)
 
 
 def render_alternating_bilingual_html(markdown_text: str) -> str:

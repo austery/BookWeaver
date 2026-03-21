@@ -390,13 +390,12 @@ def repack_epub_with_overrides(
 
         output_epub.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(output_epub, "w") as output_zip:
-            if mimetype_info is not None:
-                mimetype_bytes = overrides.get(
-                    mimetype_info.filename, source_zip.read(mimetype_info.filename)
-                )
-                cloned = _clone_zip_info(mimetype_info)
-                cloned.compress_type = zipfile.ZIP_STORED
-                output_zip.writestr(cloned, mimetype_bytes)
+            mimetype_bytes = overrides.get(
+                mimetype_info.filename, source_zip.read(mimetype_info.filename)
+            )
+            cloned = _clone_zip_info(mimetype_info)
+            cloned.compress_type = zipfile.ZIP_STORED
+            output_zip.writestr(cloned, mimetype_bytes)
 
             for info in remaining_infos:
                 content = overrides.get(info.filename, source_zip.read(info.filename))
@@ -409,7 +408,7 @@ def repack_epub(source_epub: Path, output_epub: Path) -> None:
 
 def validate_package_structure(model: EpubPackageModel) -> PackageValidationReport:
     errors: list[str] = []
-    manifest_item_ids = set(model.manifest_items.keys())
+    manifest_item_ids = set(model.manifest_items)
 
     if model.cover_item_id and model.cover_item_id not in manifest_item_ids:
         errors.append(f"cover item id not found in manifest: {model.cover_item_id}")

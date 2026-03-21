@@ -230,7 +230,7 @@ check_dependencies() {
     done
     
     # Check for file conversion script and Calibre for all supported formats
-    if [[ "${INPUT_FILE}" == *.epub ]] || [[ "${INPUT_FILE}" == *.EPUB ]] || [[ "${INPUT_FILE}" == *.pdf ]] || [[ "${INPUT_FILE}" == *.PDF ]] || [[ "${INPUT_FILE}" == *.docx ]] || [[ "${INPUT_FILE}" == *.DOCX ]]; then
+    if is_supported_source_file "$INPUT_FILE"; then
         if [[ ! -f "${SCRIPT_DIR}/01_convert_to_htmlz.py" ]]; then
             log_error "File converter not found: 01_convert_to_htmlz.py"
             log_error "This script is required for PDF/DOCX/EPUB file processing"
@@ -267,6 +267,16 @@ check_dependencies() {
     fi
     
     log_success "Dependencies check passed"
+}
+
+is_epub_file() {
+    local input_file="$1"
+    [[ "$input_file" == *.epub ]] || [[ "$input_file" == *.EPUB ]]
+}
+
+is_supported_source_file() {
+    local input_file="$1"
+    is_epub_file "$input_file" || [[ "$input_file" == *.pdf ]] || [[ "$input_file" == *.PDF ]] || [[ "$input_file" == *.docx ]] || [[ "$input_file" == *.DOCX ]]
 }
 
 # Parse command line arguments
@@ -537,7 +547,7 @@ main() {
     fi
 
     if [[ "$EPUB_BASELINE" == true ]]; then
-        if [[ "${INPUT_FILE}" != *.epub ]] && [[ "${INPUT_FILE}" != *.EPUB ]]; then
+        if ! is_epub_file "$INPUT_FILE"; then
             log_error "--epub-baseline requires an EPUB input file"
             exit 2
         fi
@@ -652,7 +662,7 @@ main() {
     local start_time=$(date +%s)
     
     # Convert supported file formats using Calibre HTMLZ method
-    if [[ "${INPUT_FILE}" == *.epub ]] || [[ "${INPUT_FILE}" == *.EPUB ]] || [[ "${INPUT_FILE}" == *.pdf ]] || [[ "${INPUT_FILE}" == *.PDF ]] || [[ "${INPUT_FILE}" == *.docx ]] || [[ "${INPUT_FILE}" == *.DOCX ]]; then
+    if is_supported_source_file "$INPUT_FILE"; then
         log_info "Detected supported file format, converting via Calibre HTMLZ..."
         
         local original_file="$INPUT_FILE"

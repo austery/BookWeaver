@@ -71,3 +71,56 @@ def test_paragraphs_html_escapes_html_chars():
     # Should escape the HTML or contain safe output
     assert "<script>" not in result
     assert "script" in result.lower() or "&lt;" in result
+
+
+def test_step5_renders_markdown_image_as_img_tag():
+    module = _load_module()
+    md = """## Segment 1
+
+![](images/000004.jpg){.h1}
+
+**中文译文**
+
+![](images/000004.jpg){.h1}
+
+---
+"""
+    html = module.render_alternating_bilingual_html(md)
+    assert '<img src="images/000004.jpg"' in html
+    assert "![](images/000004.jpg){.h1}" not in html
+
+
+def test_step5_renders_heading_tag_and_strips_md_attr_suffix():
+    module = _load_module()
+    md = """## Segment 1
+
+# Contents ![](images/000002.jpg){.halfem} {#contents .x01-fm-head}
+
+**中文译文**
+
+目录
+
+---
+"""
+    html = module.render_alternating_bilingual_html(md)
+    assert '<h1 class="source-text"' in html
+    assert ">Contents" in html
+    assert "{#contents .x01-fm-head}" not in html
+
+
+def test_step5_keeps_translated_headings_out_of_document_outline():
+    module = _load_module()
+    md = """## Segment 1
+
+# ONE
+
+**中文译文**
+
+# 一
+
+---
+"""
+    html = module.render_alternating_bilingual_html(md)
+    assert '<h1 class="source-text"' in html
+    assert '<h1 class="translated-text"' not in html
+    assert '<p class="translated-text">一</p>' in html
