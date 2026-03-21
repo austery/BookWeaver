@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 _CONTAINER_NS = {"container": "urn:oasis:names:tc:opendocument:xmlns:container"}
 _OPF_NS = {"opf": "http://www.idpf.org/2007/opf"}
+_XHTML_NS = "http://www.w3.org/1999/xhtml"
 _ID_PATTERN = re.compile(r"""id=["']([^"']+)["']""")
 _HREF_PATTERN = re.compile(r"""href=["']([^"']+)["']""")
 _EXTERNAL_SCHEMES = ("http://", "https://", "mailto:", "tel:", "javascript:")
@@ -62,6 +63,8 @@ _STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
 _TRANSLATION_CLASS = "bw-translation"
 _BLOCK_TAGS = {"p", "li", "blockquote", "td", "th", "dd"}
 _TABLE_CELL_TAGS = {"td", "th"}
+
+ET.register_namespace("", _XHTML_NS)
 
 
 def _local_name(tag: str) -> str:

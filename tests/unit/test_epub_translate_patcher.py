@@ -108,3 +108,11 @@ def test_patch_xhtml_alternating_never_injects_translation_inside_anchor() -> No
     assert (
         "bw-translation" not in patched.partition('href="https://example.com"')[2].split("</", 1)[0]
     )
+
+
+def test_patch_xhtml_alternating_preserves_default_xhtml_namespace_serialization() -> None:
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = "<html xmlns='http://www.w3.org/1999/xhtml'><body><p>Hello.</p></body></html>"
+    patched = patch_xhtml_alternating(source, ["你好。"])
+    assert "<html:" not in patched
