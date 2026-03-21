@@ -61,6 +61,17 @@ _HEADING_CLASS_HINTS = ("head", "title", "subhead")
 _TOC_DOC_HINTS = ("toc", "contents")
 _STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
 _TRANSLATION_CLASS = "bw-translation"
+_CAPTION_COMPAT_CSS = (
+    ".bw-translation { margin-top: 0.2em; }\n"
+    "#sbo-rt-content table caption,\n"
+    "#sbo-rt-content .table-title {\n"
+    "  writing-mode: horizontal-tb !important;\n"
+    "  -webkit-writing-mode: horizontal-tb !important;\n"
+    "  text-orientation: mixed !important;\n"
+    "  transform: none !important;\n"
+    "  display: table-caption !important;\n"
+    "}"
+)
 _BLOCK_TAGS = {"p", "li", "blockquote", "dd"}
 
 ET.register_namespace("", _XHTML_NS)
@@ -165,7 +176,7 @@ def _ensure_translation_style(root: ET.Element) -> None:
         _qualified_tag("style", namespace),
         attrib={"id": _STYLE_ELEMENT_ID, "type": "text/css"},
     )
-    style.text = ".bw-translation { margin-top: 0.2em; }"
+    style.text = _CAPTION_COMPAT_CSS
     head.append(style)
 
 

@@ -135,3 +135,19 @@ def test_patch_xhtml_alternating_keeps_table_cells_source_only() -> None:
     assert "客户姓名" not in patched
     assert "乔·雷斯" not in patched
     assert "表后文本。" in patched
+
+
+def test_patch_xhtml_alternating_adds_caption_horizontal_compat_css() -> None:
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'>"
+        "<head><title>Demo</title></head>"
+        "<body><p>Body text.</p><table><caption><span class='label'>Table 1-1. </span>Demo</caption></table></body>"
+        "</html>"
+    )
+    patched = patch_xhtml_alternating(source, ["正文文本。"])
+    assert "#sbo-rt-content table caption" in patched
+    assert "writing-mode: horizontal-tb" in patched
+    assert "text-orientation: mixed" in patched
+    assert "display: table-caption" in patched
