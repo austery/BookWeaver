@@ -6,7 +6,15 @@ import zipfile
 import pytest
 
 
-def _build_min_epub(path: Path, cover_item_id: str = "cover-image") -> None:
+def _build_min_epub(
+    path: Path,
+    cover_item_id: str = "cover-image",
+    *,
+    cover_meta_content: str | None = None,
+    manifest_cover_item_id: str = "cover-image",
+    cover_href: str = "cover.jpg",
+) -> None:
+    meta_cover_content = cover_meta_content or cover_item_id
     with zipfile.ZipFile(path, "w") as zip_file:
         zip_file.writestr("mimetype", "application/epub+zip")
         zip_file.writestr(
@@ -22,10 +30,10 @@ def _build_min_epub(path: Path, cover_item_id: str = "cover-image") -> None:
 <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>Demo</dc:title><dc:language>en</dc:language><dc:identifier id="uid">id</dc:identifier>
-    <meta name="cover" content="{cover_item_id}"/>
+    <meta name="cover" content="{meta_cover_content}"/>
   </metadata>
   <manifest>
-    <item id="cover-image" href="cover.jpg" media-type="image/jpeg"/>
+    <item id="{manifest_cover_item_id}" href="{cover_href}" media-type="image/jpeg"/>
     <item id="toc" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
     <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
   </manifest>
@@ -38,7 +46,7 @@ def _build_min_epub(path: Path, cover_item_id: str = "cover-image") -> None:
             "<html xmlns='http://www.w3.org/1999/xhtml'><body><h1 id='c1'>Chapter</h1></body></html>",
         )
         zip_file.writestr("toc.ncx", "<ncx></ncx>")
-        zip_file.writestr("cover.jpg", "x")
+        zip_file.writestr(cover_href, "x")
 
 
 def test_load_epub_package_extracts_cover_and_spine() -> None:
@@ -58,11 +66,33 @@ def test_validate_package_structure_detects_missing_cover_item() -> None:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         epub_path = Path(temp_dir) / "broken-cover.epub"
-        _build_min_epub(epub_path, cover_item_id="missing-cover")
+        _build_min_epub(
+            epub_path,
+            cover_item_id="missing-cover",
+            manifest_cover_item_id="cover-image",
+        )
 
         model = load_epub_package(epub_path)
         report = validate_package_structure(model)
         assert any("cover" in error for error in report.errors)
+
+
+def test_validate_package_structure_accepts_cover_href_pointer() -> None:
+    from ai.epub_package import load_epub_package, validate_package_structure
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        epub_path = Path(temp_dir) / "cover-href-pointer.epub"
+        _build_min_epub(
+            epub_path,
+            cover_item_id="img-cover",
+            cover_meta_content="Images/cover.png",
+            manifest_cover_item_id="img-cover",
+            cover_href="Images/cover.png",
+        )
+
+        model = load_epub_package(epub_path)
+        report = validate_package_structure(model)
+        assert report.errors == []
 
 
 def test_repack_epub_requires_mimetype_file() -> None:
