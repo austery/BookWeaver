@@ -82,3 +82,8 @@ def test_epub_baseline_dry_run_does_not_require_translation_dependencies() -> No
 
         assert completed.returncode == 0
         assert "[STEP baseline]" in completed.stdout
+
+
+def test_translatebook_help_includes_workflow_flag() -> None:
+    content = Path("translatebook.sh").read_text(encoding="utf-8")
+    assert "--workflow" in content
