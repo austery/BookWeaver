@@ -12,6 +12,19 @@ BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `
 
 ## Quick start
 
+### Workflow selection (important)
+
+| Input type | Goal | Recommended workflow | Command |
+|---|---|---|---|
+| EPUB | Preserve package structure/navigation fidelity | `epub` | `./translatebook.sh --workflow epub /path/to/book.epub` |
+| PDF/DOCX | Convert then translate | `markdown` | `./translatebook.sh --workflow markdown /path/to/book.pdf` |
+| EPUB (legacy command) | Backward compatibility only | `epub` | `./translatebook.sh --epub-translate-roundtrip /path/to/book.epub` |
+
+Default behavior:
+
+- EPUB input defaults to `--workflow epub`
+- non-EPUB input defaults to `--workflow markdown`
+
 ### 1) Prerequisites
 
 - `gemini` CLI (authenticated)
@@ -30,28 +43,31 @@ which pandoc
 ./translatebook.sh --dry-run /path/to/book.epub
 ```
 
-### 3) Real run (EPUB preferred)
+### 3) Real run
 
 ```bash
-# Full pipeline
-./translatebook.sh --output-format epub /path/to/book.epub
+# EPUB package-preserving workflow (default for .epub input)
+./translatebook.sh --workflow epub --output-format epub /path/to/book.epub
 
-# Force model for step 3 (alias or full model name)
-./translatebook.sh --model flash --output-format epub /path/to/book.epub
-./translatebook.sh --model gemini-3-pro-preview --output-format epub /path/to/book.epub
+# Force model for EPUB workflow
+./translatebook.sh --workflow epub --model flash --output-format epub /path/to/book.epub
+./translatebook.sh --workflow epub --model gemini-3-pro-preview --output-format epub /path/to/book.epub
 
-# HTML only (skip format conversion in step 7)
-./translatebook.sh --output-format html /path/to/book.epub
+# Markdown workflow (default for non-EPUB)
+./translatebook.sh --workflow markdown --output-format epub /path/to/book.pdf
+
+# HTML only output
+./translatebook.sh --workflow markdown --output-format html /path/to/book.docx
 
 # EPUB baseline roundtrip (no translation, zero text mutation)
 ./translatebook.sh --epub-baseline /path/to/book.epub
 
-# EPUB package-aware translate roundtrip (bilingual alternating)
+# Deprecated alias for EPUB workflow (still supported)
 ./translatebook.sh --epub-translate-roundtrip --olang zh /path/to/book.epub
 ```
 
 Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
-Translate roundtrip mode writes output to `<input_basename>_temp/translated_roundtrip.epub`.
+EPUB workflow writes output to `<input_basename>_temp/translated_roundtrip.epub`.
 
 ### 3.1) Resume after interruption (recommended)
 
@@ -86,7 +102,7 @@ epubcheck /path/to/book.epub
 If preflight reports structural/link issues (for example broken `href#fragment`),
 clean the book manually in tools like Sigil/Calibre first, then run BookWeaver.
 
-Note: translate-roundtrip now tolerates pre-existing source broken fragments
+Note: EPUB workflow now tolerates pre-existing source broken fragments
 (it only blocks newly introduced broken links), but source-quality cleanup is still
 recommended for better reader compatibility.
 
@@ -146,11 +162,13 @@ You can append extra instructions with:
 - `--epub-baseline` runs a dedicated roundtrip path and exits early from translation/rendering steps.
 - Baseline output is `<temp_dir>/baseline_roundtrip.epub` and preserves source package content (no text mutation).
 - Baseline parser extracts OPF path, cover metadata pointer, and spine order for structural validation.
-- `--epub-translate-roundtrip` runs a package-aware translation path and exits early from the legacy markdown pipeline.
-- Translate roundtrip output is `<temp_dir>/translated_roundtrip.epub`.
-- Translate roundtrip currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
-- Translate roundtrip uses per-document batch translation (`%%` segment separator) to reduce API call count versus per-segment calls.
+- `--workflow epub` runs the EPUB package-preserving translation workflow and exits early from the legacy markdown pipeline.
+- `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`.
+- EPUB workflow output is `<temp_dir>/translated_roundtrip.epub`.
+- EPUB workflow currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
+- EPUB workflow uses per-document batch translation (`%%` segment separator) to reduce API call count versus per-segment calls.
 - If batch output segment count mismatches, it automatically falls back to binary split retry for that document.
+- In EPUB workflow, table cells are source-only (no `th/td` bilingual injection) for layout stability.
 - Model fallback chain is intentionally out of scope for this phase.
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
 - Bilingual content appears after Step 4 merge (`output.md`).
@@ -171,7 +189,7 @@ You can append extra instructions with:
 
 See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline policy and limits.
 
-## EPUB translate roundtrip acceptance checklist
+## EPUB workflow acceptance checklist
 
 - Generated EPUB exists at `<temp_dir>/translated_roundtrip.epub`.
 - Spine XHTML content contains both source and translated text in alternating order.
@@ -179,7 +197,7 @@ See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline p
 - Cover/toc/spine pointers remain resolvable.
 - Fragment links and manifest asset references pass strict validation.
 
-See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for translation roundtrip scope and limits.
+See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for EPUB workflow scope and limits.
 
 ### Translation strategy reference
 

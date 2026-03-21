@@ -71,8 +71,10 @@ show_help() {
 ${SCRIPT_NAME} v${VERSION} - Book Translation Tool
 
 DESCRIPTION:
-    Translates PDF, DOCX, or EPUB files to HTML using Gemini CLI.
-    Automatically runs all 7 steps in sequence.
+    Translates PDF, DOCX, or EPUB files with Gemini CLI.
+    Uses workflow-based execution:
+      - epub: package-preserving EPUB translation workflow
+      - markdown: markdown conversion workflow
     Creates and manages Python virtual environment automatically.
     Uses Calibre for unified file conversion via HTMLZ format.
 
@@ -94,9 +96,9 @@ OPTIONS:
     --bilingual-style STYLE Bilingual layout style (alternating, default: alternating)
     --benchmark            Run benchmark_models.py after conversion and exit
     --quota-status         Print today's quota usage and exit
-    --epub-baseline        Run EPUB roundtrip baseline mode and exit
-    --epub-translate-roundtrip Run EPUB package-aware translation roundtrip mode and exit
-    --workflow MODE        Workflow mode: epub|markdown (default: auto by input type)
+    --epub-baseline        Run EPUB baseline mode (no text mutation) and exit
+    --epub-translate-roundtrip Deprecated alias for --workflow epub
+    --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -115,11 +117,12 @@ NOTE:
     which creates optimized markdown chunks ready for translation.
 
 EXAMPLES:
-    # Basic usage
-    ${SCRIPT_NAME} book.pdf
+    # EPUB input defaults to package-preserving workflow
+    ${SCRIPT_NAME} book.epub
 
-    # Translate to English with custom output
-    ${SCRIPT_NAME} --olang en book.pdf
+    # Explicit workflow selection
+    ${SCRIPT_NAME} --workflow epub book.epub
+    ${SCRIPT_NAME} --workflow markdown book.pdf
 
     # Clean temp and run with verbose output
     ${SCRIPT_NAME} --clean -v book.epub
@@ -133,7 +136,10 @@ EXAMPLES:
     # Run only format conversion steps (5-7)
     ${SCRIPT_NAME} --start-step 5 --end-step 7 book.docx
 
-    # Dry run to see what would happen
+    # Deprecated alias (still supported)
+    ${SCRIPT_NAME} --epub-translate-roundtrip book.epub
+
+    # Dry run to see resolved workflow
     ${SCRIPT_NAME} --dry-run book.pdf
 
 REQUIREMENTS:

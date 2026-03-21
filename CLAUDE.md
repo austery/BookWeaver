@@ -34,7 +34,9 @@ Extra user constraints are appended by `-p/--prompt`.
 - Step 3 output is translation-only (`output_pageXXXX.md`)
 - Bilingual merged content is produced at Step 4 (`output.md`)
 - `--epub-baseline` triggers a dedicated baseline path and exits after generating `baseline_roundtrip.epub`
-- `--epub-translate-roundtrip` triggers package-aware EPUB translation and exits after generating `translated_roundtrip.epub`
+- `--workflow epub` triggers package-preserving EPUB translation and exits after generating `translated_roundtrip.epub`
+- `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`
+- default workflow resolution: EPUB input -> `epub`, non-EPUB input -> `markdown`
 - `--output-format` is handled in Step 7 (`html` skips conversion)
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
 - Step 3 model selection:
@@ -46,6 +48,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
 - Baseline quality contract and limits are defined in `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md`
 - Translate roundtrip quality contract and limits are defined in `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md`
+- EPUB workflow keeps table cells source-only for layout stability (no `th/td` bilingual injection)
 
 ## Dev verification
 
