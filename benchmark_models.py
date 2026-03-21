@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from ai.evaluation import gate_decision, weighted_quality_score
 from ai.gemini_provider import GeminiProvider
 
 
@@ -90,6 +91,39 @@ def run_benchmark(
             }
             for item in results
         ],
+    }
+
+
+def build_mode_gate_report(
+    *,
+    fast_scores: dict[str, float],
+    orchestrated_scores: dict[str, float],
+    fast_runtime_seconds: float,
+    orchestrated_runtime_seconds: float,
+) -> dict[str, float | str]:
+    fast_weighted = weighted_quality_score(
+        terminology=fast_scores["terminology"],
+        fidelity=fast_scores["fidelity"],
+        fluency=fast_scores["fluency"],
+    )
+    orchestrated_weighted = weighted_quality_score(
+        terminology=orchestrated_scores["terminology"],
+        fidelity=orchestrated_scores["fidelity"],
+        fluency=orchestrated_scores["fluency"],
+    )
+    quality_delta = orchestrated_weighted - fast_weighted
+    runtime_ratio = (
+        orchestrated_runtime_seconds / fast_runtime_seconds
+        if fast_runtime_seconds > 0
+        else float("inf")
+    )
+    decision = gate_decision(quality_delta=quality_delta, runtime_ratio=runtime_ratio)
+    return {
+        "fast_weighted_quality": fast_weighted,
+        "orchestrated_weighted_quality": orchestrated_weighted,
+        "quality_delta": quality_delta,
+        "runtime_ratio": runtime_ratio,
+        "gate_decision": decision,
     }
 
 
