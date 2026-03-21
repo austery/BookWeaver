@@ -20,6 +20,7 @@ from ai.gemini_provider import GeminiProvider
 from ai.mode_contract import parse_workflow_mode
 from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
+from ai.orchestrator import run_orchestrated_translation
 
 
 def load_config(temp_dir: str) -> dict[str, Any]:
@@ -381,6 +382,7 @@ def translate_markdown_files(
     forced_model: str | None = None,
     runtime_config: dict[str, Any] | None = None,
     resume: bool = True,
+    workflow_mode: str = "fast",
 ) -> None:
     """Translate all markdown files in temp directory"""
     print(f"Translating markdown files to {output_lang}...")
@@ -406,6 +408,49 @@ def translate_markdown_files(
     if not md_files:
         print("Error: No markdown files found. Run 02_split_to_md.py first.")
         sys.exit(1)
+
+    if workflow_mode == "orchestrated":
+        pages: dict[str, str] = {}
+        for md_file in md_files:
+            filename = os.path.basename(md_file)
+            try:
+                with open(md_file, "r", encoding="utf-8") as f:
+                    pages[filename] = f.read()
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+                sys.exit(1)
+
+        orchestrated_outputs = run_orchestrated_translation(
+            temp_dir=Path(temp_dir),
+            pages=pages,
+            output_lang=output_lang,
+        )
+
+        missing_pages = sorted(set(pages.keys()) - set(orchestrated_outputs.keys()))
+        if missing_pages:
+            preview = ", ".join(missing_pages[:5])
+            extra = "" if len(missing_pages) <= 5 else ", ..."
+            print(
+                f"Error: Orchestrator failed to translate {len(missing_pages)} pages: "
+                f"{preview}{extra}"
+            )
+            sys.exit(1)
+
+        for filename, translated_content in orchestrated_outputs.items():
+            output_filename = f"output_{filename}"
+            output_path = os.path.join(temp_dir, output_filename)
+            try:
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write(translated_content)
+            except Exception as e:
+                print(f"Error writing {output_filename}: {e}")
+                sys.exit(1)
+
+        print(
+            f"Orchestrated translation complete: translated={len(orchestrated_outputs)}, "
+            f"total={len(md_files)}"
+        )
+        return
 
     total_files = len(md_files)
     translated_count = 0
@@ -695,6 +740,7 @@ def main() -> None:
         forced_model=args.model,
         runtime_config=runtime_config,
         resume=not args.no_resume,
+        workflow_mode=workflow_mode,
     )
 
     print("\n=== Step 3 Complete ===")

@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_step3_module():
     project_root = Path(__file__).resolve().parents[2]
@@ -206,3 +208,54 @@ def test_step3_translate_markdown_files_can_disable_resume(monkeypatch, temp_dir
     progress_log = temp_dir / "translation_progress.log"
     assert progress_log.exists()
     assert "page0001.md" in progress_log.read_text(encoding="utf-8")
+
+
+def test_step3_translate_markdown_files_orchestrated_routes_to_orchestrator(monkeypatch, temp_dir):
+    module = _load_step3_module()
+
+    page_file = temp_dir / "page0001.md"
+    page_file.write_text("Hello world", encoding="utf-8")
+
+    called: dict[str, object] = {}
+
+    def fake_orchestrated(
+        *, temp_dir: Path, pages: dict[str, str], output_lang: str
+    ) -> dict[str, str]:
+        called["temp_dir"] = temp_dir
+        called["pages"] = dict(pages)
+        called["output_lang"] = output_lang
+        return {"page0001.md": "ORCH:new translation"}
+
+    monkeypatch.setattr(module, "run_orchestrated_translation", fake_orchestrated)
+
+    module.translate_markdown_files(
+        str(temp_dir),
+        "zh",
+        runtime_config={"default_model": "gemini-2.5-flash"},
+        workflow_mode="orchestrated",
+    )
+
+    output_file = temp_dir / "output_page0001.md"
+    assert output_file.read_text(encoding="utf-8") == "ORCH:new translation"
+    assert called["output_lang"] == "zh"
+    assert called["pages"] == {"page0001.md": "Hello world"}
+
+
+def test_step3_orchestrated_fails_when_orchestrator_returns_incomplete_pages(monkeypatch, temp_dir):
+    module = _load_step3_module()
+    (temp_dir / "page0001.md").write_text("Hello one", encoding="utf-8")
+    (temp_dir / "page0002.md").write_text("Hello two", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module,
+        "run_orchestrated_translation",
+        lambda **kwargs: {"page0001.md": "ORCH:only one"},
+    )
+
+    with pytest.raises(SystemExit, match="1"):
+        module.translate_markdown_files(
+            str(temp_dir),
+            "zh",
+            runtime_config={"default_model": "gemini-2.5-flash"},
+            workflow_mode="orchestrated",
+        )
