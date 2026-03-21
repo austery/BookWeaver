@@ -31,6 +31,8 @@ BENCHMARK_MODE=false
 QUOTA_STATUS_MODE=false
 EPUB_BASELINE=false
 EPUB_TRANSLATE_ROUNDTRIP=false
+WORKFLOW_OVERRIDE=""
+RESOLVED_WORKFLOW=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -93,6 +95,7 @@ OPTIONS:
     --quota-status         Print today's quota usage and exit
     --epub-baseline        Run EPUB roundtrip baseline mode and exit
     --epub-translate-roundtrip Run EPUB package-aware translation roundtrip mode and exit
+    --workflow MODE        Workflow mode: epub|markdown (default: auto by input type)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -274,6 +277,20 @@ is_epub_file() {
     [[ "$input_file" == *.epub ]] || [[ "$input_file" == *.EPUB ]]
 }
 
+resolve_workflow_for_input() {
+    local input_file="$1"
+    local workflow_override="${2:-}"
+    if [[ -n "$workflow_override" ]]; then
+        echo "$workflow_override"
+        return 0
+    fi
+    if is_epub_file "$input_file"; then
+        echo "epub"
+    else
+        echo "markdown"
+    fi
+}
+
 is_supported_source_file() {
     local input_file="$1"
     is_epub_file "$input_file" || [[ "$input_file" == *.pdf ]] || [[ "$input_file" == *.PDF ]] || [[ "$input_file" == *.docx ]] || [[ "$input_file" == *.DOCX ]]
@@ -359,6 +376,10 @@ parse_args() {
                 EPUB_TRANSLATE_ROUNDTRIP=true
                 shift
                 ;;
+            --workflow)
+                WORKFLOW_OVERRIDE="$2"
+                shift 2
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -408,6 +429,11 @@ parse_args() {
 
     if [[ ! "$BILINGUAL_STYLE" =~ ^(alternating)$ ]]; then
         log_error "Invalid bilingual style: $BILINGUAL_STYLE (supported: alternating)"
+        exit 2
+    fi
+
+    if [[ -n "$WORKFLOW_OVERRIDE" ]] && [[ ! "$WORKFLOW_OVERRIDE" =~ ^(epub|markdown)$ ]]; then
+        log_error "Invalid workflow mode: $WORKFLOW_OVERRIDE (must be epub|markdown)"
         exit 2
     fi
 }
@@ -486,6 +512,8 @@ show_config() {
     echo "  Quota status mode: $QUOTA_STATUS_MODE"
     echo "  EPUB baseline mode: $EPUB_BASELINE"
     echo "  EPUB translate roundtrip mode: $EPUB_TRANSLATE_ROUNDTRIP"
+    echo "  Workflow override: ${WORKFLOW_OVERRIDE:-auto}"
+    echo "  Resolved workflow: $RESOLVED_WORKFLOW"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -537,6 +565,7 @@ main() {
 
     local base_temp_dir
     base_temp_dir="$(resolve_temp_dir "$INPUT_FILE")"
+    RESOLVED_WORKFLOW="$(resolve_workflow_for_input "$INPUT_FILE" "$WORKFLOW_OVERRIDE")"
     
     # Show configuration
     show_config
