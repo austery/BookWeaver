@@ -61,8 +61,7 @@ _HEADING_CLASS_HINTS = ("head", "title", "subhead")
 _TOC_DOC_HINTS = ("toc", "contents")
 _STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
 _TRANSLATION_CLASS = "bw-translation"
-_BLOCK_TAGS = {"p", "li", "blockquote", "td", "th", "dd"}
-_TABLE_CELL_TAGS = {"td", "th"}
+_BLOCK_TAGS = {"p", "li", "blockquote", "dd"}
 
 ET.register_namespace("", _XHTML_NS)
 
@@ -136,17 +135,7 @@ def _insert_translation_block(
     translation: str,
     parent_map: dict[ET.Element, ET.Element],
 ) -> None:
-    source_tag = _local_name(block_node.tag).lower()
     namespace = _tag_namespace(block_node.tag)
-    if source_tag in _TABLE_CELL_TAGS:
-        translated_block = ET.Element(
-            _qualified_tag("div", namespace),
-            attrib={"class": _TRANSLATION_CLASS},
-        )
-        translated_block.text = translation
-        block_node.append(translated_block)
-        return
-
     parent = parent_map.get(block_node)
     if parent is None:
         return
