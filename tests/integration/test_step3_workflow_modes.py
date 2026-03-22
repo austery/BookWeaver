@@ -26,12 +26,34 @@ def test_fast_and_orchestrated_emit_output_page_contract(tmp_path: Path) -> None
     (fast_dir / "page0001.md").write_text("Hello fast", encoding="utf-8")
     (orch_dir / "page0001.md").write_text("Hello orch", encoding="utf-8")
 
-    module.translate_with_gemini_cli = lambda *args, **kwargs: "FAST:translated"
+    fast_calls: list[dict[str, str]] = []
+
+    def fake_fast_translate(
+        text: str,
+        output_lang: str,
+        model: str,
+        custom_prompt: str | None = None,
+        max_retries: int = 3,
+        runtime_config: dict[str, object] | None = None,
+    ) -> str:
+        fast_calls.append(
+            {
+                "text": text,
+                "output_lang": output_lang,
+                "model": model,
+                "custom_prompt": custom_prompt or "",
+            }
+        )
+        return "FAST:translated"
+
+    module.translate_with_gemini_cli = fake_fast_translate
     module.select_model_with_fallback = lambda *args, **kwargs: "gemini-2.5-flash"
     module.time.sleep = lambda *_: None
-    module.run_orchestrated_translation = lambda *, temp_dir, pages, output_lang: {
-        name: f"ORCH:{content}" for name, content in pages.items()
-    }
+    module.run_orchestrated_translation = (
+        lambda *, temp_dir, pages, output_lang, model, custom_prompt, max_retries, runtime_config=None, phase="translate": {
+            name: f"ORCH:{content}" for name, content in pages.items()
+        }
+    )
 
     runtime_config = {"default_model": "gemini-2.5-flash"}
     module.translate_markdown_files(
@@ -51,5 +73,9 @@ def test_fast_and_orchestrated_emit_output_page_contract(tmp_path: Path) -> None
     orch_out = orch_dir / "output_page0001.md"
     assert fast_out.exists()
     assert orch_out.exists()
-    assert fast_out.read_text(encoding="utf-8")
-    assert orch_out.read_text(encoding="utf-8")
+    assert fast_out.read_text(encoding="utf-8") == "FAST:translated"
+    assert orch_out.read_text(encoding="utf-8") == "ORCH:Hello orch"
+    assert len(fast_calls) == 1
+    assert fast_calls[0]["text"] == "Hello fast"
+    assert fast_calls[0]["output_lang"] == "zh"
+    assert fast_calls[0]["model"] == "gemini-2.5-flash"

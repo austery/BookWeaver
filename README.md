@@ -171,6 +171,7 @@ You can append extra instructions with:
 - In EPUB workflow, table cells are source-only (no `th/td` bilingual injection) for layout stability.
 - Model fallback chain is intentionally out of scope for this phase.
 - Step 3 output files (`output_pageXXXX.md`) are translation-only.
+- Step 3 orchestrated mode supports `--orchestrated-phase prompt-only`, which writes orchestration artifacts (`01-analysis.md`, `02-prompt.md`, `metrics.json`) without generating `output_pageXXXX.md`.
 - Bilingual content appears after Step 4 merge (`output.md`).
 - Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
 - `--bilingual-style` currently supports only `alternating`.

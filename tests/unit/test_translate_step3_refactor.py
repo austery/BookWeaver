@@ -74,6 +74,87 @@ def test_step3_parse_arguments_accepts_workflow_mode(monkeypatch):
     assert args.workflow_mode == "orchestrated"
 
 
+def test_step3_parse_arguments_accepts_orchestrated_phase(monkeypatch):
+    module = _load_step3_module()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            "/tmp/demo",
+            "--orchestrated-phase",
+            "prompt-only",
+        ],
+    )
+    args = module.parse_arguments()
+    assert args.orchestrated_phase == "prompt-only"
+
+
+def test_step3_main_allows_prompt_only_phase(monkeypatch, tmp_path):
+    module = _load_step3_module()
+    temp_dir = tmp_path / "demo"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    (temp_dir / "config.txt").write_text("output_lang=zh\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "03_translate_md.py",
+            "--temp-dir",
+            str(temp_dir),
+            "--workflow-mode",
+            "orchestrated",
+            "--orchestrated-phase",
+            "prompt-only",
+        ],
+    )
+    monkeypatch.setattr(module, "check_gemini_cli", lambda: True)
+    monkeypatch.setattr(
+        module, "load_runtime_config", lambda: {"default_model": "gemini-2.5-flash"}
+    )
+    called: dict[str, object] = {}
+
+    def fake_translate_markdown_files(
+        temp_dir: str,
+        output_lang: str,
+        custom_prompt: str | None = None,
+        forced_model: str | None = None,
+        runtime_config: dict[str, object] | None = None,
+        resume: bool = True,
+        workflow_mode: str = "fast",
+        orchestrated_phase: str = "translate",
+    ) -> None:
+        called["temp_dir"] = temp_dir
+        called["output_lang"] = output_lang
+        called["workflow_mode"] = workflow_mode
+        called["orchestrated_phase"] = orchestrated_phase
+
+    monkeypatch.setattr(module, "translate_markdown_files", fake_translate_markdown_files)
+    module.main()
+    assert called["workflow_mode"] == "orchestrated"
+    assert called["orchestrated_phase"] == "prompt-only"
+
+
+def test_step3_translate_markdown_files_prompt_only_accepts_empty_orchestrator_outputs(
+    monkeypatch, temp_dir
+):
+    module = _load_step3_module()
+    (temp_dir / "page0001.md").write_text("Hello world", encoding="utf-8")
+    monkeypatch.setattr(module, "run_orchestrated_translation", lambda **kwargs: {})
+
+    module.translate_markdown_files(
+        str(temp_dir),
+        "zh",
+        runtime_config={"default_model": "gemini-2.5-flash"},
+        workflow_mode="orchestrated",
+        orchestrated_phase="prompt-only",
+    )
+
+    assert not (temp_dir / "output_page0001.md").exists()
+
+
 def test_step3_load_runtime_config_has_default_model():
     module = _load_step3_module()
     config = module.load_runtime_config()
@@ -219,11 +300,24 @@ def test_step3_translate_markdown_files_orchestrated_routes_to_orchestrator(monk
     called: dict[str, object] = {}
 
     def fake_orchestrated(
-        *, temp_dir: Path, pages: dict[str, str], output_lang: str
+        *,
+        temp_dir: Path,
+        pages: dict[str, str],
+        output_lang: str,
+        model: str,
+        custom_prompt: str | None,
+        max_retries: int,
+        runtime_config: dict[str, object] | None,
+        phase: str,
     ) -> dict[str, str]:
         called["temp_dir"] = temp_dir
         called["pages"] = dict(pages)
         called["output_lang"] = output_lang
+        called["model"] = model
+        called["custom_prompt"] = custom_prompt
+        called["max_retries"] = max_retries
+        called["runtime_config"] = runtime_config
+        called["phase"] = phase
         return {"page0001.md": "ORCH:new translation"}
 
     monkeypatch.setattr(module, "run_orchestrated_translation", fake_orchestrated)
@@ -233,12 +327,51 @@ def test_step3_translate_markdown_files_orchestrated_routes_to_orchestrator(monk
         "zh",
         runtime_config={"default_model": "gemini-2.5-flash"},
         workflow_mode="orchestrated",
+        orchestrated_phase="translate",
     )
 
     output_file = temp_dir / "output_page0001.md"
     assert output_file.read_text(encoding="utf-8") == "ORCH:new translation"
     assert called["output_lang"] == "zh"
     assert called["pages"] == {"page0001.md": "Hello world"}
+    assert called["model"] == "gemini-2.5-flash"
+    assert called["custom_prompt"] is None
+    assert called["max_retries"] == 6
+    assert called["runtime_config"] == {"default_model": "gemini-2.5-flash"}
+    assert called["phase"] == "translate"
+
+
+def test_step3_translate_markdown_files_forwards_orchestrated_phase(monkeypatch, temp_dir):
+    module = _load_step3_module()
+    (temp_dir / "page0001.md").write_text("Hello world", encoding="utf-8")
+
+    called: dict[str, object] = {}
+
+    def fake_orchestrated(
+        *,
+        temp_dir: Path,
+        pages: dict[str, str],
+        output_lang: str,
+        model: str,
+        custom_prompt: str | None,
+        max_retries: int,
+        runtime_config: dict[str, object] | None,
+        phase: str,
+    ) -> dict[str, str]:
+        called["phase"] = phase
+        return {}
+
+    monkeypatch.setattr(module, "run_orchestrated_translation", fake_orchestrated)
+
+    module.translate_markdown_files(
+        str(temp_dir),
+        "zh",
+        runtime_config={"default_model": "gemini-2.5-flash"},
+        workflow_mode="orchestrated",
+        orchestrated_phase="prompt-only",
+    )
+
+    assert called["phase"] == "prompt-only"
 
 
 def test_step3_orchestrated_fails_when_orchestrator_returns_incomplete_pages(monkeypatch, temp_dir):

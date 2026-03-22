@@ -383,6 +383,7 @@ def translate_markdown_files(
     runtime_config: dict[str, Any] | None = None,
     resume: bool = True,
     workflow_mode: str = "fast",
+    orchestrated_phase: str = "translate",
 ) -> None:
     """Translate all markdown files in temp directory"""
     print(f"Translating markdown files to {output_lang}...")
@@ -424,17 +425,30 @@ def translate_markdown_files(
             temp_dir=Path(temp_dir),
             pages=pages,
             output_lang=output_lang,
+            model=str(forced_model or config.get("default_model", "gemini-2.5-flash")),
+            custom_prompt=custom_prompt,
+            max_retries=6,
+            runtime_config=config,
+            phase=orchestrated_phase,
         )
 
-        missing_pages = sorted(set(pages.keys()) - set(orchestrated_outputs.keys()))
-        if missing_pages:
-            preview = ", ".join(missing_pages[:5])
-            extra = "" if len(missing_pages) <= 5 else ", ..."
-            print(
-                f"Error: Orchestrator failed to translate {len(missing_pages)} pages: "
-                f"{preview}{extra}"
-            )
-            sys.exit(1)
+        if orchestrated_phase == "translate":
+            missing_pages = sorted(set(pages.keys()) - set(orchestrated_outputs.keys()))
+            if missing_pages:
+                preview = ", ".join(missing_pages[:5])
+                extra = "" if len(missing_pages) <= 5 else ", ..."
+                print(
+                    f"Error: Orchestrator failed to translate {len(missing_pages)} pages: "
+                    f"{preview}{extra}"
+                )
+                sys.exit(1)
+        else:
+            if orchestrated_outputs:
+                print(
+                    "Error: prompt-only phase should not return translated outputs. "
+                    f"Received {len(orchestrated_outputs)} entries."
+                )
+                sys.exit(1)
 
         for filename, translated_content in orchestrated_outputs.items():
             output_filename = f"output_{filename}"
@@ -646,6 +660,12 @@ def parse_arguments():
         default=None,
         help="Workflow mode (fast, orchestrated, auto).",
     )
+    parser.add_argument(
+        "--orchestrated-phase",
+        default="translate",
+        choices=["prompt-only", "translate"],
+        help="Execution phase for orchestrated workflow.",
+    )
 
     parser.add_argument(
         "--no-resume",
@@ -687,6 +707,7 @@ def main() -> None:
     if args.model:
         print(f"Forced model from CLI: {args.model}")
     print(f"Workflow mode: {workflow_mode}")
+    print(f"Orchestrated phase: {args.orchestrated_phase}")
 
     if args.preview_model_selection:
         preview_runtime_config = runtime_config
@@ -741,6 +762,7 @@ def main() -> None:
         runtime_config=runtime_config,
         resume=not args.no_resume,
         workflow_mode=workflow_mode,
+        orchestrated_phase=args.orchestrated_phase,
     )
 
     print("\n=== Step 3 Complete ===")
