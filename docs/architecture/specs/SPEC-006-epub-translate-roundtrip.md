@@ -100,6 +100,35 @@ Strict fail-fast contract:
 - **Utilities**: `ai/epub_package.py`
 - **Tests**: `tests/unit/test_epub_baseline_cli.py`, `tests/unit/test_epub_translate_patcher.py`, `tests/unit/test_epub_translate_roundtrip.py`
 
-## 9. External Reference
+## 9. Experiment Record (Baoyu-Normal Alignment)
+
+### Motivation
+
+We evaluated whether Baoyu-style normal workflow ideas (analysis-first + generated shared prompt) could improve EPUB translation quality enough to justify added complexity and runtime cost.
+
+### Experiment summary
+
+- Approach:
+  - generated context artifacts (`01-analysis.md`, `02-prompt.md`, `context_manifest.json`)
+  - reused generated prompt for translation pass
+- Baseline:
+  - existing immersive-style prompt path
+- Scope:
+  - same source book sample, same model settings, first chapters A/B comparison
+
+### Findings
+
+- Dynamic path can produce different literary tone in some segments.
+- For this evaluation, terminology choices and named-entity handling were not consistently better than baseline.
+- Runtime overhead was not consistently acceptable and could spike on some chapters.
+- Exploratory runs also exposed quality risks (including context bleed in dynamic outputs), making current dynamic contract unsafe for default rollout.
+
+### Product decision
+
+- Keep immersive baseline prompt as default production strategy.
+- Archive Baoyu-normal dynamic prompt experiment on feature branch.
+- Do not merge this experiment into `main` unless future benchmark gates demonstrate clear, stable quality gains with acceptable runtime overhead.
+
+## 10. External Reference
 
 - Immersive Translate `1.26.6` is used as a translation UX/prompt reference point, especially for paragraph-structure-preserving translation output expectations.

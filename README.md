@@ -217,6 +217,28 @@ Design reference for future prompt/segmentation optimization:
 
 - Immersive Translate `1.26.6` (paragraph-structure-preserving prompt style).
 
+## Archive note: Baoyu-normal dynamic prompt experiment
+
+In this branch, we ran an EPUB-first experiment to align context artifacts with Baoyu normal workflow concepts (analysis-first and generated shared prompt), then evaluated whether the extra analysis stage is worth production rollout.
+
+Why we tried it:
+
+- improve translation context quality by generating `01-analysis.md` and `02-prompt.md` before full-book translation
+- follow a reusable file-based workflow inspired by Baoyu skills
+
+What we observed in A/B checks (same model, same book sample):
+
+- style differences were visible (dynamic output can be more literary in some passages)
+- terminology consistency and named-entity choices were not consistently better than the immersive baseline prompt
+- runtime overhead could be substantially higher for some chapters
+- quality regressions (including context bleed in some dynamic outputs) were observed in exploratory runs
+
+Decision:
+
+- keep immersive baseline prompt as the practical default
+- archive dynamic prompt exploration on this feature branch
+- do not roll this experiment into `main` unless future benchmark gates show clear and stable quality gains
+
 ## Config
 
 - Runtime config template: `config/config.json.example`
