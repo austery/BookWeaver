@@ -1,10 +1,10 @@
 ---
 specId: SPEC-006
 title: EPUB Translate Roundtrip Mode
-status: ✅ 已完成 (Completed)
+status: ✅ 已完成 (Completed, Context Pass Extended)
 priority: P1 - Core Feature
 creationDate: 2026-03-17
-lastUpdateDate: 2026-03-17
+lastUpdateDate: 2026-03-22
 owner: Lei Peng (AI-Assisted)
 relatedSpecs:
   - SPEC-005
@@ -39,12 +39,17 @@ The default markdown-render-convert translation pipeline is effective for genera
 1. Load source EPUB package model.
 2. Select translatable spine XHTML documents.
 3. Extract body text segments and translate via Gemini CLI.
-4. Batch segments per document using `%%` separators and parse translated output with strict segment-count checks.
-5. If segment counts mismatch, retry with binary split sub-batches until aligned or fail.
-6. Patch source XHTML with alternating bilingual text.
-7. Validate package structure, fragment links, and asset references strictly.
-8. Repack to `<temp_dir>/translated_roundtrip.epub`.
-9. Exit without running legacy step-based markdown pipeline.
+4. Run EPUB context pass (default `auto`) to select representative docs (`TOC + Preface + Chapter 1` heuristics), sample paragraphs with budget controls, and generate:
+   - `<temp_dir>/epub_orchestration/01-analysis.md`
+   - `<temp_dir>/epub_orchestration/02-prompt.md`
+   - `<temp_dir>/epub_orchestration/context_manifest.json`
+5. Batch segments per document using `%%` separators and parse translated output with strict segment-count checks.
+6. If segment counts mismatch, retry with binary split sub-batches until aligned or fail.
+7. Translate all spine docs using the shared context prompt (`02-prompt.md` content).
+8. Patch source XHTML with alternating bilingual text.
+9. Validate package structure, fragment links, and asset references strictly.
+10. Repack to `<temp_dir>/translated_roundtrip.epub`.
+11. Exit without running legacy step-based markdown pipeline.
 
 ## 4. Integrity and Failure Policy
 
@@ -62,6 +67,12 @@ Strict fail-fast contract:
 - Resource paths and OPF ordering remain unchanged.
 - Mode is opt-in via `--epub-translate-roundtrip`; default workflow remains unchanged.
 - Model fallback chain is out of scope for this phase.
+- Context pass controls:
+  - `--context-pass-mode auto|off` (default `auto`)
+  - `--force-context-rebuild`
+  - `--context-max-paragraphs-per-doc` (default `8`)
+  - `--context-max-paragraphs-total` (default `120`)
+- Checkpoint compatibility now includes `context_signature` and `prompt_hash`; mismatches invalidate resume state.
 
 ## 6. Acceptance Criteria
 
@@ -71,6 +82,9 @@ Strict fail-fast contract:
 - [x] Batch translation parser/retry tests cover `%%` alignment and split retry behavior.
 - [x] Output EPUB is generated as `<temp_dir>/translated_roundtrip.epub`.
 - [x] Repository quality gates pass (`ruff`, `pytest`, shell syntax, py_compile).
+- [x] Context pass artifacts are generated under `<temp_dir>/epub_orchestration/`.
+- [x] Shared context prompt is reused for full spine translation.
+- [x] Context-aware checkpoint invalidation works for signature/hash changes and forced rebuild.
 
 ## 7. E2E Validation Checklist
 

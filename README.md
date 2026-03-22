@@ -64,6 +64,10 @@ which pandoc
 
 # Deprecated alias for EPUB workflow (still supported)
 ./translatebook.sh --epub-translate-roundtrip --olang zh /path/to/book.epub
+
+# EPUB context pass controls (EPUB workflow only)
+./translatebook.sh --workflow epub --context-pass-mode auto --context-max-paragraphs-per-doc 8 --context-max-paragraphs-total 120 /path/to/book.epub
+./translatebook.sh --workflow epub --force-context-rebuild /path/to/book.epub
 ```
 
 Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
@@ -165,6 +169,12 @@ You can append extra instructions with:
 - `--workflow epub` runs the EPUB package-preserving translation workflow and exits early from the legacy markdown pipeline.
 - `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`.
 - EPUB workflow output is `<temp_dir>/translated_roundtrip.epub`.
+- EPUB workflow now runs a context pass by default (`TOC + Preface + Chapter 1` heuristics) and writes:
+  - `<temp_dir>/epub_orchestration/01-analysis.md`
+  - `<temp_dir>/epub_orchestration/02-prompt.md`
+  - `<temp_dir>/epub_orchestration/context_manifest.json`
+- EPUB workflow reuses the generated `02-prompt.md` text as the shared translation prompt for all spine docs.
+- EPUB checkpoint state now includes context compatibility (`context_signature`, `prompt_hash`); context changes invalidate stale resume entries.
 - EPUB workflow currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
 - EPUB workflow uses per-document batch translation (`%%` segment separator) to reduce API call count versus per-segment calls.
 - If batch output segment count mismatches, it automatically falls back to binary split retry for that document.

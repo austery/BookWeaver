@@ -34,6 +34,12 @@ EPUB_TRANSLATE_ROUNDTRIP=false
 WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
+CONTEXT_PASS_MODE=""
+FORCE_CONTEXT_REBUILD=false
+CONTEXT_MAX_PARAGRAPHS_PER_DOC=""
+CONTEXT_MAX_PARAGRAPHS_TOTAL=""
+AUDIENCE_OVERRIDE=""
+STYLE_OVERRIDE=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -98,6 +104,14 @@ OPTIONS:
     --quota-status         Print today's quota usage and exit
     --epub-baseline        Run EPUB baseline mode (no text mutation) and exit
     --epub-translate-roundtrip Deprecated alias for --workflow epub
+    --context-pass-mode MODE Context pass mode for EPUB workflow (auto|off)
+    --force-context-rebuild Force rebuilding EPUB context artifacts
+    --context-max-paragraphs-per-doc NUM
+                           Max sampled paragraphs per context doc
+    --context-max-paragraphs-total NUM
+                           Max sampled paragraphs across context docs
+    --audience PRESET      Audience override for EPUB context pass
+    --style PRESET         Style override for EPUB context pass
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
@@ -389,6 +403,30 @@ parse_args() {
                 USED_LEGACY_ROUNDTRIP_FLAG=true
                 shift
                 ;;
+            --context-pass-mode)
+                CONTEXT_PASS_MODE="$2"
+                shift 2
+                ;;
+            --force-context-rebuild)
+                FORCE_CONTEXT_REBUILD=true
+                shift
+                ;;
+            --context-max-paragraphs-per-doc)
+                CONTEXT_MAX_PARAGRAPHS_PER_DOC="$2"
+                shift 2
+                ;;
+            --context-max-paragraphs-total)
+                CONTEXT_MAX_PARAGRAPHS_TOTAL="$2"
+                shift 2
+                ;;
+            --audience)
+                AUDIENCE_OVERRIDE="$2"
+                shift 2
+                ;;
+            --style)
+                STYLE_OVERRIDE="$2"
+                shift 2
+                ;;
             --workflow)
                 WORKFLOW_OVERRIDE="$2"
                 shift 2
@@ -527,6 +565,8 @@ show_config() {
     echo "  EPUB translate roundtrip mode: $EPUB_TRANSLATE_ROUNDTRIP"
     echo "  Workflow override: ${WORKFLOW_OVERRIDE:-auto}"
     echo "  Resolved workflow: $RESOLVED_WORKFLOW"
+    echo "  Audience override: ${AUDIENCE_OVERRIDE:-auto}"
+    echo "  Style override: ${STYLE_OVERRIDE:-auto}"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -663,6 +703,24 @@ main() {
         fi
         if [[ -n "$CUSTOM_PROMPT" ]]; then
             cmd+=(-p "$CUSTOM_PROMPT")
+        fi
+        if [[ -n "$CONTEXT_PASS_MODE" ]]; then
+            cmd+=(--context-pass-mode "$CONTEXT_PASS_MODE")
+        fi
+        if [[ "$FORCE_CONTEXT_REBUILD" == true ]]; then
+            cmd+=(--force-context-rebuild)
+        fi
+        if [[ -n "$CONTEXT_MAX_PARAGRAPHS_PER_DOC" ]]; then
+            cmd+=(--context-max-paragraphs-per-doc "$CONTEXT_MAX_PARAGRAPHS_PER_DOC")
+        fi
+        if [[ -n "$CONTEXT_MAX_PARAGRAPHS_TOTAL" ]]; then
+            cmd+=(--context-max-paragraphs-total "$CONTEXT_MAX_PARAGRAPHS_TOTAL")
+        fi
+        if [[ -n "$AUDIENCE_OVERRIDE" ]]; then
+            cmd+=(--audience "$AUDIENCE_OVERRIDE")
+        fi
+        if [[ -n "$STYLE_OVERRIDE" ]]; then
+            cmd+=(--style "$STYLE_OVERRIDE")
         fi
 
         local translate_cmd_display

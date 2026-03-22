@@ -26,6 +26,42 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="Optional checkpoint directory for resume; if omitted, no checkpoint is written",
     )
+    parser.add_argument(
+        "--context-pass-mode",
+        default="auto",
+        choices=["auto", "off"],
+        help="Context pass mode (default: auto)",
+    )
+    parser.add_argument(
+        "--force-context-rebuild",
+        action="store_true",
+        help="Force rebuilding context artifacts",
+    )
+    parser.add_argument(
+        "--context-max-paragraphs-per-doc",
+        type=int,
+        default=8,
+        help="Max sampled paragraphs per context document (default: 8)",
+    )
+    parser.add_argument(
+        "--context-max-paragraphs-total",
+        type=int,
+        default=120,
+        help="Max sampled paragraphs across context documents (default: 120)",
+    )
+    parser.add_argument(
+        "--audience",
+        default=None,
+        help="Target audience preset override (e.g. general|technical|academic|business)",
+    )
+    parser.add_argument(
+        "--style",
+        default=None,
+        help=(
+            "Translation style preset override "
+            "(e.g. storytelling|formal|technical|literal|academic|business)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -45,6 +81,12 @@ def main() -> None:
         model=args.model,
         custom_prompt=args.prompt,
         checkpoint_dir=checkpoint_dir,
+        context_pass_mode=args.context_pass_mode,
+        force_context_rebuild=args.force_context_rebuild,
+        context_max_paragraphs_per_doc=args.context_max_paragraphs_per_doc,
+        context_max_paragraphs_total=args.context_max_paragraphs_total,
+        audience=args.audience,
+        style=args.style,
     )
     print(
         f"Translated roundtrip generated: {result.output_epub} "

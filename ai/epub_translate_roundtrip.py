@@ -20,6 +20,11 @@ from ai.epub_package import (
     validate_manifest_assets,
     validate_package_structure,
 )
+from ai.epub_context_pass import (
+    ContextParagraph,
+    EpubContextArtifacts,
+    run_epub_context_pass,
+)
 from ai.gemini_provider import GeminiProvider
 
 TranslateFn = Callable[[str], str]
@@ -135,6 +140,15 @@ def _checkpoint_doc_filename(doc_path: str) -> str:
     return f"{digest}.xhtml"
 
 
+def _empty_checkpoint_snapshot() -> CheckpointSnapshot:
+    return CheckpointSnapshot(
+        overrides={},
+        entries={},
+        translated_segments=0,
+        translated_docs=0,
+    )
+
+
 def _write_checkpoint_state(
     *,
     checkpoint_dir: Path,
@@ -143,15 +157,19 @@ def _write_checkpoint_state(
     bilingual_style: str,
     model: str,
     custom_prompt: str | None,
+    context_signature: str | None,
+    prompt_hash: str | None,
     entries: dict[str, CheckpointEntry],
 ) -> None:
     state = {
-        "version": 1,
+        "state_version": 2,
         "source_signature": source_signature,
         "output_lang": output_lang,
         "bilingual_style": bilingual_style,
         "model": model,
         "custom_prompt": custom_prompt,
+        "context_signature": context_signature,
+        "prompt_hash": prompt_hash,
         "completed_docs": [
             {
                 "doc_path": entry.doc_path,
@@ -175,63 +193,45 @@ def _load_checkpoint_snapshot(
     bilingual_style: str,
     model: str,
     custom_prompt: str | None,
+    context_signature: str | None,
+    prompt_hash: str | None,
+    force_context_rebuild: bool,
 ) -> CheckpointSnapshot:
     if checkpoint_dir is None:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
+        return _empty_checkpoint_snapshot()
+    if force_context_rebuild:
+        return _empty_checkpoint_snapshot()
 
     state_file = _checkpoint_state_file(checkpoint_dir)
     if not state_file.exists():
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
+        return _empty_checkpoint_snapshot()
 
     raw_state = json.loads(state_file.read_text(encoding="utf-8"))
     if not isinstance(raw_state, dict):
         raise RuntimeError(f"Invalid checkpoint state format: {state_file}")
 
-    if raw_state.get("source_signature") != source_signature:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
+    compatibility_checks: tuple[tuple[str, object], ...] = (
+        ("source_signature", source_signature),
+        ("output_lang", output_lang),
+        ("bilingual_style", bilingual_style),
+        ("model", model),
+        ("custom_prompt", custom_prompt),
+    )
+    for state_key, expected_value in compatibility_checks:
+        if raw_state.get(state_key) != expected_value:
+            return _empty_checkpoint_snapshot()
+
+    state_version_raw = raw_state.get("state_version", raw_state.get("version", 1))
+    if not isinstance(state_version_raw, int):
+        raise RuntimeError(f"Invalid checkpoint state version in {state_file}")
+    if state_version_raw >= 2:
+        context_checks: tuple[tuple[str, object], ...] = (
+            ("context_signature", context_signature),
+            ("prompt_hash", prompt_hash),
         )
-    if raw_state.get("output_lang") != output_lang:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
-    if raw_state.get("bilingual_style") != bilingual_style:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
-    if raw_state.get("model") != model:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
-    if raw_state.get("custom_prompt") != custom_prompt:
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
+        for state_key, expected_value in context_checks:
+            if raw_state.get(state_key) != expected_value:
+                return _empty_checkpoint_snapshot()
 
     completed_docs = raw_state.get("completed_docs")
     if not isinstance(completed_docs, list):
@@ -278,6 +278,8 @@ def _persist_checkpoint_doc(
     bilingual_style: str,
     model: str,
     custom_prompt: str | None,
+    context_signature: str | None,
+    prompt_hash: str | None,
     doc_path: str,
     patched_xhtml_bytes: bytes,
     segment_count: int,
@@ -307,6 +309,8 @@ def _persist_checkpoint_doc(
         bilingual_style=bilingual_style,
         model=model,
         custom_prompt=custom_prompt,
+        context_signature=context_signature,
+        prompt_hash=prompt_hash,
         entries=updated_entries,
     )
     return updated_entries
@@ -450,6 +454,116 @@ def _resolve_spine_xhtml_paths(model: EpubPackageModel) -> list[str]:
     return spine_paths
 
 
+_TOC_HINTS = ("toc", "nav", "contents")
+_PREFACE_HINTS = ("preface", "introduction", "foreword", "prologue")
+_CHAPTER1_PATTERN = re.compile(r"(?<!\d)(?:chapter[-_ ]?0*1|ch[-_ ]?0*1)(?!\d)", re.IGNORECASE)
+
+
+def _is_hint_match(*, item_id: str, resolved_path: str, hints: tuple[str, ...]) -> bool:
+    lowered_id = item_id.lower()
+    lowered_path = resolved_path.lower()
+    return any(hint in lowered_id or hint in lowered_path for hint in hints)
+
+
+def _is_chapter1_match(*, item_id: str, resolved_path: str) -> bool:
+    basename = Path(resolved_path).name
+    return bool(_CHAPTER1_PATTERN.search(item_id) or _CHAPTER1_PATTERN.search(basename))
+
+
+def _select_context_docs(model: EpubPackageModel) -> list[str]:
+    spine_items: list[tuple[str, str]] = []
+    for itemref in model.spine_itemrefs:
+        manifest_item = model.manifest_items.get(itemref)
+        if manifest_item is None:
+            continue
+        if manifest_item.media_type != "application/xhtml+xml":
+            continue
+        spine_items.append((manifest_item.id, resolve_opf_href(model.opf_path, manifest_item.href)))
+
+    manifest_items = sorted(
+        (
+            (item.id, resolve_opf_href(model.opf_path, item.href))
+            for item in model.manifest_items.values()
+            if item.media_type == "application/xhtml+xml"
+        ),
+        key=lambda value: value[1],
+    )
+
+    selected: list[str] = []
+
+    toc_path = next(
+        (
+            path
+            for item_id, path in manifest_items
+            if _is_hint_match(item_id=item_id, resolved_path=path, hints=_TOC_HINTS)
+        ),
+        None,
+    )
+    if toc_path is not None:
+        selected.append(toc_path)
+
+    preface_path = next(
+        (
+            path
+            for item_id, path in spine_items
+            if _is_hint_match(item_id=item_id, resolved_path=path, hints=_PREFACE_HINTS)
+            and path not in selected
+        ),
+        None,
+    )
+    if preface_path is not None:
+        selected.append(preface_path)
+
+    chapter_path = next(
+        (
+            path
+            for item_id, path in spine_items
+            if _is_chapter1_match(item_id=item_id, resolved_path=path) and path not in selected
+        ),
+        None,
+    )
+    if chapter_path is not None:
+        selected.append(chapter_path)
+
+    return selected
+
+
+def _sample_context_paragraphs(
+    *,
+    selected_doc_paths: list[str],
+    source_docs: dict[str, str],
+    max_paragraphs_per_doc: int,
+    max_paragraphs_total: int,
+) -> list[ContextParagraph]:
+    if max_paragraphs_per_doc <= 0 or max_paragraphs_total <= 0:
+        return []
+
+    sampled: list[ContextParagraph] = []
+    remaining_total = max_paragraphs_total
+
+    for doc_path in selected_doc_paths:
+        if remaining_total <= 0:
+            break
+        source_xhtml = source_docs.get(doc_path)
+        if source_xhtml is None:
+            continue
+        segments = extract_translatable_segments(source_xhtml)
+        if not segments:
+            continue
+        take_count = min(max_paragraphs_per_doc, remaining_total, len(segments))
+        for index, segment in enumerate(segments[:take_count]):
+            sampled.append(
+                ContextParagraph(
+                    doc_path=doc_path,
+                    text=segment.text,
+                    order=index,
+                )
+            )
+        remaining_total -= take_count
+
+    return sampled
+
+
 def _resolve_manifest_xhtml_paths(model: EpubPackageModel) -> list[str]:
     return [
         resolve_opf_href(model.opf_path, item.href)
@@ -497,6 +611,12 @@ def run_translate_roundtrip(
     custom_prompt: str | None = None,
     translate_fn: TranslateFn | None = None,
     checkpoint_dir: Path | None = None,
+    context_pass_mode: str = "auto",
+    force_context_rebuild: bool = False,
+    context_max_paragraphs_per_doc: int = 8,
+    context_max_paragraphs_total: int = 120,
+    audience: str | None = None,
+    style: str | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -505,18 +625,6 @@ def run_translate_roundtrip(
     package_model = load_epub_package(source_epub)
     provider = GeminiProvider(model=resolved_model)
     source_signature = _compute_source_signature(source_epub)
-    checkpoint = _load_checkpoint_snapshot(
-        checkpoint_dir=checkpoint_dir,
-        source_signature=source_signature,
-        output_lang=output_lang,
-        bilingual_style=bilingual_style,
-        model=resolved_model,
-        custom_prompt=custom_prompt,
-    )
-    overrides: dict[str, bytes] = dict(checkpoint.overrides)
-    checkpoint_entries: dict[str, CheckpointEntry] = dict(checkpoint.entries)
-    translated_segments = checkpoint.translated_segments
-    translated_docs = checkpoint.translated_docs
     spine_docs = _resolve_spine_xhtml_paths(package_model)
     manifest_xhtml_paths = _resolve_manifest_xhtml_paths(package_model)
     print(
@@ -531,6 +639,58 @@ def run_translate_roundtrip(
             for xhtml_path in manifest_xhtml_paths
         }
         source_broken_links = set(validate_fragment_links(source_docs).broken_links)
+        context_artifacts: EpubContextArtifacts | None = None
+        shared_prompt: str | None = None
+        if context_pass_mode == "auto":
+            selected_docs = _select_context_docs(package_model)
+            sampled_paragraphs = _sample_context_paragraphs(
+                selected_doc_paths=selected_docs,
+                source_docs=source_docs,
+                max_paragraphs_per_doc=context_max_paragraphs_per_doc,
+                max_paragraphs_total=context_max_paragraphs_total,
+            )
+            context_artifacts = run_epub_context_pass(
+                artifacts_dir=output_epub.parent / "epub_orchestration",
+                selected_docs=selected_docs,
+                sampled_paragraphs=sampled_paragraphs,
+                output_lang=output_lang,
+                max_paragraphs_per_doc=context_max_paragraphs_per_doc,
+                max_paragraphs_total=context_max_paragraphs_total,
+                custom_prompt=custom_prompt,
+                audience=audience,
+                style=style,
+            )
+            if force_context_rebuild:
+                print("[INFO] Context pass rebuilt due to --force-context-rebuild", flush=True)
+            print(
+                "[INFO] Context pass generated: "
+                f"{context_artifacts.analysis_path.name}, "
+                f"{context_artifacts.prompt_path.name}, "
+                f"{context_artifacts.manifest_path.name}",
+                flush=True,
+            )
+            shared_prompt = context_artifacts.prompt_text
+        context_signature = None
+        prompt_hash = None
+        if context_artifacts is not None:
+            context_signature = context_artifacts.context_signature
+            prompt_hash = context_artifacts.prompt_hash
+
+        checkpoint = _load_checkpoint_snapshot(
+            checkpoint_dir=checkpoint_dir,
+            source_signature=source_signature,
+            output_lang=output_lang,
+            bilingual_style=bilingual_style,
+            model=resolved_model,
+            custom_prompt=custom_prompt,
+            context_signature=context_signature,
+            prompt_hash=prompt_hash,
+            force_context_rebuild=force_context_rebuild,
+        )
+        overrides: dict[str, bytes] = dict(checkpoint.overrides)
+        checkpoint_entries: dict[str, CheckpointEntry] = dict(checkpoint.entries)
+        translated_segments = checkpoint.translated_segments
+        translated_docs = checkpoint.translated_docs
 
         for doc_index, doc_path in enumerate(spine_docs, start=1):
             if doc_path in checkpoint_entries:
@@ -557,11 +717,14 @@ def run_translate_roundtrip(
             segment_texts = [segment.text for segment in segments]
             prompt = None
             if translate_fn is None:
-                prompt = _create_translation_prompt(
-                    output_lang,
-                    custom_prompt,
-                    segment_count=len(segment_texts),
-                )
+                if shared_prompt is not None:
+                    prompt = shared_prompt
+                else:
+                    prompt = _create_translation_prompt(
+                        output_lang,
+                        custom_prompt,
+                        segment_count=len(segment_texts),
+                    )
 
             def batch_translate(batch_text: str) -> str:
                 if translate_fn is not None:
@@ -621,6 +784,8 @@ def run_translate_roundtrip(
                 bilingual_style=bilingual_style,
                 model=resolved_model,
                 custom_prompt=custom_prompt,
+                context_signature=context_signature,
+                prompt_hash=prompt_hash,
                 doc_path=doc_path,
                 patched_xhtml_bytes=patched_bytes,
                 segment_count=len(segments),
