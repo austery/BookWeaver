@@ -48,6 +48,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
 - Baseline quality contract and limits are defined in `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md`
 - Translate roundtrip quality contract and limits are defined in `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md`
+- Baoyu-normal dynamic prompt experiment is archived on feature branch; immersive baseline prompt remains the practical default unless future benchmark gates prove clear gains.
 - EPUB workflow keeps table cells source-only for layout stability (no `th/td` bilingual injection)
 - Pro model in EPUB workflow pre-batches large chapter requests with balanced limits (18000 chars / 36 segments per batch) before recursive split-retry
 

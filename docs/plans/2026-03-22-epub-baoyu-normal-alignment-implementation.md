@@ -449,3 +449,10 @@ git add ai/epub_preset_resolver.py ai/epub_baoyu_analysis.py ai/epub_baoyu_promp
 git commit -m "feat: align epub context artifacts with baoyu normal workflow"
 ```
 
+---
+
+## Execution status update (archived)
+
+- Task1-3 was partially executed and validated in this feature branch.
+- Exploratory A/B signal was collected on Roman Emperor first two chapters.
+- Product decision: stop dynamic rollout and archive this track; no further implementation tasks are required for `main`.

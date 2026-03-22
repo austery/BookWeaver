@@ -145,3 +145,13 @@ No ad-hoc freeform prompt body. Section contract must remain stable for manual e
 ## Next step
 
 Create implementation plan with TDD-first tasks (preset model, analysis renderer, prompt renderer, integration wiring, verification).
+
+## Archive decision (2026-03-22)
+
+After exploratory A/B evaluation against the immersive baseline prompt (same book sample, same model), the dynamic Baoyu-normal prompt path was **not selected for rollout**.
+
+Decision record:
+
+- Keep immersive baseline prompt as default practical strategy.
+- Archive Baoyu-normal dynamic prompt exploration on feature branch.
+- Do not merge this track into `main` unless future benchmark gates show clear and stable quality gains with acceptable runtime overhead.
