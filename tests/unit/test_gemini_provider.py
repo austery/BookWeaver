@@ -48,3 +48,75 @@ def test_translate_chunk_raises_on_nonzero_return_code(monkeypatch: pytest.Monke
         )
 
     assert "API error" in str(exc_info.value)
+
+
+def test_rate_limit_error_raised_on_resource_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai.gemini_provider import GeminiProvider, RateLimitError
+
+    provider = GeminiProvider(model="gemini-3-pro-preview")
+
+    def mock_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["gemini"],
+            returncode=1,
+            stdout="",
+            stderr='{"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}}',
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    with pytest.raises(RateLimitError):
+        provider.translate_chunk(text="hello", chunk_size=5, system_prompt="translate")
+
+
+def test_rate_limit_error_is_subclass_of_runtime_error() -> None:
+    from ai.gemini_provider import RateLimitError
+
+    assert issubclass(RateLimitError, RuntimeError)
+
+
+def test_rate_limit_error_stores_retry_after() -> None:
+    from ai.gemini_provider import RateLimitError
+
+    err = RateLimitError("rate limited", retry_after_seconds=45)
+    assert err.retry_after_seconds == 45
+
+
+def test_rate_limit_error_retry_after_defaults_to_none() -> None:
+    from ai.gemini_provider import RateLimitError
+
+    err = RateLimitError("rate limited")
+    assert err.retry_after_seconds is None
+
+
+def test_non_rate_limit_failure_raises_runtime_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai.gemini_provider import GeminiProvider, RateLimitError
+
+    provider = GeminiProvider(model="gemini-3-pro-preview")
+
+    def mock_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["gemini"], returncode=1, stdout="", stderr="model not found"
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    with pytest.raises(RuntimeError) as exc_info:
+        provider.translate_chunk(text="hello", chunk_size=5, system_prompt="translate")
+    assert not isinstance(exc_info.value, RateLimitError)
+
+
+def test_parse_retry_after_json_format() -> None:
+    from ai.gemini_provider import _parse_retry_after
+
+    assert _parse_retry_after('"retryDelay": "45s"') == 45
+
+
+def test_parse_retry_after_natural_language() -> None:
+    from ai.gemini_provider import _parse_retry_after
+
+    assert _parse_retry_after("Please retry after 30 seconds.") == 30
+
+
+def test_parse_retry_after_returns_none_when_absent() -> None:
+    from ai.gemini_provider import _parse_retry_after
+
+    assert _parse_retry_after("RESOURCE_EXHAUSTED: quota exceeded") is None
