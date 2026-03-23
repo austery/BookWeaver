@@ -10,7 +10,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-import shutil
 
 
 def create_temp_directory(input_file, clean=False):

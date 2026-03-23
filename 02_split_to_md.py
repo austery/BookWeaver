@@ -10,8 +10,6 @@ import os
 import sys
 from pathlib import Path
 import re
-import io
-import json
 import subprocess
 from bs4 import BeautifulSoup
 import shutil

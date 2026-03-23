@@ -7,7 +7,6 @@ Then extract and process HTML content for translation pipeline
 from __future__ import annotations
 
 import os
-from typing import Any
 import sys
 import subprocess
 import zipfile
