@@ -33,8 +33,7 @@ _MODEL_ALIASES = {
     "flash": "gemini-2.5-flash",
     "lite": "gemini-2.5-flash-lite",
 }
-_PRO_PREBATCH_MAX_CHARS = 18_000
-_PRO_PREBATCH_MAX_SEGMENTS = 36
+_PRO_PREBATCH_MAX_CHARS: int = 60_000  # TODO(SPEC-007): move to config.json
 _SEGMENT_DELIMITER = "%%"
 _BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
 _BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
@@ -327,12 +326,22 @@ def plan_segment_batches(
     segments: list[str],
     *,
     max_batch_chars: int,
-    max_batch_segments: int,
 ) -> list[list[str]]:
+    """Group segments into batches limited by total character count.
+
+    A single segment that exceeds ``max_batch_chars`` is placed alone in its
+    own batch (never split). Segment order is preserved across all batches.
+
+    Args:
+        segments: Flat list of segment strings to batch.
+        max_batch_chars: Maximum total character count per batch (joining
+            separators included).
+
+    Returns:
+        List of batches, each batch being a non-empty list of segments.
+    """
     if max_batch_chars <= 0:
         raise ValueError("max_batch_chars must be > 0")
-    if max_batch_segments <= 0:
-        raise ValueError("max_batch_segments must be > 0")
     if not segments:
         return []
 
@@ -344,9 +353,8 @@ def plan_segment_batches(
         segment_len = len(segment)
         separator_len = len(_BATCH_SEPARATOR) if current_batch else 0
         next_chars = current_chars + separator_len + segment_len
-        exceeds_limits = len(current_batch) >= max_batch_segments or next_chars > max_batch_chars
 
-        if current_batch and exceeds_limits:
+        if current_batch and next_chars > max_batch_chars:
             planned_batches.append(current_batch)
             current_batch = [segment]
             current_chars = segment_len
@@ -578,7 +586,6 @@ def run_translate_roundtrip(
                 planned_batches = plan_segment_batches(
                     segment_texts,
                     max_batch_chars=_PRO_PREBATCH_MAX_CHARS,
-                    max_batch_segments=_PRO_PREBATCH_MAX_SEGMENTS,
                 )
                 print(
                     f"[INFO] [{doc_index}/{len(spine_docs)}] {doc_path} "

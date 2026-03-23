@@ -155,19 +155,23 @@ def _build_two_chapter_epub(path: Path) -> None:
         zip_file.writestr("cover.jpg", "x")
 
 
-def test_plan_segment_batches_enforces_limits_and_order() -> None:
+def test_plan_segment_batches_enforces_char_limit_and_order() -> None:
     from ai.epub_translate_roundtrip import plan_segment_batches
 
+    # Each segment is ~500 chars; 60K limit → batches of ~120 segments
     segments = [f"S{i}-" + ("x" * 500) for i in range(130)]
     batches = plan_segment_batches(
         segments,
-        max_batch_chars=18_000,
-        max_batch_segments=36,
+        max_batch_chars=60_000,
     )
 
-    assert all(1 <= len(batch) <= 36 for batch in batches)
+    # All segments preserved in order
     assert [item for batch in batches for item in batch] == segments
-    assert sum(len(b) for b in batches) == len(segments)
+    # No batch exceeds char limit (except a single oversized segment)
+    sep_len = len("\n\n%%\n\n")
+    for batch in batches:
+        joined_len = sum(len(s) for s in batch) + sep_len * (len(batch) - 1)
+        assert joined_len <= 60_000 or len(batch) == 1
 
 
 def test_plan_segment_batches_allows_single_oversized_segment() -> None:
@@ -177,12 +181,34 @@ def test_plan_segment_batches_allows_single_oversized_segment() -> None:
     batches = plan_segment_batches(
         [oversized, "ok"],
         max_batch_chars=18_000,
-        max_batch_segments=36,
     )
 
     assert len(batches) == 2
     assert batches[0] == [oversized]
     assert batches[1] == ["ok"]
+
+
+def test_plan_segment_batches_many_short_segments_stay_in_few_batches() -> None:
+    """812 short segments (like index.xhtml) must not create 23 batches."""
+    from ai.epub_translate_roundtrip import plan_segment_batches
+
+    segments = ["word" * 25 for _ in range(812)]  # ~100 chars each, 81K total
+    batches = plan_segment_batches(segments, max_batch_chars=60_000)
+
+    # Must be at most 2 batches (81K / 60K = 2), NOT 23
+    assert len(batches) <= 2
+    assert sum(len(b) for b in batches) == 812
+
+
+def test_plan_segment_batches_short_segments_within_limit_are_one_batch() -> None:
+    from ai.epub_translate_roundtrip import plan_segment_batches
+
+    # 200 segments × 10 chars each = 2000 chars total — well within 60K
+    segments = ["hello-ok!!" for _ in range(200)]
+    batches = plan_segment_batches(segments, max_batch_chars=60_000)
+
+    assert len(batches) == 1
+    assert batches[0] == segments
 
 
 def test_translate_roundtrip_rewrites_spine_xhtml_and_preserves_toc_file() -> None:
@@ -362,7 +388,8 @@ def test_translate_roundtrip_prebatches_pro_requests_before_retry() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         source_epub = Path(temp_dir) / "book-pro-prebatch.epub"
         output_epub = Path(temp_dir) / "translated-pro-prebatch.epub"
-        paragraphs = [f"P{i}-" + ("x" * 500) for i in range(80)]
+        # 130 paragraphs × ~500 chars = ~65K total → exceeds 60K char limit → 2 batches
+        paragraphs = [f"P{i}-" + ("x" * 500) for i in range(130)]
         _build_min_epub(source_epub, paragraphs=paragraphs)
 
         calls: list[str] = []
@@ -381,8 +408,12 @@ def test_translate_roundtrip_prebatches_pro_requests_before_retry() -> None:
             translate_fn=batch_translate,
         )
 
+        # 130 × ~504 chars ≈ 65K > 60K limit → must split into multiple batches
         assert len(calls) > 1
-        assert max(len(payload.split("\n\n%%\n\n")) for payload in calls) <= 36
+        # Each batch must stay within the 60K char limit (excluding single-segment overflow)
+        sep = "\n\n%%\n\n"
+        for payload in calls:
+            assert len(payload) <= 60_000 or sep not in payload
 
 
 def test_translate_roundtrip_flash_keeps_single_doc_batch() -> None:
