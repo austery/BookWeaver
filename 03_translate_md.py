@@ -19,23 +19,7 @@ from typing import Any
 from ai.gemini_provider import GeminiProvider
 from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
-
-
-def load_config(temp_dir: str) -> dict[str, Any]:
-    """Load configuration from step 1"""
-    config_file = os.path.join(temp_dir, "config.txt")
-    if not os.path.exists(config_file):
-        print("Error: config.txt not found. Run 01_prepare_env.py first.")
-        sys.exit(1)
-
-    config = {}
-    with open(config_file, "r", encoding="utf-8") as f:
-        for line in f:
-            if "=" in line:
-                key, value = line.strip().split("=", 1)
-                config[key] = value
-
-    return config
+from pipeline_utils import load_pipeline_config, get_language_name
 
 
 def check_gemini_cli() -> bool:
@@ -119,27 +103,6 @@ def load_runtime_config() -> dict[str, Any]:
     config["model_probe"] = model_probe
 
     return config
-
-
-def get_language_name(lang_code: str) -> str:
-    """Convert language code to full name"""
-    lang_map = {
-        "zh": "Chinese",
-        "en": "English",
-        "ja": "Japanese",
-        "ko": "Korean",
-        "fr": "French",
-        "de": "German",
-        "es": "Spanish",
-        "it": "Italian",
-        "pt": "Portuguese",
-        "ru": "Russian",
-        "ar": "Arabic",
-        "hi": "Hindi",
-        "th": "Thai",
-        "vi": "Vietnamese",
-    }
-    return lang_map.get(lang_code.lower(), lang_code)
 
 
 def load_prompt_template(runtime_config: dict[str, Any] | None = None) -> str:
@@ -654,7 +617,7 @@ def main() -> None:
     print(f"Using temp directory: {temp_dir}")
 
     # Load configuration
-    config = load_config(temp_dir)
+    config = load_pipeline_config(temp_dir)
     output_lang = args.output_lang or config["output_lang"]
 
     print(f"Target language: {output_lang}")

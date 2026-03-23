@@ -14,6 +14,8 @@ import argparse
 from html import unescape
 from pathlib import Path
 
+from pipeline_utils import load_pipeline_config
+
 # Try to import BeautifulSoup, fallback to regex if not available
 try:
     from bs4 import BeautifulSoup
@@ -53,31 +55,6 @@ def parse_markdown_heading(text):
     if not title:
         return None
     return level, title
-
-
-def load_config(temp_dir):
-    """Load configuration from step 1"""
-    config_file = os.path.join(temp_dir, "config.txt")
-    if not config_file or not os.path.exists(config_file):
-        # Try to find config in current directory temp folders
-        temp_dirs = [d for d in os.listdir(".") if d.endswith("_temp")]
-        if temp_dirs:
-            config_file = os.path.join(
-                max(temp_dirs, key=lambda d: os.path.getmtime(d)), "config.txt"
-            )
-
-    if not os.path.exists(config_file):
-        print("Warning: config.txt not found. Using default settings.")
-        return {"output_file": "output.html"}
-
-    config = {}
-    with open(config_file, "r", encoding="utf-8") as f:
-        for line in f:
-            if "=" in line:
-                key, value = line.strip().split("=", 1)
-                config[key] = value
-
-    return config
 
 
 def extract_headings(soup):
@@ -578,7 +555,11 @@ def main():
             print(f"Using fallback temp directory: {temp_dir}")
 
     # Load configuration
-    config = load_config(temp_dir)
+    if temp_dir is None:
+        print("Warning: config.txt not found. Using default settings.")
+        config: dict[str, str] = {"output_file": "output.html"}
+    else:
+        config = load_pipeline_config(temp_dir)
 
     # Determine HTML file path
     if args.output:

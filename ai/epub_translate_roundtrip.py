@@ -21,6 +21,7 @@ from ai.epub_package import (
     validate_package_structure,
 )
 from ai.gemini_provider import GeminiProvider
+from pipeline_utils import get_language_name as _get_language_name
 
 TranslateFn = Callable[[str], str]
 _MODEL_ALIASES = {
@@ -70,22 +71,6 @@ class CheckpointSnapshot:
     entries: dict[str, CheckpointEntry]
     translated_segments: int
     translated_docs: int
-
-
-def _get_language_name(lang_code: str) -> str:
-    language_map = {
-        "zh": "Chinese",
-        "en": "English",
-        "ja": "Japanese",
-        "ko": "Korean",
-        "fr": "French",
-        "de": "German",
-        "es": "Spanish",
-        "it": "Italian",
-        "pt": "Portuguese",
-        "ru": "Russian",
-    }
-    return language_map.get(lang_code.lower(), lang_code)
 
 
 def _create_translation_prompt(

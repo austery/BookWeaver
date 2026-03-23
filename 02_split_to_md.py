@@ -15,17 +15,7 @@ from bs4 import BeautifulSoup
 import shutil
 import glob
 
-
-def load_config(temp_dir):
-    """Load configuration from config.txt in temp directory"""
-    config_path = os.path.join(temp_dir, "config.txt")
-    config = {}
-    with open(config_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if "=" in line:
-                key, value = line.strip().split("=", 1)
-                config[key] = value
-    return config
+from pipeline_utils import load_pipeline_config
 
 
 def convert_to_pdf_calibre(input_file, output_file):
@@ -708,7 +698,7 @@ def main():
     print(f"Using temp directory: {temp_dir}")
 
     # Load configuration
-    config = load_config(temp_dir)
+    config = load_pipeline_config(temp_dir)
 
     input_file = config["input_file"]
     file_ext = config["file_extension"]
