@@ -33,7 +33,7 @@ Currently `translate_chunk` raises `RuntimeError` for all non-zero return codes,
 
 ---
 
-- [ ] **Step 1: Write 6 failing tests**
+- [ ] **Step 1: Write 8 failing tests**
 
 Add to `tests/unit/test_gemini_provider.py`:
 
@@ -692,6 +692,6 @@ bash -n translatebook.sh      # shell syntax valid
 
 ## Risk Notes
 
-- `test_pro_timeout_passed_to_provider` uses `unittest.mock.patch` — if the test is fragile due to the closure capturing `provider` before patch, use `monkeypatch.setattr(GeminiProvider, "translate_chunk", capture_translate)` instead. Either approach is fine.
+- `test_pro_timeout_passed_to_provider` uses `monkeypatch.setattr(gemini_provider.GeminiProvider, "translate_chunk", capture_translate)` with `self` as first param — this correctly patches the class method and intercepts the bound call inside the closure.
 - `time.sleep` must be monkeypatched in all rate-limit retry tests — tests that actually sleep 60s will time out CI. The `monkeypatch` fixture in pytest handles cleanup automatically.
 - After Task 2, `plan_segment_batches` no longer validates `max_batch_segments <= 0`. The `ValueError` for `max_batch_chars <= 0` is preserved. No existing test checks the removed validation.
