@@ -8,6 +8,56 @@ import zipfile
 import pytest
 
 
+def test_read_zip_text_missing_entry_raises_value_error() -> None:
+    import io
+    import zipfile
+    from ai.epub_translate_roundtrip import _read_zip_text
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("real_file.xhtml", "<html/>")
+    buf.seek(0)
+
+    with zipfile.ZipFile(buf, "r") as zf:
+        with pytest.raises(ValueError, match="EPUB missing required file"):
+            _read_zip_text(zf, "does_not_exist.xhtml")
+
+
+def test_checkpoint_mismatch_prints_warning(tmp_path: Path, capsys) -> None:
+    import json
+    from ai.epub_translate_roundtrip import _load_checkpoint_snapshot
+
+    # _checkpoint_state_file(checkpoint_dir) returns checkpoint_dir / "state.json"
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "source_signature": "abc123",
+                "output_lang": "zh",
+                "bilingual_style": "alternating",
+                "model": "gemini-2.5-flash",  # ← will differ from call argument
+                "custom_prompt": None,
+                "completed_docs": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Call with a different model — should trigger mismatch warning
+    _load_checkpoint_snapshot(
+        checkpoint_dir=tmp_path,  # ← correct parameter name
+        source_signature="abc123",
+        output_lang="zh",
+        bilingual_style="alternating",
+        model="gemini-2.5-pro",  # ← different from checkpoint
+        custom_prompt=None,
+    )
+
+    captured = capsys.readouterr()
+    assert "[WARN]" in captured.out
+    assert "Checkpoint invalidated" in captured.out
+
+
 def _translate_with_batch_separator(text: str) -> str:
     if "%%" in text:
         parts = [part.strip() for part in text.split("\n\n%%\n\n")]

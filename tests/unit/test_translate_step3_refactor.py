@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def _load_step3_module():
@@ -189,3 +192,22 @@ def test_step3_translate_markdown_files_can_disable_resume(monkeypatch, temp_dir
     progress_log = temp_dir / "translation_progress.log"
     assert progress_log.exists()
     assert "page0001.md" in progress_log.read_text(encoding="utf-8")
+
+
+def test_load_runtime_config_invalid_json_raises_with_message(tmp_path: Path, monkeypatch) -> None:
+    module = _load_step3_module()
+
+    # Create the user config path that load_runtime_config() looks for:
+    # Path.home() / ".config" / "translatebook" / "config.json"
+    config_dir = tmp_path / ".config" / "translatebook"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.json").write_text("{not valid json", encoding="utf-8")
+
+    # Patch Path.home so it returns tmp_path instead of the real home directory.
+    # Path.home is a classmethod, so we patch it as a staticmethod returning tmp_path.
+    import pathlib
+
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: tmp_path))
+
+    with pytest.raises(json.JSONDecodeError):
+        module.load_runtime_config()

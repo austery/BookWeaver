@@ -64,12 +64,26 @@ def load_runtime_config() -> dict[str, Any]:
     config: dict[str, Any] = {}
 
     if bundled_config_path.exists():
-        with open(bundled_config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
+        try:
+            with open(bundled_config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise json.JSONDecodeError(
+                f"Bundled config '{bundled_config_path}' is not valid JSON: {exc.msg}",
+                exc.doc,
+                exc.pos,
+            ) from exc
 
     if user_config_path.exists():
-        with open(user_config_path, "r", encoding="utf-8") as f:
-            user_config = json.load(f)
+        try:
+            with open(user_config_path, "r", encoding="utf-8") as f:
+                user_config = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise json.JSONDecodeError(
+                f"User config '{user_config_path}' is not valid JSON — check for syntax errors: {exc.msg}",
+                exc.doc,
+                exc.pos,
+            ) from exc
         config = _deep_merge_dict(config, user_config)
 
     if "default_model" not in config:

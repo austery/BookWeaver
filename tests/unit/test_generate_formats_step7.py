@@ -69,3 +69,26 @@ def test_step7_generate_epub_uses_ebook_convert(monkeypatch, temp_dir):
     assert generated == str(output_file)
     assert calls
     assert calls[0][0] == "ebook-convert"
+
+
+def test_run_ebook_convert_not_installed_returns_false(monkeypatch, capsys) -> None:
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "step7", Path(__file__).resolve().parents[2] / "07_generate_formats.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    import subprocess
+
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError("ebook-convert: command not found")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = module._run_ebook_convert("input.html", "output.epub")
+    assert result is False
+    captured = capsys.readouterr()
+    assert "ebook-convert not found" in captured.out or "ebook-convert not found" in captured.err

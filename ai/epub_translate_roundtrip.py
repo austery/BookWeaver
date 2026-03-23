@@ -11,6 +11,7 @@ from typing import Callable
 
 from ai.epub_package import (
     EpubPackageModel,
+    _read_zip_text,
     extract_translatable_segments,
     load_epub_package,
     patch_xhtml_alternating,
@@ -183,6 +184,7 @@ def _load_checkpoint_snapshot(
         raise RuntimeError(f"Invalid checkpoint state format: {state_file}")
 
     if raw_state.get("source_signature") != source_signature:
+        print("[WARN] Checkpoint invalidated: source file changed. Starting fresh.", flush=True)
         return CheckpointSnapshot(
             overrides={},
             entries={},
@@ -190,6 +192,10 @@ def _load_checkpoint_snapshot(
             translated_docs=0,
         )
     if raw_state.get("output_lang") != output_lang:
+        print(
+            f"[WARN] Checkpoint invalidated: output_lang changed ({raw_state.get('output_lang')} -> {output_lang}). Starting fresh.",
+            flush=True,
+        )
         return CheckpointSnapshot(
             overrides={},
             entries={},
@@ -197,6 +203,10 @@ def _load_checkpoint_snapshot(
             translated_docs=0,
         )
     if raw_state.get("bilingual_style") != bilingual_style:
+        print(
+            f"[WARN] Checkpoint invalidated: bilingual_style changed ({raw_state.get('bilingual_style')} -> {bilingual_style}). Starting fresh.",
+            flush=True,
+        )
         return CheckpointSnapshot(
             overrides={},
             entries={},
@@ -204,6 +214,10 @@ def _load_checkpoint_snapshot(
             translated_docs=0,
         )
     if raw_state.get("model") != model:
+        print(
+            f"[WARN] Checkpoint invalidated: model changed ({raw_state.get('model')} -> {model}). Starting fresh.",
+            flush=True,
+        )
         return CheckpointSnapshot(
             overrides={},
             entries={},
@@ -211,6 +225,7 @@ def _load_checkpoint_snapshot(
             translated_docs=0,
         )
     if raw_state.get("custom_prompt") != custom_prompt:
+        print("[WARN] Checkpoint invalidated: custom_prompt changed. Starting fresh.", flush=True)
         return CheckpointSnapshot(
             overrides={},
             entries={},
@@ -416,11 +431,6 @@ def translate_segments_with_batch_retry(
         return split_batch_translation(translated_batch, expected_count=expected_count)
     except ValueError as exc:
         return split_and_retry("Batch output mismatch", exc)
-
-
-def _read_zip_text(zip_file: zipfile.ZipFile, path: str) -> str:
-    raw = zip_file.read(path)
-    return raw.decode("utf-8")
 
 
 def _resolve_spine_xhtml_paths(model: EpubPackageModel) -> list[str]:

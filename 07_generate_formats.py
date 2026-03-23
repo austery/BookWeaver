@@ -136,6 +136,9 @@ def _run_ebook_convert(
         if e.stdout:
             log_info(f"ebook-convert output: {e.stdout}")
         return False
+    except FileNotFoundError:
+        log_error("ebook-convert not found. Install Calibre: https://calibre-ebook.com/")
+        return False
 
     if os.path.exists(output_file):
         if result.stdout:
