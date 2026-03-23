@@ -92,3 +92,27 @@ def test_run_ebook_convert_not_installed_returns_false(monkeypatch, capsys) -> N
     assert result is False
     captured = capsys.readouterr()
     assert "ebook-convert not found" in captured.out or "ebook-convert not found" in captured.err
+
+
+def test_run_ebook_convert_called_process_error_returns_false(monkeypatch, capsys) -> None:
+    import importlib.util
+    import subprocess
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "step7", Path(__file__).resolve().parents[2] / "07_generate_formats.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(
+            returncode=1, cmd="ebook-convert", stderr="Conversion error detail"
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = module._run_ebook_convert("input.html", "output.epub")
+    assert result is False
+    captured = capsys.readouterr()
+    assert "Conversion error detail" in captured.out or "Conversion error detail" in captured.err

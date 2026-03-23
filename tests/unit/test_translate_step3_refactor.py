@@ -211,3 +211,23 @@ def test_load_runtime_config_invalid_json_raises_with_message(tmp_path: Path, mo
 
     with pytest.raises(json.JSONDecodeError):
         module.load_runtime_config()
+
+
+def test_load_runtime_config_permission_error(tmp_path: Path, monkeypatch) -> None:
+    """PermissionError on user config propagates with path info."""
+    module = _load_step3_module()
+    config_dir = tmp_path / ".config" / "translatebook"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "config.json"
+    config_path.write_text('{"default_model": "flash"}', encoding="utf-8")
+    config_path.chmod(0o000)  # no-read
+
+    import pathlib
+
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: tmp_path))
+
+    try:
+        with pytest.raises(PermissionError):
+            module.load_runtime_config()
+    finally:
+        config_path.chmod(0o644)  # restore so tmp_path cleanup works

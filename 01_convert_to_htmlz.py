@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 import subprocess
+import xml.etree.ElementTree as ET
 import zipfile
 import shutil
 import tempfile
@@ -66,8 +67,6 @@ def convert_to_htmlz(input_file, htmlz_file, calibre_path):
 def extract_metadata_from_htmlz(extract_dir):
     """Extract metadata from metadata.opf file in HTMLZ"""
     try:
-        import xml.etree.ElementTree as ET
-
         # Look for metadata.opf file
         metadata_file = None
         for root, dirs, files in os.walk(extract_dir):
@@ -123,6 +122,9 @@ def extract_metadata_from_htmlz(extract_dir):
 
         return metadata
 
+    except ET.ParseError as e:
+        print(f"⚠️ OPF metadata file is malformed — title/author will be missing: {e}")
+        return {}
     except Exception as e:
         print(f"⚠️ Error extracting metadata: {e}")
         return {}
@@ -184,6 +186,9 @@ def extract_htmlz(htmlz_file, temp_dir):
 
         return html_file, images_dir
 
+    except zipfile.BadZipFile as e:
+        print(f"✗ EPUB/HTMLZ file appears corrupted: {e}")
+        return None, None
     except Exception as e:
         print(f"✗ Error extracting HTMLZ: {e}")
         return None, None
@@ -219,6 +224,9 @@ def setup_temp_directory(input_file, html_file, images_dir):
         print(f"✓ Temp directory setup complete: {temp_dir}")
         return temp_dir
 
+    except OSError as e:
+        print(f"✗ Error setting up temp directory (src: {input_file}): {e}")
+        return None
     except Exception as e:
         print(f"✗ Error setting up temp directory: {e}")
         return None
@@ -261,6 +269,9 @@ def convert_html_to_markdown(html_file, md_file):
 
     except ImportError:
         print("✗ pypandoc not found. Install with: pip install pypandoc")
+        return False
+    except OSError as e:
+        print(f"✗ File error during markdown conversion ({html_file}): {e}")
         return False
     except Exception as e:
         print(f"✗ HTML to Markdown conversion failed: {e}")
@@ -355,6 +366,12 @@ def split_markdown_by_size(md_file, temp_dir, target_size=6000):
 
         return len(chunks)
 
+    except MemoryError:
+        print(f"✗ Out of memory while reading large markdown file: {md_file}")
+        return 0
+    except OSError as e:
+        print(f"✗ File error splitting markdown ({md_file}): {e}")
+        return 0
     except Exception as e:
         print(f"✗ Error splitting markdown: {e}")
         return 0
@@ -394,6 +411,9 @@ conversion_method=calibre_htmlz
             )
         return True
 
+    except OSError as e:
+        print(f"✗ Error writing config file: {e}")
+        return False
     except Exception as e:
         print(f"✗ Error creating config file: {e}")
         return False

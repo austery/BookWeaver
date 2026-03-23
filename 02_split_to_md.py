@@ -60,11 +60,11 @@ def convert_to_pdf_calibre(input_file, output_file):
             raise Exception("ebook-convert conversion failed - output file not created")
 
     except subprocess.TimeoutExpired:
-        raise Exception("ebook-convert conversion timed out")
+        raise RuntimeError("ebook-convert conversion timed out")
     except subprocess.CalledProcessError as e:
-        raise Exception(f"ebook-convert conversion failed: {e.stderr}")
+        raise RuntimeError(f"ebook-convert error: {str(e)}") from e
     except Exception as e:
-        raise Exception(f"ebook-convert error: {str(e)}")
+        raise RuntimeError(f"ebook-convert error: {str(e)}") from e
 
 
 def convert_to_pdf_libreoffice(input_file, output_file):
@@ -585,8 +585,12 @@ def split_pdf_to_md(input_file, temp_dir):
 
         print(f"✓ PDF processing complete: {len(md_files)} pages created")
 
+    except subprocess.CalledProcessError as e:
+        stderr_detail = e.stderr.strip() if e.stderr else "(no stderr)"
+        print(f"✗ PDF-to-markdown conversion failed: {stderr_detail}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
-        print(f"Error processing PDF: {e}")
+        print(f"✗ PDF split error: {e}", file=sys.stderr)
         sys.exit(1)
 
 
