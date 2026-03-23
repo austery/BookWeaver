@@ -5,7 +5,7 @@ from pathlib import Path
 from benchmark_models import sample_chunk_files
 
 
-def test_sample_chunk_files_selects_head_middle_tail(temp_dir: Path):
+def test_sample_chunk_files_selects_head_middle_tail(temp_dir: Path) -> None:
     for index in range(1, 8):
         p = temp_dir / f"page{index:04d}.md"
         p.write_text(f"chunk-{index}", encoding="utf-8")

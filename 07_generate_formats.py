@@ -13,27 +13,27 @@ import argparse
 import glob
 
 
-def log_info(message):
+def log_info(message: str) -> None:
     """Log info message"""
     print(f"[INFO] {message}")
 
 
-def log_success(message):
+def log_success(message: str) -> None:
     """Log success message"""
     print(f"[SUCCESS] {message}")
 
 
-def log_error(message):
+def log_error(message: str) -> None:
     """Log error message"""
     print(f"[ERROR] {message}")
 
 
-def log_warning(message):
+def log_warning(message: str) -> None:
     """Log warning message"""
     print(f"[WARNING] {message}")
 
 
-def load_config():
+def load_config() -> dict[str, str] | None:
     """Load configuration from temp directory"""
     # Look for config files in temp directories - use the same logic as main
     config_files = []
@@ -71,7 +71,7 @@ def load_config():
         return None
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Step 7: Generate final output formats from HTML")
     parser.add_argument(
@@ -151,7 +151,9 @@ def _run_ebook_convert(
     return False
 
 
-def generate_docx_with_script(html_file, temp_dir, metadata=None):
+def generate_docx_with_script(
+    html_file: str, temp_dir: str, metadata: dict[str, str] | None = None
+) -> str | None:
     """Generate DOCX file using ebook-convert."""
     # Create output filename in temp directory - use book.docx as requested
     docx_file = os.path.join(temp_dir, "book.docx")
@@ -170,7 +172,9 @@ def generate_docx_with_script(html_file, temp_dir, metadata=None):
     return None
 
 
-def generate_epub_with_script(html_file, temp_dir, metadata=None):
+def generate_epub_with_script(
+    html_file: str, temp_dir: str, metadata: dict[str, str] | None = None
+) -> str | None:
     """Generate EPUB file using ebook-convert."""
     # Create output filename in temp directory - use book.epub as requested
     epub_file = os.path.join(temp_dir, "book.epub")
@@ -189,7 +193,9 @@ def generate_epub_with_script(html_file, temp_dir, metadata=None):
     return None
 
 
-def generate_pdf_with_script(html_file, temp_dir, metadata=None):
+def generate_pdf_with_script(
+    html_file: str, temp_dir: str, metadata: dict[str, str] | None = None
+) -> str | None:
     """Generate PDF file using ebook-convert."""
     # Create output filename in temp directory - use book.pdf as requested
     pdf_file = os.path.join(temp_dir, "book.pdf")
@@ -208,7 +214,7 @@ def generate_pdf_with_script(html_file, temp_dir, metadata=None):
     return None
 
 
-def main():
+def main() -> None:
     """Main function"""
     args = parse_arguments()
     requested_formats = resolve_output_formats(args.output_format)

@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import pytest
 
 from ai.bilingual_merger import BilingualMerger
 
 
-def test_merge_alternating_pairs_in_order():
+def test_merge_alternating_pairs_in_order() -> None:
     merger = BilingualMerger()
     result = merger.merge(
         original_chunks=["Hello world", "Second paragraph"],

@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import importlib
 
 
-def test_model_selector_module_exists():
+def test_model_selector_module_exists() -> None:
     try:
         module = importlib.import_module("ai.model_selector")
     except ModuleNotFoundError as exc:
@@ -10,7 +12,7 @@ def test_model_selector_module_exists():
     assert hasattr(module, "ModelSelector"), "ModelSelector class should be defined"
 
 
-def test_select_flash_for_small_chunks():
+def test_select_flash_for_small_chunks() -> None:
     module = importlib.import_module("ai.model_selector")
     selector = module.ModelSelector(
         config={
@@ -24,7 +26,7 @@ def test_select_flash_for_small_chunks():
     assert selector.select(chunk_size=3000) == "gemini-2.5-flash"
 
 
-def test_select_pro_for_large_chunks():
+def test_select_pro_for_large_chunks() -> None:
     module = importlib.import_module("ai.model_selector")
     selector = module.ModelSelector(
         config={

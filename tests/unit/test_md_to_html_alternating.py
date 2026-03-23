@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
+import pytest
 
-def _load_module():
+
+def _load_module() -> types.ModuleType:
     project_root = Path(__file__).resolve().parents[2]
     file_path = project_root / "05_md_to_html.py"
     spec = importlib.util.spec_from_file_location("step5_module", file_path)
@@ -16,7 +19,7 @@ def _load_module():
     return module
 
 
-def test_render_alternating_bilingual_html_contains_both_languages():
+def test_render_alternating_bilingual_html_contains_both_languages() -> None:
     module = _load_module()
     md = """## Segment 1
 
@@ -35,7 +38,7 @@ Hello world.
     assert 'class="translated-text"' in html
 
 
-def test_step5_parse_args_accepts_bilingual_style(monkeypatch):
+def test_step5_parse_args_accepts_bilingual_style(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_module()
     monkeypatch.setattr(
         sys,
@@ -52,7 +55,7 @@ def test_step5_parse_args_accepts_bilingual_style(monkeypatch):
     assert args.bilingual_style == "alternating"
 
 
-def test_parse_alternating_segments_missing_marker():
+def test_parse_alternating_segments_missing_marker() -> None:
     """Test that parse_alternating_segments handles missing translation marker gracefully."""
     module = _load_module()
     # Input without the "**中文译文**" marker
@@ -62,7 +65,7 @@ def test_parse_alternating_segments_missing_marker():
     assert result is not None
 
 
-def test_paragraphs_html_escapes_html_chars():
+def test_paragraphs_html_escapes_html_chars() -> None:
     """Test that HTML special characters are properly escaped to prevent XSS."""
     module = _load_module()
     # Input with HTML special characters
@@ -73,7 +76,7 @@ def test_paragraphs_html_escapes_html_chars():
     assert "script" in result.lower() or "&lt;" in result
 
 
-def test_step5_renders_markdown_image_as_img_tag():
+def test_step5_renders_markdown_image_as_img_tag() -> None:
     module = _load_module()
     md = """## Segment 1
 
@@ -90,7 +93,7 @@ def test_step5_renders_markdown_image_as_img_tag():
     assert "![](images/000004.jpg){.h1}" not in html
 
 
-def test_step5_renders_heading_tag_and_strips_md_attr_suffix():
+def test_step5_renders_heading_tag_and_strips_md_attr_suffix() -> None:
     module = _load_module()
     md = """## Segment 1
 
@@ -108,7 +111,7 @@ def test_step5_renders_heading_tag_and_strips_md_attr_suffix():
     assert "{#contents .x01-fm-head}" not in html
 
 
-def test_step5_keeps_translated_headings_out_of_document_outline():
+def test_step5_keeps_translated_headings_out_of_document_outline() -> None:
     module = _load_module()
     md = """## Segment 1
 

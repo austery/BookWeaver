@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import types
 from pathlib import Path
 
 
-def _load_module():
+def _load_module() -> types.ModuleType:
     project_root = Path(__file__).resolve().parents[2]
     file_path = project_root / "04_merge_md.py"
     spec = importlib.util.spec_from_file_location("step4_module", file_path)
@@ -15,7 +16,7 @@ def _load_module():
     return module
 
 
-def test_merge_step4_produces_bilingual_output(temp_dir: Path):
+def test_merge_step4_produces_bilingual_output(temp_dir: Path) -> None:
     module = _load_module()
     (temp_dir / "page0001.md").write_text("Hello.", encoding="utf-8")
     (temp_dir / "output_page0001.md").write_text("你好。", encoding="utf-8")

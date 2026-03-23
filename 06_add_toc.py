@@ -8,11 +8,11 @@ Usage: 06_add_toc.py [-o output_file]
 from __future__ import annotations
 
 import os
-import sys
 import re
+import sys
 import argparse
 from html import unescape
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pipeline_utils import load_pipeline_config
 
@@ -24,6 +24,9 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
+if TYPE_CHECKING:
+    from bs4 import BeautifulSoup
+
 
 MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
 MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[[^\]]*\]\([^)]+\)(?:\{[^}]*\})?")
@@ -31,7 +34,7 @@ ATTR_LIST_SUFFIX_PATTERN = re.compile(r"\s+\{[^{}]*\}\s*$")
 TOC_MAX_LEVEL = 1
 
 
-def clean_heading_title(text):
+def clean_heading_title(text: str) -> str:
     """Normalize heading text for TOC labels and IDs."""
     cleaned = unescape(text).strip()
     cleaned = MARKDOWN_IMAGE_PATTERN.sub("", cleaned)
@@ -44,7 +47,7 @@ def clean_heading_title(text):
     return cleaned
 
 
-def parse_markdown_heading(text):
+def parse_markdown_heading(text: str) -> tuple[int, str] | None:
     """Parse markdown heading syntax and return (level, title)."""
     normalized = unescape(text).strip()
     match = MARKDOWN_HEADING_PATTERN.match(normalized)
@@ -57,7 +60,7 @@ def parse_markdown_heading(text):
     return level, title
 
 
-def extract_headings(soup):
+def extract_headings(soup: BeautifulSoup) -> list[dict[str, object]]:
     """Extract all headings from HTML and generate TOC data"""
     headings = []
     toc_data = []
@@ -113,7 +116,7 @@ def extract_headings(soup):
     return toc_data
 
 
-def generate_heading_id(text, existing_headings):
+def generate_heading_id(text: str, existing_headings: list[dict[str, object]]) -> str:
     """Generate unique ID for heading"""
     # Clean text for ID
     base_id = re.sub(r"[^\w\s-]", "", text.lower())
@@ -136,7 +139,7 @@ def generate_heading_id(text, existing_headings):
     return heading_id
 
 
-def generate_simple_toc_html(toc_data):
+def generate_simple_toc_html(toc_data: list[dict[str, object]]) -> str:
     """Generate simple HTML for table of contents (for sidebar)"""
     if not toc_data:
         return ""
@@ -175,7 +178,7 @@ def generate_simple_toc_html(toc_data):
     return toc_html
 
 
-def get_toc_styles():
+def get_toc_styles() -> str:
     """Get CSS styles for TOC"""
     return """
     <style>
@@ -268,7 +271,7 @@ def get_toc_styles():
     """
 
 
-def insert_toc_into_html(html_file):
+def insert_toc_into_html(html_file: str) -> bool:
     """Insert TOC into HTML file"""
     print(f"Processing HTML file: {html_file}")
 
@@ -335,7 +338,7 @@ def insert_toc_into_html(html_file):
         return False
 
 
-def generate_toc_summary(html_file):
+def generate_toc_summary(html_file: str) -> None:
     """Generate summary of TOC structure"""
     print("Generating TOC summary...")
 
@@ -382,7 +385,7 @@ def generate_toc_summary(html_file):
         print(f"Error generating TOC summary: {e}")
 
 
-def insert_toc_with_regex(html_file):
+def insert_toc_with_regex(html_file: str) -> bool:
     """Insert TOC into HTML file using regex (fallback when BeautifulSoup not available)"""
 
     # Read HTML file
@@ -398,7 +401,7 @@ def insert_toc_with_regex(html_file):
     # Extract native HTML headings first.
     heading_pattern = r"<(h[1-6])([^>]*)>(.*?)</\1>"
 
-    def _replace_heading(match):
+    def _replace_heading(match: re.Match[str]) -> str:
         tag = match.group(1)
         attrs = match.group(2) or ""
         text = match.group(3)
@@ -435,7 +438,7 @@ def insert_toc_with_regex(html_file):
     if not heading_data:
         paragraph_pattern = r"<p([^>]*)>(.*?)</p>"
 
-        def _replace_paragraph(match):
+        def _replace_paragraph(match: re.Match[str]) -> str:
             attrs = match.group(1) or ""
             text = match.group(2)
             attrs_lower = attrs.lower()
@@ -519,7 +522,7 @@ def insert_toc_with_regex(html_file):
         return False
 
 
-def main():
+def main() -> None:
     """Main function"""
     parser = argparse.ArgumentParser(description="Generate and insert TOC into HTML")
     parser.add_argument(

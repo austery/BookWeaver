@@ -7,13 +7,13 @@ import pytest
 from ai.quota_tracker import QuotaTracker
 
 
-def test_quota_tracker_initializes_db(temp_dir: Path):
+def test_quota_tracker_initializes_db(temp_dir: Path) -> None:
     db_path = temp_dir / "quota.db"
     tracker = QuotaTracker(str(db_path))
     assert Path(tracker.db_path).exists()
 
 
-def test_quota_tracker_records_and_reads_usage(temp_dir: Path):
+def test_quota_tracker_records_and_reads_usage(temp_dir: Path) -> None:
     db_path = temp_dir / "quota.db"
     tracker = QuotaTracker(str(db_path))
     tracker.record_usage(model="gemini-2.5-flash", tier="flash", token_count=500)

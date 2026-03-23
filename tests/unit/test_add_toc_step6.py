@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import types
 from pathlib import Path
 
+import pytest
 
-def _load_step6_module():
+
+def _load_step6_module() -> types.ModuleType:
     project_root = Path(__file__).resolve().parents[2]
     file_path = project_root / "06_add_toc.py"
     spec = importlib.util.spec_from_file_location("step6_module", file_path)
@@ -15,7 +18,7 @@ def _load_step6_module():
     return module
 
 
-def test_step6_regex_extracts_markdown_heading_paragraph_and_inserts_toc(temp_dir: Path):
+def test_step6_regex_extracts_markdown_heading_paragraph_and_inserts_toc(temp_dir: Path) -> None:
     module = _load_step6_module()
     html_file = temp_dir / "book.html"
     html_file.write_text(
@@ -39,7 +42,9 @@ def test_step6_regex_extracts_markdown_heading_paragraph_and_inserts_toc(temp_di
     assert 'href="#第一章"' not in updated
 
 
-def test_step6_insert_toc_into_html_uses_regex_fallback(monkeypatch, temp_dir: Path):
+def test_step6_insert_toc_into_html_uses_regex_fallback(
+    monkeypatch: pytest.MonkeyPatch, temp_dir: Path
+) -> None:
     module = _load_step6_module()
     monkeypatch.setattr(module, "BS4_AVAILABLE", False)
     html_file = temp_dir / "book.html"
@@ -54,7 +59,7 @@ def test_step6_insert_toc_into_html_uses_regex_fallback(monkeypatch, temp_dir: P
     assert 'href="#intro"' in updated
 
 
-def test_step6_parse_markdown_heading_strips_image_and_attr_suffix():
+def test_step6_parse_markdown_heading_strips_image_and_attr_suffix() -> None:
     module = _load_step6_module()
     parsed = module.parse_markdown_heading(
         "# Contents ![](images/000002.jpg){.halfem} {#contents .x01-fm-head}"
@@ -62,7 +67,7 @@ def test_step6_parse_markdown_heading_strips_image_and_attr_suffix():
     assert parsed == (1, "Contents")
 
 
-def test_step6_toc_includes_only_h1_headings_in_regex_mode(temp_dir: Path):
+def test_step6_toc_includes_only_h1_headings_in_regex_mode(temp_dir: Path) -> None:
     module = _load_step6_module()
     html_file = temp_dir / "book.html"
     html_file.write_text(

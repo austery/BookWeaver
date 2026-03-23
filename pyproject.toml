@@ -15,11 +15,11 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-# Focused baseline: removed E722 (bare except) to enforce proper error handling
-ignore = ["E501", "F401", "F541", "F841", "I001"]
-# E501: line too long (conflicts with auto-formatters)
-# F401: unused imports (acceptable during development)
-# F541: f-string without placeholders (stylistic choice)
-# F841: unused variables (acceptable for out-of-order development)
-# I001: import ordering (conflicts with auto-formatters)
+select = ["E", "F", "I", "ANN"]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "F541",   # f-string without placeholders (stylistic)
+    "F841",   # unused variables (acceptable in dev)
+    "I001",   # import ordering (handled by formatter)
+]
+# NOTE: F401 (unused imports) is intentionally NOT in ignore — unused imports are now errors.

@@ -3,12 +3,13 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
 
 
-def _load_step3_module():
+def _load_step3_module() -> types.ModuleType:
     project_root = Path(__file__).resolve().parents[2]
     file_path = project_root / "03_translate_md.py"
     spec = importlib.util.spec_from_file_location("step3_module", file_path)
@@ -19,12 +20,12 @@ def _load_step3_module():
     return module
 
 
-def test_step3_exposes_gemini_cli_check():
+def test_step3_exposes_gemini_cli_check() -> None:
     module = _load_step3_module()
     assert hasattr(module, "check_gemini_cli"), "Expected check_gemini_cli function"
 
 
-def test_step3_parse_arguments_accepts_model(monkeypatch):
+def test_step3_parse_arguments_accepts_model(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_step3_module()
     monkeypatch.setattr(
         sys,
@@ -41,7 +42,7 @@ def test_step3_parse_arguments_accepts_model(monkeypatch):
     assert args.model == "gemini-2.5-pro"
 
 
-def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch):
+def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_step3_module()
     monkeypatch.setattr(
         sys,
@@ -58,14 +59,14 @@ def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch):
     assert args.model == "gemini-3-pro-preview"
 
 
-def test_step3_load_runtime_config_has_default_model():
+def test_step3_load_runtime_config_has_default_model() -> None:
     module = _load_step3_module()
     config = module.load_runtime_config()
     assert isinstance(config, dict)
     assert config.get("default_model"), "Expected default_model in runtime config"
 
 
-def test_step3_create_translation_prompt_from_external_template(tmp_path):
+def test_step3_create_translation_prompt_from_external_template(tmp_path: Path) -> None:
     module = _load_step3_module()
     template_path = tmp_path / "prompt.txt"
     template_path.write_text(
@@ -84,13 +85,13 @@ def test_step3_create_translation_prompt_from_external_template(tmp_path):
     assert "ADDITIONAL INSTRUCTIONS" in prompt
 
 
-def test_step3_resolve_model_name_supports_alias():
+def test_step3_resolve_model_name_supports_alias() -> None:
     module = _load_step3_module()
     config = {"model_aliases": {"pro": "gemini-2.5-pro"}}
     assert module.resolve_model_name("pro", config) == "gemini-2.5-pro"
 
 
-def test_step3_fallback_chain_selects_first_available():
+def test_step3_fallback_chain_selects_first_available() -> None:
     module = _load_step3_module()
 
     class FakeProbe:
@@ -114,7 +115,7 @@ def test_step3_fallback_chain_selects_first_available():
     assert selected_model == "gemini-2.5-flash"
 
 
-def test_step3_prompt_without_placeholder_still_appends_custom_block(tmp_path):
+def test_step3_prompt_without_placeholder_still_appends_custom_block(tmp_path: Path) -> None:
     module = _load_step3_module()
     template_path = tmp_path / "prompt.txt"
     template_path.write_text("Translate to {TARGET_LANGUAGE}\nBody:", encoding="utf-8")
@@ -131,7 +132,7 @@ def test_step3_prompt_without_placeholder_still_appends_custom_block(tmp_path):
     assert "ADDITIONAL INSTRUCTIONS" in prompt
 
 
-def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch):
+def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_step3_module()
     monkeypatch.setattr(
         sys,
@@ -149,7 +150,7 @@ def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch):
     assert args.skip_probe is True
 
 
-def test_step3_parse_arguments_supports_no_resume(monkeypatch):
+def test_step3_parse_arguments_supports_no_resume(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_step3_module()
     monkeypatch.setattr(
         sys,
@@ -165,7 +166,9 @@ def test_step3_parse_arguments_supports_no_resume(monkeypatch):
     assert args.no_resume is True
 
 
-def test_step3_translate_markdown_files_can_disable_resume(monkeypatch, temp_dir):
+def test_step3_translate_markdown_files_can_disable_resume(
+    monkeypatch: pytest.MonkeyPatch, temp_dir: Path
+) -> None:
     module = _load_step3_module()
 
     page_file = temp_dir / "page0001.md"
@@ -194,7 +197,9 @@ def test_step3_translate_markdown_files_can_disable_resume(monkeypatch, temp_dir
     assert "page0001.md" in progress_log.read_text(encoding="utf-8")
 
 
-def test_load_runtime_config_invalid_json_raises_with_message(tmp_path: Path, monkeypatch) -> None:
+def test_load_runtime_config_invalid_json_raises_with_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     module = _load_step3_module()
 
     # Create the user config path that load_runtime_config() looks for:
@@ -213,7 +218,9 @@ def test_load_runtime_config_invalid_json_raises_with_message(tmp_path: Path, mo
         module.load_runtime_config()
 
 
-def test_translate_files_resume_skips_existing(tmp_path: Path, monkeypatch) -> None:
+def test_translate_files_resume_skips_existing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """resume=True must skip files that already have output_*.md."""
     module = _load_step3_module()
 
@@ -267,7 +274,9 @@ def test_resolve_model_alias_cycle_detection() -> None:
         module.resolve_model_name("pro", runtime_config=cyclic_config)
 
 
-def test_load_runtime_config_permission_error(tmp_path: Path, monkeypatch) -> None:
+def test_load_runtime_config_permission_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """PermissionError on user config propagates with path info."""
     module = _load_step3_module()
     config_dir = tmp_path / ".config" / "translatebook"

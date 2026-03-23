@@ -17,7 +17,7 @@ import argparse
 import glob
 
 
-def find_calibre_convert():
+def find_calibre_convert() -> str | None:
     """Find ebook-convert command from Calibre installation"""
     possible_paths = [
         "/Applications/calibre.app/Contents/MacOS/ebook-convert",
@@ -38,7 +38,7 @@ def find_calibre_convert():
     return None
 
 
-def convert_to_htmlz(input_file, htmlz_file, calibre_path):
+def convert_to_htmlz(input_file: str, htmlz_file: str, calibre_path: str) -> bool:
     """Convert input file to HTMLZ using Calibre"""
     try:
         print(f"Converting {input_file} to HTMLZ...")
@@ -64,7 +64,7 @@ def convert_to_htmlz(input_file, htmlz_file, calibre_path):
         return False
 
 
-def extract_metadata_from_htmlz(extract_dir):
+def extract_metadata_from_htmlz(extract_dir: str) -> dict[str, str]:
     """Extract metadata from metadata.opf file in HTMLZ"""
     try:
         # Look for metadata.opf file
@@ -130,7 +130,7 @@ def extract_metadata_from_htmlz(extract_dir):
         return {}
 
 
-def extract_htmlz(htmlz_file, temp_dir):
+def extract_htmlz(htmlz_file: str, temp_dir: str) -> tuple[str | None, str | None]:
     """Extract HTMLZ file and return paths to HTML and images"""
     try:
         print(f"Extracting HTMLZ file: {htmlz_file}")
@@ -194,7 +194,7 @@ def extract_htmlz(htmlz_file, temp_dir):
         return None, None
 
 
-def setup_temp_directory(input_file, html_file, images_dir):
+def setup_temp_directory(input_file: str, html_file: str, images_dir: str | None) -> str | None:
     """Setup temp directory with HTML and images"""
     try:
         # Create temp directory based on input filename
@@ -232,7 +232,7 @@ def setup_temp_directory(input_file, html_file, images_dir):
         return None
 
 
-def convert_html_to_markdown(html_file, md_file):
+def convert_html_to_markdown(html_file: str, md_file: str) -> bool:
     """Convert HTML to Markdown using pandoc"""
     try:
         import pypandoc
@@ -278,7 +278,7 @@ def convert_html_to_markdown(html_file, md_file):
         return False
 
 
-def clean_calibre_markers(content):
+def clean_calibre_markers(content: str) -> str:
     """Clean up Calibre-specific markers from markdown content"""
     import re
 
@@ -322,7 +322,7 @@ def clean_calibre_markers(content):
     return content
 
 
-def split_markdown_by_size(md_file, temp_dir, target_size=6000):
+def split_markdown_by_size(md_file: str, temp_dir: str, target_size: int = 6000) -> int:
     """Split markdown into chunks by character count (5-8k each)"""
     try:
         with open(md_file, "r", encoding="utf-8") as f:
@@ -377,7 +377,13 @@ def split_markdown_by_size(md_file, temp_dir, target_size=6000):
         return 0
 
 
-def create_config_file(temp_dir, input_file, input_lang, output_lang, metadata=None):
+def create_config_file(
+    temp_dir: str,
+    input_file: str,
+    input_lang: str,
+    output_lang: str,
+    metadata: dict[str, str] | None = None,
+) -> bool:
     """Create config.txt file for the pipeline"""
     try:
         config_file = os.path.join(temp_dir, "config.txt")
@@ -419,7 +425,7 @@ conversion_method=calibre_htmlz
         return False
 
 
-def main():
+def main() -> None:
     """Main conversion function"""
     parser = argparse.ArgumentParser(
         description="Convert PDF/DOCX/EPUB to markdown chunks via HTMLZ"

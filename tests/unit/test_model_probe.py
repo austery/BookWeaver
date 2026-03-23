@@ -8,7 +8,7 @@ from subprocess import CompletedProcess
 from ai.model_probe import ModelProbe
 
 
-def test_probe_uses_cache_when_fresh(tmp_path: Path):
+def test_probe_uses_cache_when_fresh(tmp_path: Path) -> None:
     cache_path = tmp_path / "model_probe_cache.json"
     cache_path.write_text(
         json.dumps(
@@ -32,7 +32,7 @@ def test_probe_uses_cache_when_fresh(tmp_path: Path):
     assert called["count"] == 0
 
 
-def test_probe_marks_unavailable_model(tmp_path: Path):
+def test_probe_marks_unavailable_model(tmp_path: Path) -> None:
     cache_path = tmp_path / "model_probe_cache.json"
 
     def fake_runner(_: list[str]) -> CompletedProcess[str]:
@@ -49,7 +49,7 @@ def test_probe_marks_unavailable_model(tmp_path: Path):
     assert "model not found" in probe.last_probe_errors["gemini-9"]
 
 
-def test_probe_continues_when_runner_raises(tmp_path: Path):
+def test_probe_continues_when_runner_raises(tmp_path: Path) -> None:
     cache_path = tmp_path / "model_probe_cache.json"
     calls = {"count": 0}
 
@@ -67,7 +67,7 @@ def test_probe_continues_when_runner_raises(tmp_path: Path):
     assert "probe timeout" in probe.last_probe_errors["gemini-bad"]
 
 
-def test_probe_ignores_corrupt_cache_and_probes(tmp_path: Path):
+def test_probe_ignores_corrupt_cache_and_probes(tmp_path: Path) -> None:
     cache_path = tmp_path / "model_probe_cache.json"
     cache_path.write_text("{broken-json", encoding="utf-8")
 
@@ -79,7 +79,7 @@ def test_probe_ignores_corrupt_cache_and_probes(tmp_path: Path):
     assert results["gemini-2.5-pro"] is True
 
 
-def test_probe_ignores_cache_write_error(tmp_path: Path):
+def test_probe_ignores_cache_write_error(tmp_path: Path) -> None:
     cache_path = tmp_path / "model_probe_cache.json"
 
     def fake_runner(command: list[str]) -> CompletedProcess[str]:

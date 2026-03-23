@@ -6,19 +6,23 @@ Supports PDF, DOCX, and EPUB formats
 
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-import re
-import subprocess
-from bs4 import BeautifulSoup
-import shutil
 import glob
+import os
+import re
+import shutil
+import subprocess
+import sys
+from typing import TYPE_CHECKING
+
+from bs4 import BeautifulSoup
+
+if TYPE_CHECKING:
+    from bs4.element import Tag
 
 from pipeline_utils import load_pipeline_config
 
 
-def convert_to_pdf_calibre(input_file, output_file):
+def convert_to_pdf_calibre(input_file: str, output_file: str) -> None:
     """Convert EPUB/DOCX to PDF using Calibre's ebook-convert"""
     # Check if ebook-convert is available
     ebook_convert_paths = [
@@ -67,7 +71,7 @@ def convert_to_pdf_calibre(input_file, output_file):
         raise RuntimeError(f"ebook-convert error: {str(e)}") from e
 
 
-def convert_to_pdf_libreoffice(input_file, output_file):
+def convert_to_pdf_libreoffice(input_file: str, output_file: str) -> None:
     """Convert DOCX/EPUB to PDF using LibreOffice (fallback)"""
     libreoffice_paths = [
         "/Applications/LibreOffice.app/Contents/MacOS/soffice",  # macOS
@@ -132,7 +136,7 @@ def convert_to_pdf_libreoffice(input_file, output_file):
         raise Exception(f"LibreOffice conversion error: {str(e)}")
 
 
-def pdf_to_html_with_pdftohtml(pdf_file, temp_dir):
+def pdf_to_html_with_pdftohtml(pdf_file: str, temp_dir: str) -> str:
     """Convert PDF to HTML using pdftohtml with default parameters"""
     print("working...")
 
@@ -169,7 +173,7 @@ def pdf_to_html_with_pdftohtml(pdf_file, temp_dir):
         os.chdir(original_cwd)
 
 
-def organize_html_images(temp_dir, base_name):
+def organize_html_images(temp_dir: str, base_name: str) -> list[tuple[str, str]]:
     """Organize images from HTML conversion into media directory"""
     print("working...")
 
@@ -205,7 +209,9 @@ def organize_html_images(temp_dir, base_name):
     return image_files
 
 
-def split_html_by_pages(temp_dir, base_name, image_mapping=None):
+def split_html_by_pages(
+    temp_dir: str, base_name: str, image_mapping: list[tuple[str, str]] | None = None
+) -> list[str]:
     """Split HTML files by page markers into individual page HTML files"""
     print("working...")
 
@@ -289,7 +295,7 @@ def split_html_by_pages(temp_dir, base_name, image_mapping=None):
     return page_files
 
 
-def extract_content_between_anchors(start_anchor, end_anchor):
+def extract_content_between_anchors(start_anchor: Tag, end_anchor: Tag) -> str:
     """Extract HTML content between two anchors"""
     content = []
     current = start_anchor
@@ -302,7 +308,7 @@ def extract_content_between_anchors(start_anchor, end_anchor):
     return "".join(content)
 
 
-def extract_content_from_anchor_to_end(anchor):
+def extract_content_from_anchor_to_end(anchor: Tag) -> str:
     """Extract HTML content from anchor to end of document"""
     content = []
     current = anchor
@@ -315,7 +321,9 @@ def extract_content_from_anchor_to_end(anchor):
     return "".join(content)
 
 
-def create_complete_html_page(page_content, base_name, image_mapping=None):
+def create_complete_html_page(
+    page_content: str, base_name: str, image_mapping: list[tuple[str, str]] | None = None
+) -> str:
     """Create a complete HTML page from page content"""
     # Fix image paths in the content
     fixed_content = fix_image_paths_in_html(page_content, base_name, image_mapping)
@@ -335,7 +343,9 @@ def create_complete_html_page(page_content, base_name, image_mapping=None):
     return html_template
 
 
-def fix_image_paths_in_html(content, base_name, image_mapping=None):
+def fix_image_paths_in_html(
+    content: str, base_name: str, image_mapping: list[tuple[str, str]] | None = None
+) -> str:
     """Fix image paths in HTML to point to media directory with new image names"""
     if image_mapping is None:
         # Fallback: just point to media directory with original names
@@ -353,7 +363,7 @@ def fix_image_paths_in_html(content, base_name, image_mapping=None):
     return content
 
 
-def convert_html_to_md_with_pandoc(temp_dir, page_files):
+def convert_html_to_md_with_pandoc(temp_dir: str, page_files: list[str]) -> list[str]:
     """Convert HTML files to Markdown using pandoc"""
     print("working...")
 
@@ -387,7 +397,7 @@ def convert_html_to_md_with_pandoc(temp_dir, page_files):
     return md_files
 
 
-def convert_html_to_md_direct(html_path, md_path):
+def convert_html_to_md_direct(html_path: str, md_path: str) -> None:
     """Convert HTML file to Markdown using pandoc"""
     print("working...")
 
@@ -407,7 +417,7 @@ def convert_html_to_md_direct(html_path, md_path):
         raise Exception(f"Pandoc HTML to Markdown conversion failed: {e.stderr}")
 
 
-def count_characters(text):
+def count_characters(text: str) -> int:
     """Count characters in text, considering Chinese characters as 2 units and English as 1 unit"""
     char_count = 0
     for char in text:
@@ -419,7 +429,7 @@ def count_characters(text):
     return char_count
 
 
-def estimate_combined_char_count(text):
+def estimate_combined_char_count(text: str) -> int:
     """Estimate total character count for Chinese + English mixed content"""
     # Remove markdown formatting for more accurate count
     import re
@@ -436,8 +446,8 @@ def estimate_combined_char_count(text):
 
 
 def split_md_by_separator_with_merge(
-    md_path, temp_dir, target_min_chars=3000, target_max_chars=5000
-):
+    md_path: str, temp_dir: str, target_min_chars: int = 3000, target_max_chars: int = 5000
+) -> list[str]:
     """Split markdown file by separators and merge consecutive pages to reach target character count"""
     print("working...")
     print(f"Target character range: {target_min_chars:,} - {target_max_chars:,} characters")
@@ -525,7 +535,9 @@ def split_md_by_separator_with_merge(
     return md_files
 
 
-def fix_image_paths_in_md_files(temp_dir, md_files, image_mapping):
+def fix_image_paths_in_md_files(
+    temp_dir: str, md_files: list[str], image_mapping: list[tuple[str, str]]
+) -> None:
     """Fix image paths and names in split MD files"""
     print("working...")
 
@@ -561,7 +573,7 @@ def fix_image_paths_in_md_files(temp_dir, md_files, image_mapping):
         print(f"  Fixed image paths in: {md_file}")
 
 
-def split_pdf_to_md(input_file, temp_dir):
+def split_pdf_to_md(input_file: str, temp_dir: str) -> None:
     """Split PDF file into markdown files"""
     print(f"Processing PDF file: {input_file}")
 
@@ -594,7 +606,7 @@ def split_pdf_to_md(input_file, temp_dir):
         sys.exit(1)
 
 
-def split_docx_to_md(input_file, temp_dir):
+def split_docx_to_md(input_file: str, temp_dir: str) -> None:
     """Split DOCX file into markdown files"""
     print(f"Processing DOCX file: {input_file}")
 
@@ -634,7 +646,7 @@ def split_docx_to_md(input_file, temp_dir):
         sys.exit(1)
 
 
-def split_epub_to_md(input_file, temp_dir):
+def split_epub_to_md(input_file: str, temp_dir: str) -> None:
     """Split EPUB file into markdown files"""
     print(f"Processing EPUB file: {input_file}")
 
@@ -687,7 +699,7 @@ def split_epub_to_md(input_file, temp_dir):
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     """Main function"""
     print("=== Book Translation Tool - Step 2: Split to Markdown ===")
 

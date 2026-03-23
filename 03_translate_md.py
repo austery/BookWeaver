@@ -6,20 +6,35 @@ Translates each pageXXXX.md file to output_pageXXXX.md
 
 from __future__ import annotations
 
-import os
-import sys
-import glob
-import time
 import argparse
-import subprocess
+import glob
 import json
+import os
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from ai.gemini_provider import GeminiProvider
 from ai.model_probe import ModelProbe
 from ai.model_selector import ModelSelector
 from pipeline_utils import load_pipeline_config, get_language_name
+
+
+class RuntimeConfig(TypedDict, total=False):
+    """Typed configuration dict for the translation pipeline runtime."""
+
+    default_model: str
+    prompt_profile: str
+    prompt_templates: dict[str, str]
+    model_aliases: dict[str, str]
+    fallback_chain: list[str]
+    model_probe: dict[str, object]
+    model_thresholds: dict[str, dict[str, object]]
+    enable_fallback: bool
+    output_format: str
+    bilingual_style: str
 
 
 def check_gemini_cli() -> bool:
@@ -44,24 +59,33 @@ def check_gemini_cli() -> bool:
         return False
 
 
-def _deep_merge_dict(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    result = dict(base)
+def _deep_merge_dict(base: RuntimeConfig, override: RuntimeConfig) -> RuntimeConfig:
+    """Deep-merge two RuntimeConfig dicts; override values win on conflict."""
+    result = _deep_merge_dict_impl(dict(base), dict(override))
+    return result  # type: ignore[return-value]
+
+
+def _deep_merge_dict_impl(
+    base: dict[str, object], override: dict[str, object]
+) -> dict[str, object]:
+    """Recursive implementation for _deep_merge_dict."""
+    result: dict[str, object] = dict(base)
     for key, value in override.items():
         base_val = result.get(key)
         if isinstance(base_val, dict) and isinstance(value, dict):
-            result[key] = _deep_merge_dict(base_val, value)
+            result[key] = _deep_merge_dict_impl(base_val, value)
         else:
             result[key] = value
     return result
 
 
-def load_runtime_config() -> dict[str, Any]:
+def load_runtime_config() -> RuntimeConfig:
     """Load config from bundled example and user override."""
     script_dir = Path(__file__).resolve().parent
     bundled_config_path = script_dir / "config" / "config.json.example"
     user_config_path = Path.home() / ".config" / "translatebook" / "config.json"
 
-    config: dict[str, Any] = {}
+    config: RuntimeConfig = {}
 
     if bundled_config_path.exists():
         try:
@@ -119,7 +143,7 @@ def load_runtime_config() -> dict[str, Any]:
     return config
 
 
-def load_prompt_template(runtime_config: dict[str, Any] | None = None) -> str:
+def load_prompt_template(runtime_config: RuntimeConfig | None = None) -> str:
     """Load prompt template using profile name from runtime config."""
     script_dir = Path(__file__).resolve().parent
     config = runtime_config or {}
@@ -155,7 +179,7 @@ def load_prompt_template(runtime_config: dict[str, Any] | None = None) -> str:
     return template_content
 
 
-def resolve_model_name(requested_model: str, runtime_config: dict[str, Any] | None = None) -> str:
+def resolve_model_name(requested_model: str, runtime_config: RuntimeConfig | None = None) -> str:
     """Resolve a model alias to the concrete model name."""
     if not isinstance(requested_model, str) or not requested_model.strip():
         raise ValueError("requested_model must be a non-empty string")
@@ -181,7 +205,7 @@ def resolve_model_name(requested_model: str, runtime_config: dict[str, Any] | No
 
 
 def build_model_candidates(
-    requested_model: str, runtime_config: dict[str, Any] | None = None
+    requested_model: str, runtime_config: RuntimeConfig | None = None
 ) -> list[str]:
     """Build requested->fallback ordered candidate model list."""
     config = runtime_config or {}
@@ -199,7 +223,7 @@ def build_model_candidates(
     return candidates
 
 
-def _create_model_probe(runtime_config: dict[str, Any]) -> ModelProbe | None:
+def _create_model_probe(runtime_config: RuntimeConfig) -> ModelProbe | None:
     probe_config_raw = runtime_config.get("model_probe")
     if not isinstance(probe_config_raw, dict):
         return None
@@ -220,7 +244,7 @@ def _create_model_probe(runtime_config: dict[str, Any]) -> ModelProbe | None:
 
 def select_model_with_fallback(
     requested_model: str,
-    runtime_config: dict[str, Any] | None = None,
+    runtime_config: RuntimeConfig | None = None,
     probe: ModelProbe | None = None,
 ) -> str:
     """Select first available model from requested->fallback chain."""
@@ -259,7 +283,7 @@ def select_model_with_fallback(
     )
 
 
-def print_model_selection_preview(requested_model: str, runtime_config: dict[str, Any]) -> None:
+def print_model_selection_preview(requested_model: str, runtime_config: RuntimeConfig) -> None:
     """Print model resolution details without translating files."""
     resolved_model = resolve_model_name(requested_model, runtime_config)
     candidates = build_model_candidates(requested_model, runtime_config)
@@ -275,7 +299,7 @@ def print_model_selection_preview(requested_model: str, runtime_config: dict[str
 
 
 def create_translation_prompt(
-    output_lang: str, custom_prompt: str | None = None, runtime_config: dict[str, Any] | None = None
+    output_lang: str, custom_prompt: str | None = None, runtime_config: RuntimeConfig | None = None
 ) -> str:
     """Create translation prompt with optional custom additions."""
     lang_name = get_language_name(output_lang)
@@ -299,7 +323,7 @@ def translate_with_gemini_cli(
     model: str,
     custom_prompt: str | None = None,
     max_retries: int = 3,
-    runtime_config: dict[str, Any] | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> str | None:
     """Translate text using Gemini CLI via GeminiProvider."""
     prompt = create_translation_prompt(output_lang, custom_prompt, runtime_config=runtime_config)
@@ -336,7 +360,7 @@ def append_progress_log(
     message: str | None = None,
 ) -> None:
     """Append a JSONL progress entry for resumable translation visibility."""
-    record: dict[str, Any] = {
+    record: dict[str, str | float] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
         "filename": filename,
         "status": status,
@@ -355,7 +379,7 @@ def translate_markdown_files(
     output_lang: str,
     custom_prompt: str | None = None,
     forced_model: str | None = None,
-    runtime_config: dict[str, Any] | None = None,
+    runtime_config: RuntimeConfig | None = None,
     resume: bool = True,
 ) -> None:
     """Translate all markdown files in temp directory"""
@@ -534,7 +558,7 @@ def translate_markdown_files(
     print(f"  Progress log: {progress_log_path}")
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description="Book Translation Tool - Step 3: Translate Markdown using Gemini CLI"

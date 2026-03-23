@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +23,9 @@ def test_read_zip_text_missing_entry_raises_value_error() -> None:
             _read_zip_text(zf, "does_not_exist.xhtml")
 
 
-def test_checkpoint_mismatch_prints_warning(tmp_path: Path, capsys) -> None:
+def test_checkpoint_mismatch_prints_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     import json
     from ai.epub_translate_roundtrip import _load_checkpoint_snapshot
 

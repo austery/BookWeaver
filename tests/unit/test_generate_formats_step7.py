@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
+import pytest
 
-def _load_module():
+
+def _load_module() -> types.ModuleType:
     project_root = Path(__file__).resolve().parents[2]
     file_path = project_root / "07_generate_formats.py"
     spec = importlib.util.spec_from_file_location("step7_module", file_path)
@@ -16,7 +19,7 @@ def _load_module():
     return module
 
 
-def test_step7_parse_arguments_accepts_output_format(monkeypatch):
+def test_step7_parse_arguments_accepts_output_format(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_module()
     monkeypatch.setattr(
         sys,
@@ -34,32 +37,34 @@ def test_step7_parse_arguments_accepts_output_format(monkeypatch):
     assert args.output_format == "epub"
 
 
-def test_step7_resolve_output_formats_for_epub():
+def test_step7_resolve_output_formats_for_epub() -> None:
     module = _load_module()
     assert module.resolve_output_formats("epub") == ["epub"]
 
 
-def test_step7_resolve_output_formats_for_html():
+def test_step7_resolve_output_formats_for_html() -> None:
     module = _load_module()
     assert module.resolve_output_formats("html") == []
 
 
-def test_step7_resolve_html_input_prefers_book_html_when_book_doc_missing(temp_dir):
+def test_step7_resolve_html_input_prefers_book_html_when_book_doc_missing(temp_dir: Path) -> None:
     module = _load_module()
     (temp_dir / "book.html").write_text("<html></html>", encoding="utf-8")
     selected = module.resolve_html_input_file(str(temp_dir))
     assert selected.endswith("book.html")
 
 
-def test_step7_generate_epub_uses_ebook_convert(monkeypatch, temp_dir):
+def test_step7_generate_epub_uses_ebook_convert(
+    monkeypatch: pytest.MonkeyPatch, temp_dir: Path
+) -> None:
     module = _load_module()
     html_file = temp_dir / "book.html"
     html_file.write_text("<html></html>", encoding="utf-8")
     output_file = temp_dir / "book.epub"
 
-    calls = []
+    calls: list[list[str]] = []
 
-    def fake_run(cmd, check, capture_output, text):
+    def fake_run(cmd: list[str], check: bool, capture_output: bool, text: bool) -> object:
         calls.append(cmd)
         output_file.write_text("ok", encoding="utf-8")
         return type("Result", (), {"stdout": "done"})()
@@ -71,7 +76,9 @@ def test_step7_generate_epub_uses_ebook_convert(monkeypatch, temp_dir):
     assert calls[0][0] == "ebook-convert"
 
 
-def test_run_ebook_convert_not_installed_returns_false(monkeypatch, capsys) -> None:
+def test_run_ebook_convert_not_installed_returns_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     import importlib.util
     from pathlib import Path
 
@@ -83,7 +90,7 @@ def test_run_ebook_convert_not_installed_returns_false(monkeypatch, capsys) -> N
 
     import subprocess
 
-    def fake_run(*args, **kwargs):
+    def fake_run(*args: object, **kwargs: object) -> object:
         raise FileNotFoundError("ebook-convert: command not found")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -94,7 +101,9 @@ def test_run_ebook_convert_not_installed_returns_false(monkeypatch, capsys) -> N
     assert "ebook-convert not found" in captured.out or "ebook-convert not found" in captured.err
 
 
-def test_run_ebook_convert_called_process_error_returns_false(monkeypatch, capsys) -> None:
+def test_run_ebook_convert_called_process_error_returns_false(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     import importlib.util
     import subprocess
     from pathlib import Path
@@ -105,7 +114,7 @@ def test_run_ebook_convert_called_process_error_returns_false(monkeypatch, capsy
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    def fake_run(*args, **kwargs):
+    def fake_run(*args: object, **kwargs: object) -> object:
         raise subprocess.CalledProcessError(
             returncode=1, cmd="ebook-convert", stderr="Conversion error detail"
         )

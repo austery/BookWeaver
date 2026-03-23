@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 
-def create_temp_directory(input_file, clean=False):
+def create_temp_directory(input_file: str, clean: bool = False) -> str:
     """Create temporary directory based on input filename"""
     input_path = Path(input_file)
     temp_dir = input_path.stem + "_temp"
@@ -27,7 +27,7 @@ def create_temp_directory(input_file, clean=False):
     return temp_dir
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description="Book Translation Tool - Step 1: Environment Setup"
@@ -44,7 +44,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def validate_input_file(input_file):
+def validate_input_file(input_file: str) -> str:
     """Validate input file exists and has supported extension"""
     if not os.path.exists(input_file):
         print(f"Error: Input file '{input_file}' not found")
@@ -61,7 +61,7 @@ def validate_input_file(input_file):
     return file_ext
 
 
-def save_config(temp_dir, args, file_ext):
+def save_config(temp_dir: str, args: argparse.Namespace, file_ext: str) -> dict[str, str]:
     """Save configuration to temp directory for other scripts"""
 
     config = {
@@ -81,7 +81,7 @@ def save_config(temp_dir, args, file_ext):
     return config
 
 
-def main():
+def main() -> None:
     """Main function"""
     print("=== Book Translation Tool - Step 1: Environment Setup ===")
 
