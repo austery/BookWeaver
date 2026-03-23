@@ -34,16 +34,18 @@ Infrastructure-layer utilities shared by pipeline scripts. Intentionally placed 
 ```
 BookWeaver/
 ├── pipeline_utils.py          ← NEW: load_pipeline_config, get_language_name
-├── 01_convert_to_htmlz.py     ← imports from pipeline_utils
-├── 02_split_to_md.py          ← imports from pipeline_utils
-├── 03_translate_md.py         ← imports from pipeline_utils + RuntimeConfig TypedDict
-├── 06_add_toc.py              ← imports from pipeline_utils
-├── 07_generate_formats.py     ← imports from pipeline_utils
+├── 01_convert_to_htmlz.py     ← imports load_pipeline_config (writes config, no get_language_name)
+├── 02_split_to_md.py          ← imports load_pipeline_config (reads config, no get_language_name)
+├── 03_translate_md.py         ← imports both + RuntimeConfig TypedDict
+├── 06_add_toc.py              ← imports load_pipeline_config (no language mapping needed)
+├── 07_generate_formats.py     ← imports load_pipeline_config (lang_map removed with dead code)
 ├── ai/
-│   └── epub_translate_roundtrip.py  ← imports get_language_name from pipeline_utils
+│   └── epub_translate_roundtrip.py  ← imports get_language_name only
 └── tests/unit/
     └── test_pipeline_utils.py ← NEW
 ```
+
+**Note:** `01_convert_to_htmlz.py` is the file that **writes** `config.txt` — it does not call `load_pipeline_config`. It only needs `load_pipeline_config` if the script also reads config mid-run (verify at implementation time). `06_add_toc.py` and `07_generate_formats.py` have no standalone `get_language_name` — only `03_translate_md.py` and `ai/epub_translate_roundtrip.py` need that function.
 
 ### RuntimeConfig TypedDict (03_translate_md.py)
 
@@ -72,8 +74,8 @@ class RuntimeConfig(TypedDict):
 
 | File | Action |
 |------|--------|
-| `07_generate_formats.py:36-144` | Delete `translate_title_with_claude` function entirely |
-| `07_generate_formats.py:42` | Remove redundant inner `import subprocess` |
+| `07_generate_formats.py:36-146` | Delete `translate_title_with_claude` function entirely (includes trailing blank line). **Note:** The `lang_map` dict inside this function (lines 47-60) is the third language-mapping source for Commit 2. Record it from git history before deleting. |
+| `07_generate_formats.py:42` | Remove redundant inner `import subprocess` (deleted as part of the function above) |
 | `01_prepare_env.py:14` | Remove unused `import shutil` |
 | `02_split_to_md.py:13-14` | Remove unused `import io`, `import json` |
 | `01_convert_to_htmlz.py:10` | Remove unused `from typing import Any` |
@@ -115,7 +117,9 @@ class RuntimeConfig(TypedDict):
    ```
    Language mapping is the union of all three existing implementations (14+ languages).
 
-3. Replace duplicate implementations in `03_translate_md.py`, `06_add_toc.py`, `07_generate_formats.py`, `01_convert_to_htmlz.py`, `02_split_to_md.py`, `ai/epub_translate_roundtrip.py`.
+3. Replace duplicate implementations:
+   - `load_pipeline_config`: replace in `02_split_to_md.py`, `03_translate_md.py`, `06_add_toc.py`, `07_generate_formats.py` (verify `01_convert_to_htmlz.py` — it writes config, may not need to read it)
+   - `get_language_name`: replace in `03_translate_md.py:124` and `ai/epub_translate_roundtrip.py:75`. The third copy (`07_generate_formats.py:47`) was removed with the dead code in Commit 1 — use git history to extract its language entries for the union mapping.
 
 **Verification:** `uv run pytest -q` → new tests GREEN; no existing tests broken
 
@@ -131,13 +135,15 @@ class RuntimeConfig(TypedDict):
 | `test_epub_translate_roundtrip.py` | `test_read_zip_text_missing_entry_raises_value_error` | Missing ZIP entry → `ValueError("EPUB missing required file: <path>")` not bare `KeyError` |
 | `test_translate_step3_refactor.py` | `test_load_runtime_config_invalid_json_raises_with_message` | Malformed user config JSON → `json.JSONDecodeError` with file path in message |
 | `test_generate_formats_step7.py` | `test_run_ebook_convert_not_installed_returns_false` | `ebook-convert` absent → returns `False`, prints "ebook-convert not found. Install Calibre." |
-| `test_epub_translate_roundtrip.py` | `test_checkpoint_mismatch_prints_warning` | Model change → stdout contains `[WARN] Checkpoint invalidated` |
+| `test_epub_translate_roundtrip.py` | `test_checkpoint_mismatch_prints_warning` | EPUB checkpoint: model change → stdout contains `[WARN] Checkpoint invalidated`. **Scope note:** `03_translate_md.py` does not have checkpoint/resume logic for metadata mismatches — its `resume` flag only skips already-translated files, not metadata validation. Therefore only the EPUB roundtrip path needs this warning test. |
 
 **Then make GREEN:**
-- `ai/epub_translate_roundtrip.py:436` — replace local `_read_zip_text` with hardened version from `epub_package.py` (adds `KeyError` → `ValueError` and `UnicodeDecodeError` → `ValueError` guards)
+- `ai/epub_translate_roundtrip.py:436` — replace local `_read_zip_text` with hardened version from `epub_package.py` (adds `KeyError` → `ValueError` and `UnicodeDecodeError` → `ValueError` guards). The hardened version already exists at `epub_package.py:279-288` — import and reuse it rather than copying.
 - `03_translate_md.py:82` — wrap each `json.load()` in `try/except json.JSONDecodeError` with message containing the file path
-- `07_generate_formats.py:243` — add `except FileNotFoundError: log_error("ebook-convert not found. Install Calibre."); return False`
-- `ai/epub_translate_roundtrip.py:196–234` — add `print(f"[WARN] Checkpoint invalidated: <field> changed ...")` to each metadata mismatch branch
+- `07_generate_formats.py:243` — add `except FileNotFoundError: log_error("ebook-convert not found. Install Calibre."); return False` after the existing `except subprocess.CalledProcessError` block
+- `ai/epub_translate_roundtrip.py:196–234` — add `print(f"[WARN] Checkpoint invalidated: <field> changed ({old} -> {new}). Starting fresh.", flush=True)` to each metadata mismatch branch
+
+**Note on `_run_ebook_convert` test split with Commit 4:** Commit 3 adds `test_run_ebook_convert_not_installed_returns_false` (new behavior for `FileNotFoundError`) and fixes the code. Commit 4 adds `test_run_ebook_convert_called_process_error_returns_false` as a **coverage test for already-existing behavior** — no additional code change required for that test to be GREEN.
 
 ---
 
@@ -169,6 +175,8 @@ class RuntimeConfig(TypedDict):
 - `convert_to_pdf_calibre:77` — `raise Exception(...)` → `raise RuntimeError(...) from e`
 - `split_pdf_to_md:600` — preserve `CalledProcessError.stderr` in error message before `sys.exit(1)`
 
+**Non-goal (out of scope):** The 10+ other bare `raise Exception(...)` calls in `02_split_to_md.py` (lines 54, 72, 79, 103, 132, 137, 140–144, 171, 178, 245, 390, 397, 412, 419) are **not** addressed in this cleanup. They are noted as technical debt for a future refactor. Addressing them now would expand scope significantly without proportional benefit.
+
 ---
 
 ### Commit 5 — Test Coverage + Quality Fixes
@@ -185,9 +193,9 @@ class RuntimeConfig(TypedDict):
 | `test_model_selector.py` | `test_select_at_exact_medium_threshold` | Issue 15 |
 | `test_translate_step3_refactor.py` | `test_translate_files_resume_skips_existing` | Issue 16 |
 | `test_translate_step3_refactor.py` | `test_deep_merge_dict_nested_merge` | S8 |
-| `test_translate_step3_refactor.py` | `test_resolve_model_alias_cycle_detection` | error-reviewer gap |
+| `test_translate_step3_refactor.py` | `test_resolve_model_alias_cycle_detection` — **coverage-only, no code change** (behavior already implemented at `03_translate_md.py:200`) | error-reviewer gap |
 | `test_bilingual_merger.py` | Rewrite manual `try/except` → `pytest.raises` | S6 |
-| `test_epub_translate_batching.py` | Remove exact batch-size assertion, keep invariant assertions | S7 |
+| `test_epub_translate_roundtrip.py:116` | Remove exact batch-size assertion (`[35, 35, 35, 25]`), keep invariant assertions (total count preserved, each batch ≤ 36 segments) | S7 — **Note: file is `test_epub_translate_roundtrip.py`, not `test_epub_translate_batching.py`** |
 
 **All tests must be GREEN on commit.**
 
@@ -221,6 +229,8 @@ ignore = [
 6. `03_translate_md.py` — replace `dict[str, Any]` with `RuntimeConfig` TypedDict
 
 **Verification:** `uv run ruff check .` → 0 errors under new ANN rules proves annotation completeness.
+
+**F401 removal note:** Removing `F401` from the ignore list means unused imports are now errors. Before committing, verify that all preceding commits (1–5) are also clean under F401 by running `uv run ruff check .` with the new config. Any import added in Commits 2–5 that is no longer used must be cleaned up in this commit.
 
 ---
 
