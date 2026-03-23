@@ -314,6 +314,10 @@ def create_translation_prompt(
         prompt = f"{prompt.rstrip()}\n\n{custom_block}"
 
     prompt = prompt.rstrip()
+    # "markdown文件正文:" is a hardcoded Chinese label that marks the
+    # start of the document body in the translation prompt. It is intentionally
+    # written in Chinese because the prompt targets Chinese-speaking models
+    # and the label helps the model identify where the content begins.
     return f"{prompt}\n\n markdown文件正文:"
 
 

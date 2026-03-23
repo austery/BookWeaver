@@ -25,6 +25,9 @@ from ai.gemini_provider import GeminiProvider
 from pipeline_utils import get_language_name as _get_language_name
 
 TranslateFn = Callable[[str], str]
+# _MODEL_ALIASES is independent from the config.json alias table loaded by
+# load_runtime_config(). This local table maps short CLI names to full EPUB
+# workflow model identifiers and is not affected by user config overrides.
 _MODEL_ALIASES = {
     "pro": "gemini-3-pro-preview",
     "flash": "gemini-2.5-flash",

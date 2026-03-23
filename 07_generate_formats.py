@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Step 7: Generate DOCX and EPUB files in temp directory
-Uses existing html2docx.sh and html2epub.sh scripts to generate files in temp directory
+Step 7: Generate output formats (DOCX, EPUB, PDF) from the bilingual HTML produced
+by step 5. Uses Calibre's `ebook-convert` CLI for format conversion.
 """
 
 from __future__ import annotations

@@ -34,6 +34,18 @@ class ModelSelector:
         return Threshold(max_chars=max_chars_raw, model=model_raw)
 
     def select(self, chunk_size: int) -> str:
+        """Select a model tier based on chunk character size.
+
+        Boundary semantics: the comparison is strict (<), so a chunk_size exactly
+        equal to a tier's max_chars falls through to the NEXT tier. E.g., if
+        small.max_chars == 5000, then chunk_size=5000 selects the medium tier.
+
+        Args:
+            chunk_size: Number of characters in the text chunk to be translated.
+
+        Returns:
+            Model name string for the appropriate tier.
+        """
         if chunk_size < 0:
             raise ValueError("chunk_size must be >= 0")
 

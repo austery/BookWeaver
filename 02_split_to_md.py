@@ -706,7 +706,7 @@ def main() -> None:
     # Find temp directory
     temp_dirs = [d for d in os.listdir(".") if d.endswith("_temp")]
     if not temp_dirs:
-        print("Error: No temp directory found. Run 01_prepare_env.py first.")
+        print("Error: No temp directory found. Run 01_convert_to_htmlz.py first.")
         sys.exit(1)
 
     # Use the most recently modified temp directory (likely the current one)

@@ -4,6 +4,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+# NOTE: QuotaTracker is not yet wired into the main pipeline. It exists as
+# infrastructure for future rate-limiting and quota enforcement.
+
 
 class QuotaTracker:
     def __init__(self, db_path: str) -> None:

@@ -62,6 +62,16 @@ class ModelProbe:
         return (time.time() - float(timestamp)) <= self.ttl_seconds
 
     def probe(self, candidates: list[str]) -> dict[str, bool]:
+        """Run probes against all candidate models and return availability results.
+
+        Side effect: sets self.last_probe_errors to a dict mapping model names to
+        error messages for models that failed probing. Callers can inspect this
+        attribute after a failed probe to surface diagnostics.
+
+        Returns:
+            A dict mapping each candidate model name to True (available) or
+            False (unavailable/failed).
+        """
         if not candidates:
             raise ValueError("candidates must not be empty")
 

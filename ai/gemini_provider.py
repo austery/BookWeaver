@@ -19,6 +19,8 @@ class GeminiProvider:
         system_prompt: str,
         timeout_seconds: int = 180,
     ) -> str:
+        # chunk_size is reserved for future rate-limiting; it is not used
+        # functionally in the current implementation.
         if chunk_size < 0:
             raise ValueError("chunk_size must be >= 0")
         if not text.strip():
