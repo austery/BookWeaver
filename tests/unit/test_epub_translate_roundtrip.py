@@ -528,3 +528,143 @@ def test_translate_roundtrip_resume_skips_completed_docs() -> None:
 
         assert "R1:Doc1" in chapter1
         assert "R2:Doc2" in chapter2
+
+
+def test_rate_limit_retry_sleeps_then_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """On RateLimitError, function sleeps using first backoff slot then retries."""
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+    from ai.gemini_provider import RateLimitError
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    call_count = 0
+
+    def flaky_translate(text: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:  # fail only once — consumes backoff[0]=60
+            raise RateLimitError("rate limited")
+        return f"ZH:{text}"
+
+    result = translate_segments_with_batch_retry(
+        ["hello"],
+        translate_batch=flaky_translate,
+        context_label="test",
+    )
+    assert result == ["ZH:hello"]
+    assert sleep_calls == [60]  # first backoff slot used
+
+
+def test_rate_limit_retry_uses_retry_after_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When RateLimitError carries retry_after_seconds, that value is used instead of backoff."""
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+    from ai.gemini_provider import RateLimitError
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    call_count = 0
+
+    def flaky_translate(text: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RateLimitError("rate limited", retry_after_seconds=45)
+        return f"ZH:{text}"
+
+    translate_segments_with_batch_retry(
+        ["hello"],
+        translate_batch=flaky_translate,
+        context_label="test",
+    )
+    assert sleep_calls == [45]  # uses retry_after, not 60
+
+
+def test_rate_limit_retry_exhausted_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """After both backoff slots consumed, RateLimitError propagates. Both sleep values are used."""
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+    from ai.gemini_provider import RateLimitError
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    def always_rate_limited(text: str) -> str:
+        raise RateLimitError("always limited")
+
+    with pytest.raises(RateLimitError):
+        translate_segments_with_batch_retry(
+            ["hello"],
+            translate_batch=always_rate_limited,
+            context_label="test",
+        )
+    # Both backoff slots are consumed (60s then 120s) before giving up
+    assert sleep_calls == [60, 120]
+
+
+def test_rate_limit_does_not_trigger_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    """RateLimitError retries the SAME batch, not a split sub-batch."""
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+    from ai.gemini_provider import RateLimitError
+
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+
+    received_lengths: list[int] = []
+
+    def track_and_fail(text: str) -> str:
+        # Count segments by separator count
+        count = text.count("%%") + 1 if "%%" in text else 1
+        received_lengths.append(count)
+        if len(received_lengths) == 1:  # fail only once — one backoff slot consumed
+            raise RateLimitError("limited")
+        return "\n\n%%\n\n".join(f"ZH:{i}" for i in range(count))
+
+    translate_segments_with_batch_retry(
+        [f"seg{i}" for i in range(4)],
+        translate_batch=track_and_fail,
+        context_label="test",
+    )
+    # All calls should be for 4 segments (same batch), never 2+2 split
+    assert all(n == 4 for n in received_lengths)
+
+
+def test_pro_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """batch_translate closure passes timeout_seconds=300 for Pro model."""
+    import tempfile
+    from pathlib import Path
+    from ai import gemini_provider
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    received_timeout: list[int] = []
+
+    def capture_translate(
+        self: object,  # instance — required for class-level monkeypatch
+        text: str,
+        chunk_size: int,
+        system_prompt: str,
+        timeout_seconds: int = 180,
+    ) -> str:
+        received_timeout.append(timeout_seconds)
+        count = text.count("%%") + 1 if "%%" in text else 1
+        return "\n\n%%\n\n".join("ZH:seg" for _ in range(count))
+
+    monkeypatch.setattr(gemini_provider.GeminiProvider, "translate_chunk", capture_translate)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "book.epub"
+        out = Path(tmp) / "out.epub"
+        _build_min_epub(src)
+
+        run_translate_roundtrip(
+            source_epub=src,
+            output_epub=out,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="pro",  # resolves to _MODEL_ALIASES["pro"] = "gemini-3-pro-preview"
+        )
+
+    assert received_timeout and all(t == 300 for t in received_timeout)
