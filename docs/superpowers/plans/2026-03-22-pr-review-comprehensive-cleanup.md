@@ -102,7 +102,9 @@ from typing import Any
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
 Expected: 0 ruff errors, all tests still green.
@@ -336,7 +338,9 @@ from pipeline_utils import get_language_name as _get_language_name
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
 Expected: 0 ruff errors, all tests green (including the 5 new pipeline_utils tests).
@@ -621,7 +625,9 @@ Expected: all 4 PASS.
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
 Expected: 0 errors, all green.
@@ -694,7 +700,8 @@ def test_load_runtime_config_permission_error(tmp_path: Path, monkeypatch) -> No
     config_path.write_text('{"default_model": "flash"}', encoding="utf-8")
     config_path.chmod(0o000)  # no-read
 
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    import pathlib
+    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: tmp_path))
 
     try:
         with pytest.raises(PermissionError):
@@ -822,7 +829,9 @@ For each location below, add a specific exception handler **before** the existin
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
 Expected: 0 errors, all green.
@@ -1039,7 +1048,9 @@ assert sum(len(b) for b in batches) == len(segments)
 
 ```bash
 uv run ruff check .
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
 Expected: all green.
@@ -1231,17 +1242,12 @@ Replace every occurrence of `dict[str, Any]` in function signatures and local va
 
 ```bash
 uv run ruff check .
-```
-
-Expected: 0 errors (including 0 ANN errors).
-
-- [ ] **Step 4: Run full test suite**
-
-```bash
+uv run ruff format --check .
 uv run pytest -q
+bash -n translatebook.sh
 ```
 
-Expected: all green.
+Expected: 0 errors (including 0 ANN errors), all green, shell syntax valid.
 
 - [ ] **Step 5: Verify F401 is clean** (no unused imports introduced in Commits 2-5)
 
