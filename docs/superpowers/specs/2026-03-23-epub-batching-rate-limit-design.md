@@ -183,7 +183,7 @@ def batch_translate(batch_text: str) -> str:
 | `test_plan_segment_batches_no_segment_limit` | 200 segments × 10 chars each, max=60K → 1 batch |
 | `test_rate_limit_retry_uses_backoff` | `RateLimitError` → sleep(60) → retry → `RateLimitError` → sleep(120) → retry → succeed |
 | `test_rate_limit_retry_uses_retry_after` | `RateLimitError(retry_after_seconds=45)` → sleep(45) not 60 |
-| `test_rate_limit_exhausted_raises` | 3× `RateLimitError` → `RateLimitError` propagates |
+| `test_rate_limit_exhausted_raises` | initial attempt + 2 retries all fail (both backoff slots consumed) → 3rd `RateLimitError` propagates to caller |
 | `test_rate_limit_does_not_split` | `RateLimitError` on 36-segment batch → retry same 36, not split 18+18 |
 | `test_pro_timeout_passed_to_provider` | Pro model → `translate_chunk` called with `timeout_seconds=300` |
 
