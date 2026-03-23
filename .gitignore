@@ -26,3 +26,4 @@ config/config.json
 
 # Local git worktrees
 .worktrees/
+.claude/settings.local.json
