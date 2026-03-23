@@ -213,6 +213,60 @@ def test_load_runtime_config_invalid_json_raises_with_message(tmp_path: Path, mo
         module.load_runtime_config()
 
 
+def test_translate_files_resume_skips_existing(tmp_path: Path, monkeypatch) -> None:
+    """resume=True must skip files that already have output_*.md."""
+    module = _load_step3_module()
+
+    # Create input and pre-existing output files
+    input_file = tmp_path / "page0001.md"
+    input_file.write_text("Some content", encoding="utf-8")
+    output_file = tmp_path / "output_page0001.md"
+    output_file.write_text("Already translated", encoding="utf-8")
+
+    translate_calls: list[str] = []
+
+    def fake_translate_with_gemini_cli(
+        text: str, output_lang: str, model: str, custom_prompt: str | None = None, **kwargs: object
+    ) -> str:
+        translate_calls.append(text)
+        return "translated"
+
+    monkeypatch.setattr(module, "translate_with_gemini_cli", fake_translate_with_gemini_cli)
+
+    module.translate_markdown_files(
+        temp_dir=str(tmp_path),
+        output_lang="zh",
+        runtime_config={
+            "default_model": "gemini-2.5-flash",
+            "prompt_profile": "default",
+            "prompt_templates": {"default": "config/prompts/default_prompt.txt"},
+            "model_aliases": {},
+            "fallback_chain": [],
+            "model_probe": {"enabled": False},
+        },
+        resume=True,
+    )
+    assert translate_calls == [], "translation should NOT be attempted for existing output file"
+
+
+def test_deep_merge_dict_nested_merge() -> None:
+    """Nested keys should be merged, not replaced wholesale."""
+    module = _load_step3_module()
+    base = {"model_thresholds": {"small": {"max_chars": 5000, "model": "flash"}}}
+    override = {"model_thresholds": {"small": {"model": "pro"}}}
+    result = module._deep_merge_dict(base, override)
+    assert result["model_thresholds"]["small"]["max_chars"] == 5000
+    assert result["model_thresholds"]["small"]["model"] == "pro"
+
+
+def test_resolve_model_alias_cycle_detection() -> None:
+    """Alias cycles must raise ValueError with helpful message."""
+    module = _load_step3_module()
+    cyclic_config = {"model_aliases": {"pro": "flash", "flash": "pro"}}
+    with pytest.raises(ValueError, match="cycle detected"):
+        module.resolve_model_name("pro", runtime_config=cyclic_config)
+
+
 def test_load_runtime_config_permission_error(tmp_path: Path, monkeypatch) -> None:
     """PermissionError on user config propagates with path info."""
     module = _load_step3_module()

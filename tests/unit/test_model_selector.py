@@ -36,3 +36,35 @@ def test_select_pro_for_large_chunks():
         }
     )
     assert selector.select(chunk_size=15000) == "gemini-2.5-pro"
+
+
+def test_select_at_exact_small_threshold_goes_to_medium() -> None:
+    """chunk_size == small.max_chars falls through to medium (boundary is exclusive: < not <=)."""
+    from ai.model_selector import ModelSelector
+
+    selector = ModelSelector(
+        config={
+            "model_thresholds": {
+                "small": {"max_chars": 5000, "model": "small-model"},
+                "medium": {"max_chars": 10000, "model": "medium-model"},
+                "large": {"max_chars": None, "model": "large-model"},
+            }
+        }
+    )
+    assert selector.select(chunk_size=5000) == "medium-model"
+
+
+def test_select_at_exact_medium_threshold_goes_to_large() -> None:
+    """chunk_size == medium.max_chars falls through to large (boundary is exclusive: < not <=)."""
+    from ai.model_selector import ModelSelector
+
+    selector = ModelSelector(
+        config={
+            "model_thresholds": {
+                "small": {"max_chars": 5000, "model": "small-model"},
+                "medium": {"max_chars": 10000, "model": "medium-model"},
+                "large": {"max_chars": None, "model": "large-model"},
+            }
+        }
+    )
+    assert selector.select(chunk_size=10000) == "large-model"

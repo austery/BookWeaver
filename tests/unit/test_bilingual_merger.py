@@ -1,3 +1,5 @@
+import pytest
+
 from ai.bilingual_merger import BilingualMerger
 
 
@@ -14,10 +16,7 @@ def test_merge_alternating_pairs_in_order():
     assert idx_en1 < idx_zh1 < idx_en2 < idx_zh2
 
 
-def test_merge_raises_on_mismatched_chunk_count():
+def test_merge_raises_on_mismatched_chunk_count() -> None:
     merger = BilingualMerger()
-    try:
+    with pytest.raises(ValueError):
         merger.merge(original_chunks=["A", "B"], translated_chunks=["甲"])
-    except ValueError:
-        return
-    raise AssertionError("Expected ValueError on mismatched chunk count")
