@@ -50,16 +50,21 @@ _RATE_LIMIT_BACKOFF_SECONDS: list[int] = [60, 120]
 
 ### Change 1 — Char-Only Batching
 
-Remove `max_batch_segments` from `plan_segment_batches`. The function signature becomes:
+**Delta:** `_PRO_PREBATCH_MAX_CHARS` value changes from `18_000` → `60_000`. `_PRO_PREBATCH_MAX_SEGMENTS = 36` is deleted entirely.
+
+Remove `max_batch_segments` from `plan_segment_batches`. Both remaining parameters stay keyword-only (preserve the `*` separator). The function signature becomes:
 
 ```python
 def plan_segment_batches(
     segments: list[str],
+    *,
     max_batch_chars: int,
 ) -> list[list[str]]: ...
 ```
 
 The segment count parameter is removed entirely (not made optional) to prevent future misuse.
+
+**Existing tests to update:** `test_plan_segment_batches_enforces_limits_and_order` and `test_plan_segment_batches_allows_single_oversized_segment` both pass `max_batch_segments=36`. Remove that argument from both tests and adjust assertions to reflect char-only batching.
 
 Pro pre-batching call site:
 ```python
@@ -116,6 +121,8 @@ Add a `rate_limit_retry_count` parameter (default 0). On `RateLimitError`:
 - Sleep and retry the **same batch** (not split — splitting increases call count, making rate limiting worse)
 - After `len(_RATE_LIMIT_BACKOFF_SECONDS)` attempts, raise to caller
 
+**Recursion interaction:** `rate_limit_retry_count` is **reset to 0** in sub-recursive calls created by split-retry. Each sub-batch is an independent request and should have its own full retry budget. The parent batch consuming its rate-limit retries does not reduce the budget for its children.
+
 Error routing summary:
 
 | Exception | Action |
@@ -127,10 +134,12 @@ Error routing summary:
 
 ### Change 4 — Pro Timeout
 
-`batch_translate` closure passes `timeout_seconds` based on model:
+`batch_translate` closure passes `timeout_seconds` based on model. This only applies to the real Gemini call path (`translate_fn is None`); when `translate_fn` is provided (test stubs), it bypasses `GeminiProvider` entirely and timeout does not apply.
 
 ```python
 def batch_translate(batch_text: str) -> str:
+    if translate_fn is not None:
+        return str(translate_fn(batch_text))   # test stub: no timeout
     return provider.translate_chunk(
         text=batch_text,
         chunk_size=len(batch_text),
