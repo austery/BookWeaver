@@ -402,7 +402,7 @@ Add to `tests/unit/test_epub_translate_roundtrip.py`:
 
 ```python
 def test_rate_limit_retry_sleeps_then_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On RateLimitError, function sleeps using backoff then retries the same batch."""
+    """On RateLimitError, function sleeps using first backoff slot then retries."""
     import time
     from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
     from ai.gemini_provider import RateLimitError
@@ -415,7 +415,7 @@ def test_rate_limit_retry_sleeps_then_retries(monkeypatch: pytest.MonkeyPatch) -
     def flaky_translate(text: str) -> str:
         nonlocal call_count
         call_count += 1
-        if call_count <= 2:
+        if call_count == 1:  # fail only once — consumes backoff[0]=60
             raise RateLimitError("rate limited")
         return f"ZH:{text}"
 
@@ -425,7 +425,7 @@ def test_rate_limit_retry_sleeps_then_retries(monkeypatch: pytest.MonkeyPatch) -
         context_label="test",
     )
     assert result == ["ZH:hello"]
-    assert sleep_calls == [60, 120]  # backoff[0], backoff[1]
+    assert sleep_calls == [60]  # first backoff slot used
 
 
 def test_rate_limit_retry_uses_retry_after_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -455,12 +455,13 @@ def test_rate_limit_retry_uses_retry_after_seconds(monkeypatch: pytest.MonkeyPat
 
 
 def test_rate_limit_retry_exhausted_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """After both backoff slots consumed, RateLimitError propagates to caller."""
+    """After both backoff slots consumed, RateLimitError propagates. Both sleep values are used."""
     import time
     from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
     from ai.gemini_provider import RateLimitError
 
-    monkeypatch.setattr(time, "sleep", lambda s: None)
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
 
     def always_rate_limited(text: str) -> str:
         raise RateLimitError("always limited")
@@ -471,6 +472,8 @@ def test_rate_limit_retry_exhausted_raises(monkeypatch: pytest.MonkeyPatch) -> N
             translate_batch=always_rate_limited,
             context_label="test",
         )
+    # Both backoff slots are consumed (60s then 120s) before giving up
+    assert sleep_calls == [60, 120]
 
 
 def test_rate_limit_does_not_trigger_split(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -487,7 +490,7 @@ def test_rate_limit_does_not_trigger_split(monkeypatch: pytest.MonkeyPatch) -> N
         # Count segments by separator count
         count = text.count("%%") + 1 if "%%" in text else 1
         received_lengths.append(count)
-        if len(received_lengths) < 3:
+        if len(received_lengths) == 1:  # fail only once — one backoff slot consumed
             raise RateLimitError("limited")
         return "\n\n%%\n\n".join(f"ZH:{i}" for i in range(count))
 
@@ -504,37 +507,36 @@ def test_pro_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch) -> None
     """batch_translate closure passes timeout_seconds=300 for Pro model."""
     import tempfile
     from pathlib import Path
+    from ai import gemini_provider
     from ai.epub_translate_roundtrip import run_translate_roundtrip
 
     received_timeout: list[int] = []
 
     def capture_translate(
+        self: object,           # instance — required for class-level monkeypatch
         text: str,
         chunk_size: int,
         system_prompt: str,
         timeout_seconds: int = 180,
     ) -> str:
         received_timeout.append(timeout_seconds)
-        # Return a valid translation (same segment count)
         count = text.count("%%") + 1 if "%%" in text else 1
-        return "\n\n%%\n\n".join(f"ZH:seg" for _ in range(count))
+        return "\n\n%%\n\n".join("ZH:seg" for _ in range(count))
+
+    monkeypatch.setattr(gemini_provider.GeminiProvider, "translate_chunk", capture_translate)
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "book.epub"
         out = Path(tmp) / "out.epub"
         _build_min_epub(src)
 
-        from ai.gemini_provider import GeminiProvider
-        from unittest.mock import patch
-
-        with patch.object(GeminiProvider, "translate_chunk", capture_translate):
-            run_translate_roundtrip(
-                epub_path=src,
-                output_path=out,
-                output_lang="zh",
-                model="pro",  # triggers _MODEL_ALIASES["pro"] = "gemini-3-pro-preview"
-                temp_dir=Path(tmp),
-            )
+        run_translate_roundtrip(
+            source_epub=src,
+            output_epub=out,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="pro",  # resolves to _MODEL_ALIASES["pro"] = "gemini-3-pro-preview"
+        )
 
     assert received_timeout and all(t == 300 for t in received_timeout)
 ```
