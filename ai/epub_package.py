@@ -133,8 +133,6 @@ def _should_render_translation(*, block_node: ET.Element, document_path: str | N
 
 def _determine_translation_sibling_tag(parent: ET.Element) -> str:
     parent_tag = _local_name(parent.tag).lower()
-    if parent_tag in {"ul", "ol"}:
-        return "li"
     if parent_tag == "dl":
         return "dd"
     return "p"

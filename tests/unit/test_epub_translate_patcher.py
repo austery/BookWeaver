@@ -141,7 +141,8 @@ def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:
     """Translation injection must not double <li> count in ordered lists.
 
     Inserting a sibling <li> for each translation causes <ol> to re-number
-    from 1–N to 1–2N. Translations must be nested inside the source <li>.
+    from 1–N to 1–2N. Translations must be nested inside the source <li>
+    as a <p class="bw-translation"> child.
     """
     import xml.etree.ElementTree as ET
 
@@ -165,10 +166,46 @@ def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:
     li_items = root.findall(".//x:li", ns)
     assert len(li_items) == 3, f"Expected 3 <li> items, got {len(li_items)}"
 
-    # Translations must still appear in the output (nested inside <li>)
-    assert "热量食物价值。" in patched
-    assert "风味和香气。" in patched
-    assert "刺激，如糖。" in patched
+    # Each translation must be a <p class="bw-translation"> nested inside its <li>
+    translations_in_li = [
+        p.text
+        for li in li_items
+        for p in li.findall("x:p[@class='bw-translation']", ns)
+    ]
+    assert translations_in_li == ["热量食物价值。", "风味和香气。", "刺激，如糖。"]
+
+
+def test_patch_xhtml_alternating_preserves_unordered_list_item_count() -> None:
+    """Translation injection must not insert extra <li> siblings into <ul> lists.
+
+    Same code path as <ol> — translations are nested inside source <li> as
+    <p class="bw-translation"> children so list semantics are preserved.
+    """
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<ul>"
+        "<li>Apples.</li>"
+        "<li>Oranges.</li>"
+        "</ul>"
+        "</body></html>"
+    )
+    patched = patch_xhtml_alternating(source, ["苹果。", "橙子。"])
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+    li_items = root.findall(".//x:li", ns)
+    assert len(li_items) == 2, f"Expected 2 <li> items, got {len(li_items)}"
+
+    translations_in_li = [
+        p.text
+        for li in li_items
+        for p in li.findall("x:p[@class='bw-translation']", ns)
+    ]
+    assert translations_in_li == ["苹果。", "橙子。"]
 
 
 def test_patch_xhtml_alternating_adds_caption_horizontal_compat_css() -> None:
