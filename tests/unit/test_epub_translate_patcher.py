@@ -137,6 +137,40 @@ def test_patch_xhtml_alternating_keeps_table_cells_source_only() -> None:
     assert "表后文本。" in patched
 
 
+def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:
+    """Translation injection must not double <li> count in ordered lists.
+
+    Inserting a sibling <li> for each translation causes <ol> to re-number
+    from 1–N to 1–2N. Translations must be nested inside the source <li>.
+    """
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<ol>"
+        "<li>Food value in calories.</li>"
+        "<li>Flavor and aroma.</li>"
+        "<li>Stimulus, as by sugar.</li>"
+        "</ol>"
+        "</body></html>"
+    )
+    patched = patch_xhtml_alternating(
+        source, ["热量食物价值。", "风味和香气。", "刺激，如糖。"]
+    )
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+    li_items = root.findall(".//x:li", ns)
+    assert len(li_items) == 3, f"Expected 3 <li> items, got {len(li_items)}"
+
+    # Translations must still appear in the output (nested inside <li>)
+    assert "热量食物价值。" in patched
+    assert "风味和香气。" in patched
+    assert "刺激，如糖。" in patched
+
+
 def test_patch_xhtml_alternating_adds_caption_horizontal_compat_css() -> None:
     from ai.epub_package import patch_xhtml_alternating
 

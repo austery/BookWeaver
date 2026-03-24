@@ -151,6 +151,18 @@ def _insert_translation_block(
     if parent is None:
         return
 
+    parent_tag = _local_name(parent.tag).lower()
+    if parent_tag in {"ul", "ol"}:
+        # Nest translation inside the source <li> so <ol> numbering is
+        # not disrupted (inserting a sibling <li> would double the count).
+        translated_block = ET.SubElement(
+            block_node,
+            _qualified_tag("p", namespace),
+            attrib={"class": _TRANSLATION_CLASS},
+        )
+        translated_block.text = translation
+        return
+
     sibling_tag = _determine_translation_sibling_tag(parent)
     translated_block = ET.Element(
         _qualified_tag(sibling_tag, namespace),
