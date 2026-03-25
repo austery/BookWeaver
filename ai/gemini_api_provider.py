@@ -67,22 +67,57 @@ class GeminiAPIProvider:
         self,
         *,
         api_key: str | None = None,
-        model: str = "gemini-2.5-flash",
+        model: str | None = None,
+        config: dict[str, object] | None = None,
     ) -> None:
         """Initialize Gemini API provider.
 
         Args:
-            api_key: Google AI API key. If None, reads from GEMINI_API_KEY env var.
-            model: Model name (default: gemini-2.5-flash)
+            api_key: Google AI API key. If None, reads from sources in order:
+                     1. GEMINI_API_KEY environment variable
+                     2. config['gemini_api']['api_key'] if config provided
+            model: Model name. If None, reads from sources in order:
+                   1. config['gemini_api']['model'] if config provided
+                   2. Default: gemini-2.5-flash
+            config: Config dict (typically from config.json). Can contain:
+                   config['gemini_api']['api_key'] - API key
+                   config['gemini_api']['model'] - Model name
 
         Raises:
-            ValueError: If API key is empty or not provided
+            ValueError: If API key is empty or not provided from any source
         """
+        # Priority for API key: explicit > env var > config file
         resolved_api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+
+        # Try config file if no API key yet
+        if not resolved_api_key and config:
+            try:
+                gemini_api_config = config.get("gemini_api")
+                if isinstance(gemini_api_config, dict):
+                    resolved_api_key = gemini_api_config.get("api_key", "")
+            except (AttributeError, TypeError):
+                pass
+
         if not resolved_api_key:
             raise ValueError(
-                "API key is required. Provide via api_key parameter or GEMINI_API_KEY env var."
+                "API key is required. Provide via:\n"
+                "  1. api_key parameter\n"
+                "  2. GEMINI_API_KEY environment variable\n"
+                "  3. config['gemini_api']['api_key'] in config.json"
             )
+
+        # Priority for model: explicit > config file > default
+        if model is None:
+            model = "gemini-2.5-flash"  # Default
+            if config:
+                try:
+                    gemini_api_config = config.get("gemini_api")
+                    if isinstance(gemini_api_config, dict):
+                        config_model = gemini_api_config.get("model")
+                        if isinstance(config_model, str) and config_model:
+                            model = config_model
+                except (AttributeError, TypeError):
+                    pass
 
         self.api_key = resolved_api_key
         self.model = model

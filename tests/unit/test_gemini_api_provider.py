@@ -144,6 +144,44 @@ def test_api_key_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     assert provider.api_key == "env-api-key-123"
 
 
+def test_api_key_from_config_file() -> None:
+    """Test that API key can be loaded from config dict."""
+    from ai.gemini_api_provider import GeminiAPIProvider
+
+    config = {
+        "gemini_api": {
+            "api_key": "config-api-key-456",
+            "model": "gemini-2.5-pro",
+        }
+    }
+
+    provider = GeminiAPIProvider(model="gemini-2.5-flash", config=config)
+    assert provider.api_key == "config-api-key-456"
+    # Model should NOT be overridden when explicitly provided
+    assert provider.model == "gemini-2.5-flash"
+
+
+def test_api_key_priority_explicit_over_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that explicit api_key parameter has priority over config."""
+    from ai.gemini_api_provider import GeminiAPIProvider
+
+    monkeypatch.setenv("GEMINI_API_KEY", "env-key")
+    config = {"gemini_api": {"api_key": "config-key"}}
+
+    # Explicit parameter should win
+    provider = GeminiAPIProvider(api_key="explicit-key", config=config)
+    assert provider.api_key == "explicit-key"
+
+    # Env var should be next
+    provider = GeminiAPIProvider(config=config)
+    assert provider.api_key == "env-key"
+
+    # Config should be last
+    monkeypatch.delenv("GEMINI_API_KEY")
+    provider = GeminiAPIProvider(config=config)
+    assert provider.api_key == "config-key"
+
+
 def test_rate_limit_error_is_subclass_of_runtime_error() -> None:
     """Test that RateLimitError inherits from RuntimeError for compatibility."""
     from ai.gemini_api_provider import RateLimitError

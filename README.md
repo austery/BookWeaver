@@ -41,12 +41,24 @@ which pandoc
 ```
 
 **Option B: Gemini API (alternative, experimental)**
-- Google AI API key (set `GEMINI_API_KEY` env var)
+- Google AI API key (set via env var, config file, or CLI parameter)
 - `ebook-convert` (Calibre)
 - `pandoc`
 
 ```bash
+# Option B1: Use environment variable
 export GEMINI_API_KEY="your-api-key-here"
+
+# Option B2: Use config file (recommended for persistent setup)
+# Edit config/config.json:
+# {
+#   "gemini_api": {
+#     "enabled": true,
+#     "api_key": "your-api-key-here",
+#     "model": "gemini-2.5-flash"
+#   }
+# }
+
 which ebook-convert
 which pandoc
 ```
@@ -304,6 +316,30 @@ Design reference for future prompt/segmentation optimization:
 - Probe cache config: `model_probe.cache_path` / `model_probe.cache_ttl_seconds`
 - Ordered fallback: `fallback_chain`
 - Quota DB: `~/.config/translatebook/quota.db`
+
+### Gemini API Configuration (Optional)
+
+For using Gemini API provider instead of CLI, configure in `config/config.json`:
+
+```json
+{
+  "gemini_api": {
+    "enabled": true,
+    "api_key": "your-google-ai-api-key-here",
+    "model": "gemini-2.5-flash"
+  }
+}
+```
+
+**API Key Priority** (highest to lowest):
+1. `api_key` parameter (if passed to GeminiAPIProvider constructor)
+2. `GEMINI_API_KEY` environment variable
+3. `config['gemini_api']['api_key']` in config.json
+
+**Recommended approach:**
+- **Development**: Use `GEMINI_API_KEY` env var for quick testing
+- **Production**: Use config file to persist settings
+- **CI/CD**: Use env var to keep secrets out of version control
 
 ## Acknowledgements
 
