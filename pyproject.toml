@@ -2,7 +2,9 @@
 name = "bookweaver"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "google-generativeai>=0.8.6",
+]
 
 [dependency-groups]
 dev = [
@@ -23,3 +25,8 @@ ignore = [
     "I001",   # import ordering (handled by formatter)
 ]
 # NOTE: F401 (unused imports) is intentionally NOT in ignore — unused imports are now errors.
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::FutureWarning:google.generativeai",
+]

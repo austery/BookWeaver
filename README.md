@@ -1,7 +1,7 @@
 BookWeaver
 ==========
 
-BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `.docx`) using Gemini CLI, with EPUB-first output and bilingual merge support.
+BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `.docx`) using Gemini CLI or Gemini API, with EPUB-first output and bilingual merge support.
 
 ## What it does
 
@@ -27,12 +27,26 @@ Default behavior:
 
 ### 1) Prerequisites
 
+Choose one translation provider:
+
+**Option A: Gemini CLI (recommended, default)**
 - `gemini` CLI (authenticated)
 - `ebook-convert` (Calibre)
 - `pandoc`
 
 ```bash
 which gemini
+which ebook-convert
+which pandoc
+```
+
+**Option B: Gemini API (alternative, experimental)**
+- Google AI API key (set `GEMINI_API_KEY` env var)
+- `ebook-convert` (Calibre)
+- `pandoc`
+
+```bash
+export GEMINI_API_KEY="your-api-key-here"
 which ebook-convert
 which pandoc
 ```
@@ -99,6 +113,29 @@ Example use case for `--force-resume`:
 
 **Warning**: `--force-resume` allows mixing translations from different models in the same book, which may cause inconsistent translation style and quality. Only use this when necessary (e.g., to work around Gemini CLI capacity/rate limit errors).
 
+### 3.1a) Alternative: Use Gemini API instead of CLI (experimental)
+
+If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you can use the direct Gemini API as an alternative:
+
+```bash
+# Set your API key
+export GEMINI_API_KEY="your-api-key-here"
+
+# Use API provider instead of CLI (coming soon)
+./translatebook.sh --workflow epub --provider api --output-format epub /path/to/book.epub
+```
+
+**Advantages of API provider:**
+- More stable and predictable error handling
+- Better rate limit recovery with explicit retry delays
+- Programmatic control over timeouts and retries
+- Clear distinction between temporary (429) and permanent quota errors
+
+**Current status:**
+- Gemini API provider implementation is in progress (TDD)
+- CLI provider remains the default
+- API provider will be available in next release
+
 Common commands:
 
 ```bash
@@ -162,6 +199,37 @@ CI uses workflow `lint-and-test` with a strict order:
 
 If lint or tests fail, the CI gate is blocking and the change is not merge-ready.
 See `docs/architecture/specs/SPEC-003-lint-quality-gates.md` for the formal policy.
+
+## Troubleshooting
+
+### Gemini CLI AbortError or capacity issues
+
+If you encounter persistent `AbortError: The user aborted a request` or similar capacity errors:
+
+**Immediate solutions:**
+1. **Wait and retry** - Gemini CLI has traffic prioritization limits that vary by time of day
+2. **Use `--force-resume`** - Switch models without losing progress:
+   ```bash
+   # Initial run with flash
+   ./translatebook.sh --workflow epub --model flash book.epub
+   
+   # If flash fails, resume with pro using force-resume
+   ./translatebook.sh --workflow epub --model pro --force-resume book.epub
+   ```
+3. **Use Gemini API (experimental)** - More stable alternative to CLI:
+   ```bash
+   export GEMINI_API_KEY="your-api-key"
+   ./translatebook.sh --workflow epub --provider api book.epub
+   ```
+
+**Root cause:**
+Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery logic that aborts requests if they exceed internal timeout thresholds. This is a known limitation documented in [Gemini CLI updates](https://goo.gle/geminicli-updates).
+
+**Workarounds:**
+- Avoid peak traffic hours (9 AM - 6 PM Pacific time usually has higher limits)
+- Try early morning or late night runs
+- Use `--model pro` if you have higher tier access
+- Consider using Gemini API provider for production workloads
 
 ## Prompt definition
 
