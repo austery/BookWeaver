@@ -104,6 +104,25 @@ def test_non_rate_limit_failure_raises_runtime_error(monkeypatch: pytest.MonkeyP
     assert not isinstance(exc_info.value, RateLimitError)
 
 
+def test_abort_error_raised_as_transient_cli_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ai.gemini_provider import GeminiProvider, TransientCLIError
+
+    provider = GeminiProvider(model="gemini-3-pro-preview")
+
+    def mock_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=["gemini"],
+            returncode=1,
+            stdout="",
+            stderr="AbortError: The user aborted a request.",
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    with pytest.raises(TransientCLIError):
+        provider.translate_chunk(text="hello", chunk_size=5, system_prompt="translate")
+
+
 def test_parse_retry_after_json_format() -> None:
     from ai.gemini_provider import _parse_retry_after
 

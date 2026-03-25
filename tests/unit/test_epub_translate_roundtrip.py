@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import zipfile
@@ -689,6 +690,37 @@ def test_rate_limit_does_not_trigger_split(monkeypatch: pytest.MonkeyPatch) -> N
     assert all(n == 4 for n in received_lengths)
 
 
+def test_timeout_retries_same_batch_before_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    received_sizes: list[int] = []
+    call_count = 0
+
+    def timeout_then_ok(text: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        seg_count = text.count("%%") + 1 if "%%" in text else 1
+        received_sizes.append(seg_count)
+        if call_count == 1:
+            raise subprocess.TimeoutExpired(cmd=["gemini"], timeout=180)
+        return "\n\n%%\n\n".join(f"ZH:{i}" for i in range(seg_count))
+
+    result = translate_segments_with_batch_retry(
+        [f"seg{i}" for i in range(4)],
+        translate_batch=timeout_then_ok,
+        context_label="timeout-retry",
+    )
+
+    assert len(result) == 4
+    # expected behavior: first timeout retries same batch (size 4), not split immediately
+    assert received_sizes[:2] == [4, 4]
+    assert sleep_calls  # a retry wait should happen before second attempt
+
+
 def test_pro_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     """batch_translate closure passes timeout_seconds=300 for Pro model."""
     import tempfile
@@ -766,3 +798,29 @@ def test_api_provider_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch
         )
 
     assert received_timeout and all(t == 180 for t in received_timeout)
+
+
+def test_external_beyond_stoicism_chapter3_segment_count_regression() -> None:
+    """External regression case: chapter3 should keep 172 translatable segments.
+
+    This test is opt-in and uses a local, external EPUB path.
+    Enable by exporting BOOKWEAVER_RUN_EXTERNAL_CASES=1.
+    """
+    if os.getenv("BOOKWEAVER_RUN_EXTERNAL_CASES") != "1":
+        pytest.skip("set BOOKWEAVER_RUN_EXTERNAL_CASES=1 to run external regression cases")
+
+    from ai.epub_package import extract_translatable_segments
+
+    source_epub = Path(
+        "/Users/leipeng/Documents/Calibre_Books/Massimo Pigliucci/"
+        "Beyond Stoicism_ A Guide to the Good Life With Stoics, Skeptics, Epicureans, and Other Ancient (349)/"
+        "Beyond Stoicism_ A Guide to the Good Life - Massimo Pigliucci.epub"
+    )
+    if not source_epub.exists():
+        pytest.skip(f"external source not found: {source_epub}")
+
+    with zipfile.ZipFile(source_epub, "r") as source_zip:
+        chapter3 = source_zip.read("OEBPS/xhtml/chapter3.xhtml").decode("utf-8", errors="ignore")
+
+    segments = extract_translatable_segments(chapter3)
+    assert len(segments) == 172

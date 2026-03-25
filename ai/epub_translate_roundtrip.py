@@ -23,7 +23,7 @@ from ai.epub_package import (
     validate_package_structure,
 )
 from ai.gemini_api_provider import GeminiAPIProvider
-from ai.gemini_provider import GeminiProvider, RateLimitError
+from ai.gemini_provider import GeminiProvider, RateLimitError, TransientCLIError
 from pipeline_utils import get_language_name as _get_language_name
 
 TranslateFn = Callable[[str], str]
@@ -38,6 +38,8 @@ _MODEL_ALIASES = {
 _PRO_PREBATCH_MAX_CHARS: int = 60_000  # TODO(SPEC-007): move to config.json
 _PRO_TIMEOUT_SECONDS: int = 300  # TODO(SPEC-007): move to config.json
 _RATE_LIMIT_BACKOFF_SECONDS: list[int] = [60, 120]  # TODO(SPEC-007): move to config.json
+_TIMEOUT_BACKOFF_SECONDS: list[int] = [60]  # retry once before split
+_TRANSIENT_BACKOFF_SECONDS: list[int] = [45]  # retry once before split
 _SEGMENT_DELIMITER = "%%"
 _BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
 _BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
@@ -411,6 +413,8 @@ def translate_segments_with_batch_retry(
     context_label: str,
     retry_depth: int = 0,
     rate_limit_retry_count: int = 0,
+    timeout_retry_count: int = 0,
+    transient_retry_count: int = 0,
 ) -> list[str]:
     expected_count = len(segments)
     if expected_count == 0:
@@ -470,8 +474,48 @@ def translate_segments_with_batch_retry(
             rate_limit_retry_count=rate_limit_retry_count + 1,
         )
     except subprocess.TimeoutExpired as exc:
+        if timeout_retry_count < len(_TIMEOUT_BACKOFF_SECONDS):
+            wait = _TIMEOUT_BACKOFF_SECONDS[timeout_retry_count]
+            print(
+                f"[WARN] [{context_label}] Timeout. Waiting {wait}s before retry "
+                f"(attempt {timeout_retry_count + 1}/{len(_TIMEOUT_BACKOFF_SECONDS)}).",
+                flush=True,
+            )
+            time.sleep(wait)
+            return translate_segments_with_batch_retry(
+                segments,
+                translate_batch=translate_batch,
+                context_label=context_label,
+                retry_depth=retry_depth,
+                rate_limit_retry_count=rate_limit_retry_count,
+                timeout_retry_count=timeout_retry_count + 1,
+                transient_retry_count=transient_retry_count,
+            )
         timeout_value = exc.timeout if isinstance(exc.timeout, (int, float)) else "unknown"
         return split_and_retry(f"Batch request timed out after {timeout_value}s", exc)
+    except TransientCLIError as exc:
+        if transient_retry_count < len(_TRANSIENT_BACKOFF_SECONDS):
+            wait = (
+                exc.retry_after_seconds
+                if exc.retry_after_seconds is not None
+                else _TRANSIENT_BACKOFF_SECONDS[transient_retry_count]
+            )
+            print(
+                f"[WARN] [{context_label}] Transient CLI abort. Waiting {wait}s before retry "
+                f"(attempt {transient_retry_count + 1}/{len(_TRANSIENT_BACKOFF_SECONDS)}).",
+                flush=True,
+            )
+            time.sleep(wait)
+            return translate_segments_with_batch_retry(
+                segments,
+                translate_batch=translate_batch,
+                context_label=context_label,
+                retry_depth=retry_depth,
+                rate_limit_retry_count=rate_limit_retry_count,
+                timeout_retry_count=timeout_retry_count,
+                transient_retry_count=transient_retry_count + 1,
+            )
+        return split_and_retry("Transient CLI abort after retry budget", exc)
 
     try:
         return split_batch_translation(translated_batch, expected_count=expected_count)

@@ -13,6 +13,14 @@ class RateLimitError(RuntimeError):
         self.retry_after_seconds = retry_after_seconds
 
 
+class TransientCLIError(RuntimeError):
+    """Raised when Gemini CLI returns transient abort-style failures."""
+
+    def __init__(self, message: str, retry_after_seconds: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
 def _parse_retry_after(stderr: str) -> int | None:
     """Extract retry delay seconds from Gemini CLI stderr.
 
@@ -64,6 +72,11 @@ class GeminiProvider:
             if "429" in stderr or "RESOURCE_EXHAUSTED" in stderr:
                 wait = _parse_retry_after(stderr)
                 raise RateLimitError(f"Gemini rate limited: {stderr}", retry_after_seconds=wait)
+            if "AbortError" in stderr or "The user aborted a request" in stderr:
+                wait = _parse_retry_after(stderr)
+                raise TransientCLIError(
+                    f"Gemini transient CLI abort: {stderr}", retry_after_seconds=wait
+                )
             raise RuntimeError(f"Gemini CLI failed: {stderr}")
 
         return (result.stdout or "").strip()
