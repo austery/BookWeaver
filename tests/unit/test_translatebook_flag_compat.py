@@ -90,3 +90,27 @@ def test_conflicting_workflow_and_old_roundtrip_flag_fails() -> None:
         )
         assert completed.returncode == 2
         assert "conflict" in f"{completed.stdout}\n{completed.stderr}".lower()
+
+
+def test_provider_api_flag_is_accepted_in_dry_run() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                "--provider",
+                "api",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert completed.returncode == 0
+        assert "Provider: api" in completed.stdout

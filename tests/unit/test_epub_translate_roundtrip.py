@@ -725,3 +725,44 @@ def test_pro_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch) -> None
         )
 
     assert received_timeout and all(t == 300 for t in received_timeout)
+
+
+def test_api_provider_timeout_passed_to_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """batch_translate closure passes timeout_seconds=180 for API provider."""
+    import tempfile
+    from pathlib import Path
+
+    from ai import gemini_api_provider
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    received_timeout: list[int] = []
+
+    def capture_translate(
+        self: object,
+        text: str,
+        chunk_size: int,
+        system_prompt: str,
+        timeout_seconds: int = 180,
+    ) -> str:
+        received_timeout.append(timeout_seconds)
+        count = text.count("%%") + 1 if "%%" in text else 1
+        return "\n\n%%\n\n".join("ZH:seg" for _ in range(count))
+
+    monkeypatch.setattr(gemini_api_provider.GeminiAPIProvider, "translate_chunk", capture_translate)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "book.epub"
+        out = Path(tmp) / "out.epub"
+        _build_min_epub(src)
+
+        run_translate_roundtrip(
+            source_epub=src,
+            output_epub=out,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="flash",
+            provider_name="api",
+            api_key="test-key",
+        )
+
+    assert received_timeout and all(t == 180 for t in received_timeout)

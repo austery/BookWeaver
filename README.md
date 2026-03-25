@@ -133,7 +133,7 @@ If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you
 # Set your API key
 export GEMINI_API_KEY="your-api-key-here"
 
-# Use API provider instead of CLI (coming soon)
+# Use API provider instead of CLI
 ./translatebook.sh --workflow epub --provider api --output-format epub /path/to/book.epub
 ```
 
@@ -144,9 +144,9 @@ export GEMINI_API_KEY="your-api-key-here"
 - Clear distinction between temporary (429) and permanent quota errors
 
 **Current status:**
-- Gemini API provider implementation is in progress (TDD)
-- CLI provider remains the default
-- API provider will be available in next release
+- Gemini API provider is now available via `--provider api`
+- CLI provider remains the default (`--provider cli`)
+- API provider requires `GEMINI_API_KEY` or `gemini_api.api_key` in config
 
 Common commands:
 

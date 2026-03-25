@@ -89,6 +89,45 @@ def test_translatebook_help_includes_workflow_flag() -> None:
     assert "--workflow" in content
 
 
+def test_translatebook_help_includes_provider_flag() -> None:
+    content = Path("translatebook.sh").read_text(encoding="utf-8")
+    assert "--provider" in content
+
+
+def test_roundtrip_script_loads_api_key_from_config() -> None:
+    module = __import__("09_epub_translate_roundtrip")
+    resolve_api_key_from_config = module.resolve_api_key_from_config
+
+    config = {"gemini_api": {"api_key": "abc-123"}}
+    assert resolve_api_key_from_config(config) == "abc-123"
+    assert resolve_api_key_from_config({}) is None
+
+
+def test_roundtrip_script_loader_prefers_workspace_config_over_example(tmp_path: Path) -> None:
+    module = __import__("09_epub_translate_roundtrip")
+    load_runtime_config = module.load_runtime_config
+
+    script_dir = Path(module.__file__).resolve().parent
+    workspace_config = script_dir / "config" / "config.json"
+    backup = workspace_config.read_text(encoding="utf-8") if workspace_config.exists() else None
+
+    try:
+        workspace_config.write_text(
+            '{"gemini_api":{"api_key":"workspace-key","model":"gemini-2.5-flash"}}',
+            encoding="utf-8",
+        )
+        loaded = load_runtime_config()
+        assert isinstance(loaded, dict)
+        gemini_api = loaded.get("gemini_api")
+        assert isinstance(gemini_api, dict)
+        assert gemini_api.get("api_key") == "workspace-key"
+    finally:
+        if backup is None:
+            workspace_config.unlink(missing_ok=True)
+        else:
+            workspace_config.write_text(backup, encoding="utf-8")
+
+
 def test_epub_default_dry_run_uses_epub_workflow() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         input_epub = Path(temp_dir) / "book.epub"

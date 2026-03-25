@@ -15,9 +15,9 @@
     }
   },
   "model_aliases": {
-    "pro": "gemini-2.5-pro",
-    "flash": "gemini-2.5-flash",
-    "lite": "gemini-2.5-flash-lite"
+    "pro": "gemini-pro-latest",
+    "flash": "gemini-flash-latest",
+    "lite": "gemini-flash-lite-latest"
   },
   "fallback_chain": [
     "flash",
@@ -42,7 +42,7 @@
     ]
   },
   "gemini_api": {
-    "enabled": false,
+    "enabled": true,
     "api_key": null,
     "model": "gemini-2.5-flash"
   }

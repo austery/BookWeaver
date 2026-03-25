@@ -22,6 +22,7 @@ from ai.epub_package import (
     validate_manifest_assets,
     validate_package_structure,
 )
+from ai.gemini_api_provider import GeminiAPIProvider
 from ai.gemini_provider import GeminiProvider, RateLimitError
 from pipeline_utils import get_language_name as _get_language_name
 
@@ -534,6 +535,8 @@ def run_translate_roundtrip(
     output_lang: str,
     bilingual_style: str,
     model: str,
+    provider_name: str = "cli",
+    api_key: str | None = None,
     custom_prompt: str | None = None,
     translate_fn: TranslateFn | None = None,
     checkpoint_dir: Path | None = None,
@@ -544,7 +547,13 @@ def run_translate_roundtrip(
 
     resolved_model = _resolve_model_name(model)
     package_model = load_epub_package(source_epub)
-    provider = GeminiProvider(model=resolved_model)
+    if provider_name == "api":
+        provider: GeminiProvider | GeminiAPIProvider = GeminiAPIProvider(
+            api_key=api_key,
+            model=resolved_model,
+        )
+    else:
+        provider = GeminiProvider(model=resolved_model)
     source_signature = _compute_source_signature(source_epub)
     checkpoint = _load_checkpoint_snapshot(
         checkpoint_dir=checkpoint_dir,

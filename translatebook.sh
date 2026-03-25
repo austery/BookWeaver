@@ -35,6 +35,7 @@ WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
 FORCE_RESUME=false
+PROVIDER="cli"
 
 # Colors for output
 RED='\033[0;31m'
@@ -100,6 +101,7 @@ OPTIONS:
     --epub-baseline        Run EPUB baseline mode (no text mutation) and exit
     --epub-translate-roundtrip Deprecated alias for --workflow epub
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
+    --provider MODE        Translation provider: cli|api (default: cli)
     --force-resume         Allow resuming translation with different model (may cause quality inconsistency)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
@@ -395,6 +397,10 @@ parse_args() {
                 WORKFLOW_OVERRIDE="$2"
                 shift 2
                 ;;
+            --provider)
+                PROVIDER="$2"
+                shift 2
+                ;;
             --force-resume)
                 FORCE_RESUME=true
                 shift
@@ -453,6 +459,11 @@ parse_args() {
 
     if [[ -n "$WORKFLOW_OVERRIDE" ]] && [[ ! "$WORKFLOW_OVERRIDE" =~ ^(epub|markdown)$ ]]; then
         log_error "Invalid workflow mode: $WORKFLOW_OVERRIDE (must be epub|markdown)"
+        exit 2
+    fi
+
+    if [[ ! "$PROVIDER" =~ ^(cli|api)$ ]]; then
+        log_error "Invalid provider: $PROVIDER (must be cli|api)"
         exit 2
     fi
 }
@@ -533,6 +544,7 @@ show_config() {
     echo "  EPUB translate roundtrip mode: $EPUB_TRANSLATE_ROUNDTRIP"
     echo "  Workflow override: ${WORKFLOW_OVERRIDE:-auto}"
     echo "  Resolved workflow: $RESOLVED_WORKFLOW"
+    echo "  Provider: $PROVIDER"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -663,6 +675,7 @@ main() {
             --output-lang "$OUTPUT_LANG"
             --bilingual-style "$BILINGUAL_STYLE"
             --checkpoint-dir "$checkpoint_dir"
+            --provider "$PROVIDER"
         )
         if [[ -n "$MODEL_OVERRIDE" ]]; then
             cmd+=(--model "$MODEL_OVERRIDE")
@@ -684,11 +697,22 @@ main() {
         fi
 
         setup_venv
+        if [[ "$PROVIDER" == "api" ]]; then
+            if ! python3 -c "import google.generativeai" >/dev/null 2>&1; then
+                log_info "Installing Gemini API SDK into venv..."
+                if ! uv pip install google-generativeai; then
+                    log_error "Failed to install google-generativeai for API provider"
+                    exit 3
+                fi
+            fi
+        fi
         log_info "Starting translate roundtrip (progress logs will show per spine document)..."
-        if ! command -v gemini &> /dev/null; then
-            log_error "Gemini CLI not found"
-            log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
-            exit 4
+        if [[ "$PROVIDER" == "cli" ]]; then
+            if ! command -v gemini &> /dev/null; then
+                log_error "Gemini CLI not found"
+                log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
+                exit 4
+            fi
         fi
 
         if [[ "$VERBOSE" == true ]]; then
