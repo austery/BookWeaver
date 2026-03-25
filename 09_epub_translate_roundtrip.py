@@ -26,6 +26,11 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="Optional checkpoint directory for resume; if omitted, no checkpoint is written",
     )
+    parser.add_argument(
+        "--force-resume",
+        action="store_true",
+        help="Allow resuming with different model (may cause quality inconsistency)",
+    )
     return parser.parse_args()
 
 
@@ -45,6 +50,7 @@ def main() -> None:
         model=args.model,
         custom_prompt=args.prompt,
         checkpoint_dir=checkpoint_dir,
+        force_resume=args.force_resume,
     )
     print(
         f"Translated roundtrip generated: {result.output_epub} "

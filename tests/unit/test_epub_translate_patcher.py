@@ -157,9 +157,7 @@ def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:
         "</ol>"
         "</body></html>"
     )
-    patched = patch_xhtml_alternating(
-        source, ["热量食物价值。", "风味和香气。", "刺激，如糖。"]
-    )
+    patched = patch_xhtml_alternating(source, ["热量食物价值。", "风味和香气。", "刺激，如糖。"])
 
     ns = {"x": "http://www.w3.org/1999/xhtml"}
     root = ET.fromstring(patched)
@@ -168,9 +166,7 @@ def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:
 
     # Each translation must be a <p class="bw-translation"> nested inside its <li>
     translations_in_li = [
-        p.text
-        for li in li_items
-        for p in li.findall("x:p[@class='bw-translation']", ns)
+        p.text for li in li_items for p in li.findall("x:p[@class='bw-translation']", ns)
     ]
     assert translations_in_li == ["热量食物价值。", "风味和香气。", "刺激，如糖。"]
 
@@ -201,9 +197,7 @@ def test_patch_xhtml_alternating_preserves_unordered_list_item_count() -> None:
     assert len(li_items) == 2, f"Expected 2 <li> items, got {len(li_items)}"
 
     translations_in_li = [
-        p.text
-        for li in li_items
-        for p in li.findall("x:p[@class='bw-translation']", ns)
+        p.text for li in li_items for p in li.findall("x:p[@class='bw-translation']", ns)
     ]
     assert translations_in_li == ["苹果。", "橙子。"]
 

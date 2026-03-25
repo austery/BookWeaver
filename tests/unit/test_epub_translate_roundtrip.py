@@ -60,6 +60,63 @@ def test_checkpoint_mismatch_prints_warning(
     assert "Checkpoint invalidated" in captured.out
 
 
+def test_checkpoint_model_change_with_force_resume(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test that force_resume allows resuming with different model."""
+    import json
+    from ai.epub_translate_roundtrip import _load_checkpoint_snapshot
+
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "source_signature": "abc123",
+                "output_lang": "zh",
+                "bilingual_style": "alternating",
+                "model": "gemini-2.5-flash",
+                "custom_prompt": None,
+                "completed_docs": [
+                    {
+                        "doc_path": "chapter1.xhtml",
+                        "checkpoint_file": "abc.xhtml",
+                        "segments": 5,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Create checkpoint doc file
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "abc.xhtml").write_text("<html/>", encoding="utf-8")
+
+    # Call with force_resume=True and different model
+    snapshot = _load_checkpoint_snapshot(
+        checkpoint_dir=tmp_path,
+        source_signature="abc123",
+        output_lang="zh",
+        bilingual_style="alternating",
+        model="gemini-3-pro-preview",  # different model
+        custom_prompt=None,
+        force_resume=True,
+    )
+
+    # Should NOT invalidate checkpoint
+    assert len(snapshot.entries) == 1
+    assert "chapter1.xhtml" in snapshot.entries
+    assert snapshot.translated_docs == 1
+    assert snapshot.translated_segments == 5
+
+    # Should print warning about force-resume
+    captured = capsys.readouterr()
+    assert "[WARN]" in captured.out
+    assert "force-resume enabled" in captured.out
+    assert "Checkpoint invalidated" not in captured.out
+
+
 def _translate_with_batch_separator(text: str) -> str:
     if "%%" in text:
         parts = [part.strip() for part in text.split("\n\n%%\n\n")]

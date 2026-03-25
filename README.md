@@ -71,11 +71,33 @@ EPUB workflow writes output to `<input_basename>_temp/translated_roundtrip.epub`
 
 ### 3.1) Resume after interruption (recommended)
 
+**Markdown workflow (Step 3):**
+
 Step 3 (`03_translate_md.py`) now resumes by default:
 
 - Existing `output_pageXXXX.md` files are skipped automatically
 - Progress is written to `<temp_dir>/translation_progress.log` (JSONL)
 - Step 3 prints total elapsed time at completion
+
+**EPUB workflow (checkpoint-based resume):**
+
+EPUB workflow uses checkpoint-based resume at `<temp_dir>/roundtrip_checkpoint/`:
+
+- Automatically resumes from last completed document
+- **Important**: By default, changing model invalidates checkpoint (ensures quality consistency)
+- Use `--force-resume` to resume after model switch (accepts potential quality inconsistency)
+
+Example use case for `--force-resume`:
+
+```bash
+# Start with flash model
+./translatebook.sh --workflow epub --model flash book.epub
+
+# If flash hits rate limit/capacity errors, switch to pro with force-resume
+./translatebook.sh --workflow epub --model pro --force-resume book.epub
+```
+
+**Warning**: `--force-resume` allows mixing translations from different models in the same book, which may cause inconsistent translation style and quality. Only use this when necessary (e.g., to work around Gemini CLI capacity/rate limit errors).
 
 Common commands:
 

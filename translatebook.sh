@@ -34,6 +34,7 @@ EPUB_TRANSLATE_ROUNDTRIP=false
 WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
+FORCE_RESUME=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -99,6 +100,7 @@ OPTIONS:
     --epub-baseline        Run EPUB baseline mode (no text mutation) and exit
     --epub-translate-roundtrip Deprecated alias for --workflow epub
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
+    --force-resume         Allow resuming translation with different model (may cause quality inconsistency)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -393,6 +395,10 @@ parse_args() {
                 WORKFLOW_OVERRIDE="$2"
                 shift 2
                 ;;
+            --force-resume)
+                FORCE_RESUME=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -663,6 +669,9 @@ main() {
         fi
         if [[ -n "$CUSTOM_PROMPT" ]]; then
             cmd+=(-p "$CUSTOM_PROMPT")
+        fi
+        if [[ "$FORCE_RESUME" == true ]]; then
+            cmd+=(--force-resume)
         fi
 
         local translate_cmd_display

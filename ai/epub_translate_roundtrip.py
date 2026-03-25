@@ -166,6 +166,7 @@ def _load_checkpoint_snapshot(
     bilingual_style: str,
     model: str,
     custom_prompt: str | None,
+    force_resume: bool = False,
 ) -> CheckpointSnapshot:
     if checkpoint_dir is None:
         return CheckpointSnapshot(
@@ -219,16 +220,23 @@ def _load_checkpoint_snapshot(
             translated_docs=0,
         )
     if raw_state.get("model") != model:
-        print(
-            f"[WARN] Checkpoint invalidated: model changed ({raw_state.get('model')} -> {model}). Starting fresh.",
-            flush=True,
-        )
-        return CheckpointSnapshot(
-            overrides={},
-            entries={},
-            translated_segments=0,
-            translated_docs=0,
-        )
+        if force_resume:
+            print(
+                f"[WARN] Model changed ({raw_state.get('model')} -> {model}) but force-resume enabled. "
+                "Continuing with existing checkpoint (translation quality may be inconsistent).",
+                flush=True,
+            )
+        else:
+            print(
+                f"[WARN] Checkpoint invalidated: model changed ({raw_state.get('model')} -> {model}). Starting fresh.",
+                flush=True,
+            )
+            return CheckpointSnapshot(
+                overrides={},
+                entries={},
+                translated_segments=0,
+                translated_docs=0,
+            )
     if raw_state.get("custom_prompt") != custom_prompt:
         print("[WARN] Checkpoint invalidated: custom_prompt changed. Starting fresh.", flush=True)
         return CheckpointSnapshot(
@@ -529,6 +537,7 @@ def run_translate_roundtrip(
     custom_prompt: str | None = None,
     translate_fn: TranslateFn | None = None,
     checkpoint_dir: Path | None = None,
+    force_resume: bool = False,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -544,6 +553,7 @@ def run_translate_roundtrip(
         bilingual_style=bilingual_style,
         model=resolved_model,
         custom_prompt=custom_prompt,
+        force_resume=force_resume,
     )
     overrides: dict[str, bytes] = dict(checkpoint.overrides)
     checkpoint_entries: dict[str, CheckpointEntry] = dict(checkpoint.entries)
