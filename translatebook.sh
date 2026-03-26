@@ -719,10 +719,10 @@ main() {
 
         setup_venv
         if [[ "$PROVIDER" == "api" ]]; then
-            if ! python3 -c "import google.generativeai" >/dev/null 2>&1; then
+            if ! python3 -c "from google import genai" >/dev/null 2>&1; then
                 log_info "Installing Gemini API SDK into venv..."
-                if ! uv pip install google-generativeai; then
-                    log_error "Failed to install google-generativeai for API provider"
+                if ! uv pip install google-genai; then
+                    log_error "Failed to install google-genai for API provider"
                     exit 3
                 fi
             fi

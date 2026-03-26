@@ -40,14 +40,10 @@ def test_translate_chunk_returns_translated_text() -> None:
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    # Mock the Google GenAI SDK
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        # Setup mock response
-        mock_model = MagicMock()
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
         mock_response = MagicMock()
         mock_response.text = "这是翻译后的文本"
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_generate.return_value = mock_response
 
         result = provider.translate_chunk(
             text="This is source text",
@@ -56,21 +52,20 @@ def test_translate_chunk_returns_translated_text() -> None:
         )
 
         assert result == "这是翻译后的文本"
-        mock_model.generate_content.assert_called_once()
+        mock_generate.assert_called_once()
 
 
 def test_rate_limit_error_raised_on_429() -> None:
     """Test that RateLimitError is raised on 429 response."""
     from ai.gemini_api_provider import GeminiAPIProvider, RateLimitError
-    from google.api_core.exceptions import ResourceExhausted
+    from google.genai import errors
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        mock_model = MagicMock()
-        # Simulate 429 ResourceExhausted error
-        mock_model.generate_content.side_effect = ResourceExhausted("Rate limit exceeded")
-        mock_genai.GenerativeModel.return_value = mock_model
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_generate.side_effect = errors.ClientError(
+            429, {"error": {"message": "Rate limit exceeded"}}
+        )
 
         with pytest.raises(RateLimitError, match="Rate limit"):
             provider.translate_chunk(
@@ -81,16 +76,15 @@ def test_rate_limit_error_raised_on_429() -> None:
 def test_rate_limit_error_extracts_retry_after() -> None:
     """Test that retry_after_seconds is extracted from error details."""
     from ai.gemini_api_provider import GeminiAPIProvider, RateLimitError
-    from google.api_core.exceptions import ResourceExhausted
+    from google.genai import errors
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        mock_model = MagicMock()
-        # Simulate error with retry delay
-        error = ResourceExhausted("Quota exceeded. Retry in 30 seconds.")
-        mock_model.generate_content.side_effect = error
-        mock_genai.GenerativeModel.return_value = mock_model
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        error = errors.ClientError(
+            429, {"error": {"message": "Quota exceeded. Retry in 30 seconds."}}
+        )
+        mock_generate.side_effect = error
 
         with pytest.raises(RateLimitError) as exc_info:
             provider.translate_chunk(text="test", chunk_size=10, system_prompt="translate")
@@ -102,14 +96,12 @@ def test_rate_limit_error_extracts_retry_after() -> None:
 def test_handles_internal_server_error() -> None:
     """Test that 5xx errors are wrapped as RuntimeError."""
     from ai.gemini_api_provider import GeminiAPIProvider
-    from google.api_core.exceptions import InternalServerError
+    from google.genai import errors
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = InternalServerError("Server error")
-        mock_genai.GenerativeModel.return_value = mock_model
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_generate.side_effect = errors.ServerError(500, {"error": {"message": "Server error"}})
 
         with pytest.raises(RuntimeError, match="Gemini API.*error"):
             provider.translate_chunk(text="test", chunk_size=10, system_prompt="translate")
@@ -118,14 +110,14 @@ def test_handles_internal_server_error() -> None:
 def test_handles_timeout() -> None:
     """Test that timeout is respected and raises error."""
     from ai.gemini_api_provider import GeminiAPIProvider
-    from google.api_core.exceptions import DeadlineExceeded
+    from google.genai import errors
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        mock_model = MagicMock()
-        mock_model.generate_content.side_effect = DeadlineExceeded("Request timeout")
-        mock_genai.GenerativeModel.return_value = mock_model
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_generate.side_effect = errors.ClientError(
+            408, {"error": {"message": "Request timeout"}}
+        )
 
         with pytest.raises(RuntimeError, match="timeout|Timeout"):
             provider.translate_chunk(
@@ -195,12 +187,10 @@ def test_empty_response_raises_error() -> None:
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch("ai.gemini_api_provider.genai") as mock_genai:
-        mock_model = MagicMock()
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
         mock_response = MagicMock()
         mock_response.text = ""  # Empty response
-        mock_model.generate_content.return_value = mock_response
-        mock_genai.GenerativeModel.return_value = mock_model
+        mock_generate.return_value = mock_response
 
         with pytest.raises(RuntimeError, match="[Ee]mpty.*response"):
             provider.translate_chunk(text="test", chunk_size=10, system_prompt="translate")
