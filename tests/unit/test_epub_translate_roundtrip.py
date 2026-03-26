@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -824,3 +825,164 @@ def test_external_beyond_stoicism_chapter3_segment_count_regression() -> None:
 
     segments = extract_translatable_segments(chapter3)
     assert len(segments) == 172
+
+
+def test_doc_failure_budget_allows_continue_and_writes_failed_list(tmp_path: Path) -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    source_epub = tmp_path / "book.epub"
+    output_epub = tmp_path / "translated.epub"
+    failed_docs_path = tmp_path / "failed-docs.json"
+    _build_two_chapter_epub(source_epub)
+
+    call_count = 0
+
+    def fail_first_doc_then_succeed(batch_text: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        if "Doc1" in batch_text:
+            raise RuntimeError("simulated doc1 failure")
+        return f"ZH:{batch_text}"
+
+    result = run_translate_roundtrip(
+        source_epub=source_epub,
+        output_epub=output_epub,
+        output_lang="zh",
+        bilingual_style="alternating",
+        model="gemini-2.5-flash",
+        custom_prompt=None,
+        translate_fn=fail_first_doc_then_succeed,
+        doc_failure_budget=2,
+        failed_docs_path=failed_docs_path,
+    )
+
+    assert result.output_epub.exists()
+    assert result.translated_docs == 1
+    payload = json.loads(failed_docs_path.read_text(encoding="utf-8"))
+    assert len(payload) == 1
+    assert payload[0]["doc_path"] == "chapter1.xhtml"
+
+
+def test_timeout_retry_uses_custom_backoff_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: sleep_calls.append(s))
+
+    call_count = 0
+
+    def timeout_then_ok(_text: str) -> str:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise subprocess.TimeoutExpired(cmd=["gemini"], timeout=180)
+        return "ZH:ok"
+
+    result = translate_segments_with_batch_retry(
+        ["hello"],
+        translate_batch=timeout_then_ok,
+        context_label="custom-timeout",
+        timeout_backoff_seconds=(3,),
+    )
+    assert result == ["ZH:ok"]
+    assert sleep_calls == [3]
+
+
+def test_split_depth_cap_stops_recursive_splitting() -> None:
+    from ai.epub_translate_roundtrip import translate_segments_with_batch_retry
+
+    def always_mismatch(_text: str) -> str:
+        return "BROKEN"
+
+    with pytest.raises(RuntimeError, match="max split depth"):
+        translate_segments_with_batch_retry(
+            ["a", "b", "c", "d"],
+            translate_batch=always_mismatch,
+            context_label="depth-cap",
+            max_split_depth=0,
+        )
+
+
+def test_doc_circuit_breaker_writes_failed_doc_list(tmp_path: Path) -> None:
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    source_epub = tmp_path / "book.epub"
+    output_epub = tmp_path / "translated.epub"
+    failed_docs_path = tmp_path / "failed_docs.json"
+    _build_two_chapter_epub(source_epub)
+
+    def always_fail(_text: str) -> str:
+        raise RuntimeError("simulated provider failure")
+
+    with pytest.raises(RuntimeError, match="circuit breaker"):
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            custom_prompt=None,
+            translate_fn=always_fail,
+            doc_failure_budget=1,
+            failed_docs_path=failed_docs_path,
+        )
+
+    assert failed_docs_path.exists()
+    payload = json.loads(failed_docs_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, list)
+    assert len(payload) == 1
+    assert payload[0]["doc_path"] == "chapter1.xhtml"
+
+
+def test_cli_to_api_fallback_enabled_recovers_failed_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai import gemini_api_provider, gemini_provider
+    from ai.epub_translate_roundtrip import run_translate_roundtrip
+
+    def fail_cli(
+        _self: object,
+        text: str,
+        chunk_size: int,
+        system_prompt: str,
+        timeout_seconds: int = 180,
+    ) -> str:
+        raise RuntimeError("Gemini CLI failed: AbortError")
+
+    api_call_count = 0
+
+    def succeed_api(
+        _self: object,
+        text: str,
+        chunk_size: int,
+        system_prompt: str,
+        timeout_seconds: int = 180,
+    ) -> str:
+        nonlocal api_call_count
+        api_call_count += 1
+        return _translate_with_batch_separator(text)
+
+    monkeypatch.setattr(gemini_provider.GeminiProvider, "translate_chunk", fail_cli)
+    monkeypatch.setattr(gemini_api_provider.GeminiAPIProvider, "translate_chunk", succeed_api)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        source_epub = Path(temp_dir) / "book.epub"
+        output_epub = Path(temp_dir) / "translated.epub"
+        _build_min_epub(source_epub, paragraphs=["Hello", "World"])
+
+        run_translate_roundtrip(
+            source_epub=source_epub,
+            output_epub=output_epub,
+            output_lang="zh",
+            bilingual_style="alternating",
+            model="gemini-2.5-flash",
+            provider_name="cli",
+            api_key="test-api-key",
+            cli_api_fallback_enabled=True,
+        )
+
+        with zipfile.ZipFile(output_epub, "r") as output_zip:
+            chapter = output_zip.read("chapter1.xhtml").decode("utf-8")
+        assert "ZH:Hello" in chapter
+        assert api_call_count > 0

@@ -40,6 +40,7 @@ _PRO_TIMEOUT_SECONDS: int = 300  # TODO(SPEC-007): move to config.json
 _RATE_LIMIT_BACKOFF_SECONDS: list[int] = [60, 120]  # TODO(SPEC-007): move to config.json
 _TIMEOUT_BACKOFF_SECONDS: list[int] = [60]  # retry once before split
 _TRANSIENT_BACKOFF_SECONDS: list[int] = [45]  # retry once before split
+_NON_PRO_TIMEOUT_SECONDS: int = 180
 _SEGMENT_DELIMITER = "%%"
 _BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
 _BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
@@ -80,6 +81,28 @@ class CheckpointSnapshot:
     entries: dict[str, CheckpointEntry]
     translated_segments: int
     translated_docs: int
+
+
+def _resolve_backoff_sequence(
+    *,
+    override: tuple[int, ...] | None,
+    default: list[int],
+    label: str,
+) -> list[int]:
+    if override is None:
+        return list(default)
+    resolved = list(override)
+    if any((not isinstance(item, int)) or item <= 0 for item in resolved):
+        raise ValueError(f"{label} values must be positive integers")
+    return resolved
+
+
+def _write_failed_docs_report(failed_docs_path: Path, failed_docs: list[dict[str, object]]) -> None:
+    failed_docs_path.parent.mkdir(parents=True, exist_ok=True)
+    failed_docs_path.write_text(
+        json.dumps(failed_docs, ensure_ascii=True, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _create_translation_prompt(
@@ -415,14 +438,41 @@ def translate_segments_with_batch_retry(
     rate_limit_retry_count: int = 0,
     timeout_retry_count: int = 0,
     transient_retry_count: int = 0,
+    rate_limit_backoff_seconds: tuple[int, ...] | None = None,
+    timeout_backoff_seconds: tuple[int, ...] | None = None,
+    transient_backoff_seconds: tuple[int, ...] | None = None,
+    max_split_depth: int | None = None,
 ) -> list[str]:
     expected_count = len(segments)
     if expected_count == 0:
         return []
+    if max_split_depth is not None and max_split_depth < 0:
+        raise ValueError("max_split_depth must be >= 0")
+
+    rate_limit_backoff = _resolve_backoff_sequence(
+        override=rate_limit_backoff_seconds,
+        default=_RATE_LIMIT_BACKOFF_SECONDS,
+        label="rate_limit_backoff_seconds",
+    )
+    timeout_backoff = _resolve_backoff_sequence(
+        override=timeout_backoff_seconds,
+        default=_TIMEOUT_BACKOFF_SECONDS,
+        label="timeout_backoff_seconds",
+    )
+    transient_backoff = _resolve_backoff_sequence(
+        override=transient_backoff_seconds,
+        default=_TRANSIENT_BACKOFF_SECONDS,
+        label="transient_backoff_seconds",
+    )
 
     batch_text = join_segments_for_batch(segments)
 
     def split_and_retry(reason: str, exc: Exception) -> list[str]:
+        if max_split_depth is not None and retry_depth >= max_split_depth:
+            raise RuntimeError(
+                f"Batch translation reached max split depth ({max_split_depth}) "
+                f"for {context_label}: {reason}"
+            ) from exc
         if expected_count == 1:
             raise RuntimeError(
                 f"Batch translation failed at minimal granularity for {context_label}: {reason}"
@@ -440,6 +490,10 @@ def translate_segments_with_batch_retry(
             translate_batch=translate_batch,
             context_label=context_label,
             retry_depth=retry_depth + 1,
+            rate_limit_backoff_seconds=tuple(rate_limit_backoff),
+            timeout_backoff_seconds=tuple(timeout_backoff),
+            transient_backoff_seconds=tuple(transient_backoff),
+            max_split_depth=max_split_depth,
             # rate_limit_retry_count resets to 0: each sub-batch has its own retry budget
         )
         right = translate_segments_with_batch_retry(
@@ -447,22 +501,26 @@ def translate_segments_with_batch_retry(
             translate_batch=translate_batch,
             context_label=context_label,
             retry_depth=retry_depth + 1,
+            rate_limit_backoff_seconds=tuple(rate_limit_backoff),
+            timeout_backoff_seconds=tuple(timeout_backoff),
+            transient_backoff_seconds=tuple(transient_backoff),
+            max_split_depth=max_split_depth,
         )
         return left + right
 
     try:
         translated_batch = str(translate_batch(batch_text))
     except RateLimitError as exc:
-        if rate_limit_retry_count >= len(_RATE_LIMIT_BACKOFF_SECONDS):
+        if rate_limit_retry_count >= len(rate_limit_backoff):
             raise
         wait = (
             exc.retry_after_seconds
             if exc.retry_after_seconds is not None
-            else _RATE_LIMIT_BACKOFF_SECONDS[rate_limit_retry_count]
+            else rate_limit_backoff[rate_limit_retry_count]
         )
         print(
             f"[WARN] [{context_label}] Rate limited. Waiting {wait}s before retry "
-            f"(attempt {rate_limit_retry_count + 1}/{len(_RATE_LIMIT_BACKOFF_SECONDS)}).",
+            f"(attempt {rate_limit_retry_count + 1}/{len(rate_limit_backoff)}).",
             flush=True,
         )
         time.sleep(wait)
@@ -472,13 +530,19 @@ def translate_segments_with_batch_retry(
             context_label=context_label,
             retry_depth=retry_depth,
             rate_limit_retry_count=rate_limit_retry_count + 1,
+            timeout_retry_count=timeout_retry_count,
+            transient_retry_count=transient_retry_count,
+            rate_limit_backoff_seconds=tuple(rate_limit_backoff),
+            timeout_backoff_seconds=tuple(timeout_backoff),
+            transient_backoff_seconds=tuple(transient_backoff),
+            max_split_depth=max_split_depth,
         )
     except subprocess.TimeoutExpired as exc:
-        if timeout_retry_count < len(_TIMEOUT_BACKOFF_SECONDS):
-            wait = _TIMEOUT_BACKOFF_SECONDS[timeout_retry_count]
+        if timeout_retry_count < len(timeout_backoff):
+            wait = timeout_backoff[timeout_retry_count]
             print(
                 f"[WARN] [{context_label}] Timeout. Waiting {wait}s before retry "
-                f"(attempt {timeout_retry_count + 1}/{len(_TIMEOUT_BACKOFF_SECONDS)}).",
+                f"(attempt {timeout_retry_count + 1}/{len(timeout_backoff)}).",
                 flush=True,
             )
             time.sleep(wait)
@@ -490,19 +554,23 @@ def translate_segments_with_batch_retry(
                 rate_limit_retry_count=rate_limit_retry_count,
                 timeout_retry_count=timeout_retry_count + 1,
                 transient_retry_count=transient_retry_count,
+                rate_limit_backoff_seconds=tuple(rate_limit_backoff),
+                timeout_backoff_seconds=tuple(timeout_backoff),
+                transient_backoff_seconds=tuple(transient_backoff),
+                max_split_depth=max_split_depth,
             )
         timeout_value = exc.timeout if isinstance(exc.timeout, (int, float)) else "unknown"
         return split_and_retry(f"Batch request timed out after {timeout_value}s", exc)
     except TransientCLIError as exc:
-        if transient_retry_count < len(_TRANSIENT_BACKOFF_SECONDS):
+        if transient_retry_count < len(transient_backoff):
             wait = (
                 exc.retry_after_seconds
                 if exc.retry_after_seconds is not None
-                else _TRANSIENT_BACKOFF_SECONDS[transient_retry_count]
+                else transient_backoff[transient_retry_count]
             )
             print(
                 f"[WARN] [{context_label}] Transient CLI abort. Waiting {wait}s before retry "
-                f"(attempt {transient_retry_count + 1}/{len(_TRANSIENT_BACKOFF_SECONDS)}).",
+                f"(attempt {transient_retry_count + 1}/{len(transient_backoff)}).",
                 flush=True,
             )
             time.sleep(wait)
@@ -514,6 +582,10 @@ def translate_segments_with_batch_retry(
                 rate_limit_retry_count=rate_limit_retry_count,
                 timeout_retry_count=timeout_retry_count,
                 transient_retry_count=transient_retry_count + 1,
+                rate_limit_backoff_seconds=tuple(rate_limit_backoff),
+                timeout_backoff_seconds=tuple(timeout_backoff),
+                transient_backoff_seconds=tuple(transient_backoff),
+                max_split_depth=max_split_depth,
             )
         return split_and_retry("Transient CLI abort after retry budget", exc)
 
@@ -585,19 +657,38 @@ def run_translate_roundtrip(
     translate_fn: TranslateFn | None = None,
     checkpoint_dir: Path | None = None,
     force_resume: bool = False,
+    rate_limit_backoff_seconds: tuple[int, ...] | None = None,
+    timeout_backoff_seconds: tuple[int, ...] | None = None,
+    transient_backoff_seconds: tuple[int, ...] | None = None,
+    max_split_depth: int | None = None,
+    doc_failure_budget: int | None = None,
+    failed_docs_path: Path | None = None,
+    cli_api_fallback_enabled: bool = False,
+    pro_timeout_seconds: int = _PRO_TIMEOUT_SECONDS,
+    non_pro_timeout_seconds: int = _NON_PRO_TIMEOUT_SECONDS,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
+    if doc_failure_budget is not None and doc_failure_budget <= 0:
+        raise ValueError("doc_failure_budget must be > 0 when provided")
+    if pro_timeout_seconds <= 0 or non_pro_timeout_seconds <= 0:
+        raise ValueError("timeout seconds must be > 0")
 
     resolved_model = _resolve_model_name(model)
     package_model = load_epub_package(source_epub)
+    primary_provider: GeminiProvider | GeminiAPIProvider
     if provider_name == "api":
-        provider: GeminiProvider | GeminiAPIProvider = GeminiAPIProvider(
+        primary_provider = GeminiAPIProvider(
             api_key=api_key,
             model=resolved_model,
         )
     else:
-        provider = GeminiProvider(model=resolved_model)
+        primary_provider = GeminiProvider(model=resolved_model)
+    fallback_api_provider: GeminiAPIProvider | None = None
+    use_fallback_api = False
+    if provider_name == "cli" and cli_api_fallback_enabled:
+        fallback_api_provider = GeminiAPIProvider(api_key=api_key, model=resolved_model)
+
     source_signature = _compute_source_signature(source_epub)
     checkpoint = _load_checkpoint_snapshot(
         checkpoint_dir=checkpoint_dir,
@@ -612,6 +703,7 @@ def run_translate_roundtrip(
     checkpoint_entries: dict[str, CheckpointEntry] = dict(checkpoint.entries)
     translated_segments = checkpoint.translated_segments
     translated_docs = checkpoint.translated_docs
+    failed_docs: list[dict[str, object]] = []
     spine_docs = _resolve_spine_xhtml_paths(package_model)
     manifest_xhtml_paths = _resolve_manifest_xhtml_paths(package_model)
     print(
@@ -663,12 +755,45 @@ def run_translate_roundtrip(
                     return str(translate_fn(batch_text))
                 if prompt is None:
                     raise RuntimeError("translation prompt must be initialized")
-                return provider.translate_chunk(
-                    text=batch_text,
-                    chunk_size=len(batch_text),
-                    system_prompt=prompt,
-                    timeout_seconds=_PRO_TIMEOUT_SECONDS if is_pro_model else 180,
-                )
+                timeout_seconds = pro_timeout_seconds if is_pro_model else non_pro_timeout_seconds
+                nonlocal use_fallback_api
+                if use_fallback_api:
+                    if fallback_api_provider is None:
+                        raise RuntimeError("fallback provider is not initialized")
+                    return fallback_api_provider.translate_chunk(
+                        text=batch_text,
+                        chunk_size=len(batch_text),
+                        system_prompt=prompt,
+                        timeout_seconds=timeout_seconds,
+                    )
+                try:
+                    return primary_provider.translate_chunk(
+                        text=batch_text,
+                        chunk_size=len(batch_text),
+                        system_prompt=prompt,
+                        timeout_seconds=timeout_seconds,
+                    )
+                except RuntimeError as exc:
+                    if fallback_api_provider is None:
+                        raise
+                    error_text = str(exc)
+                    if (
+                        "Gemini CLI failed" not in error_text
+                        and "AbortError" not in error_text
+                        and "The user aborted a request" not in error_text
+                    ):
+                        raise
+                    print(
+                        f"[WARN] [{doc_path}] CLI provider failed; switching to API fallback for remaining docs.",
+                        flush=True,
+                    )
+                    use_fallback_api = True
+                    return fallback_api_provider.translate_chunk(
+                        text=batch_text,
+                        chunk_size=len(batch_text),
+                        system_prompt=prompt,
+                        timeout_seconds=timeout_seconds,
+                    )
 
             is_pro_model = resolved_model == _MODEL_ALIASES["pro"]
             planned_batches = [segment_texts]
@@ -693,12 +818,43 @@ def run_translate_roundtrip(
                         f"(segments={len(batch_segments)}, chars={batch_chars})",
                         flush=True,
                     )
-                translated_batch = translate_segments_with_batch_retry(
-                    batch_segments,
-                    translate_batch=batch_translate,
-                    context_label=doc_path,
-                )
-                translations.extend(translated_batch)
+                try:
+                    translated_batch = translate_segments_with_batch_retry(
+                        batch_segments,
+                        translate_batch=batch_translate,
+                        context_label=doc_path,
+                        rate_limit_backoff_seconds=rate_limit_backoff_seconds,
+                        timeout_backoff_seconds=timeout_backoff_seconds,
+                        transient_backoff_seconds=transient_backoff_seconds,
+                        max_split_depth=max_split_depth,
+                    )
+                    translations.extend(translated_batch)
+                except Exception as exc:
+                    failure_entry: dict[str, object] = {
+                        "doc_path": doc_path,
+                        "segments": len(segments),
+                        "error": str(exc),
+                    }
+                    failed_docs.append(failure_entry)
+                    if failed_docs_path is not None:
+                        _write_failed_docs_report(failed_docs_path, failed_docs)
+                    if doc_failure_budget is None:
+                        raise
+                    if len(failed_docs) >= doc_failure_budget:
+                        raise RuntimeError(
+                            "EPUB translate circuit breaker triggered after "
+                            f"{len(failed_docs)} failed docs (budget={doc_failure_budget})"
+                        ) from exc
+                    print(
+                        f"[WARN] [{doc_index}/{len(spine_docs)}] Failed {doc_path}; continuing "
+                        f"(doc failures {len(failed_docs)}/{doc_failure_budget}).",
+                        flush=True,
+                    )
+                    translations = []
+                    break
+
+            if not translations:
+                continue
 
             patched_xhtml = patch_xhtml_alternating(
                 source_xhtml,
@@ -745,6 +901,11 @@ def run_translate_roundtrip(
         f"[INFO] Repack completed: docs={translated_docs}, segments={translated_segments}",
         flush=True,
     )
+    if failed_docs:
+        print(
+            f"[WARN] Completed with {len(failed_docs)} failed doc(s).",
+            flush=True,
+        )
     return TranslateRoundtripResult(
         output_epub=output_epub,
         translated_segments=translated_segments,

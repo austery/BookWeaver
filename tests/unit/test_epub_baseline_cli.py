@@ -128,6 +128,49 @@ def test_roundtrip_script_loader_prefers_workspace_config_over_example(tmp_path:
             workspace_config.write_text(backup, encoding="utf-8")
 
 
+def test_roundtrip_script_resolves_epub_resilience_config() -> None:
+    module = __import__("09_epub_translate_roundtrip")
+    resolve_epub_resilience_config = module.resolve_epub_resilience_config
+
+    config = {
+        "epub_resilience": {
+            "rate_limit_backoff_seconds": [12, 34],
+            "timeout_backoff_seconds": [9],
+            "transient_backoff_seconds": [7],
+            "max_split_depth": 5,
+            "doc_failure_budget": 2,
+            "cli_api_fallback_enabled": True,
+            "pro_timeout_seconds": 500,
+            "non_pro_timeout_seconds": 222,
+            "failed_docs_path": "./tmp/failed-docs.json",
+        }
+    }
+    resolved = resolve_epub_resilience_config(config)
+
+    assert resolved["rate_limit_backoff_seconds"] == (12, 34)
+    assert resolved["timeout_backoff_seconds"] == (9,)
+    assert resolved["transient_backoff_seconds"] == (7,)
+    assert resolved["max_split_depth"] == 5
+    assert resolved["doc_failure_budget"] == 2
+    assert resolved["cli_api_fallback_enabled"] is True
+    assert resolved["pro_timeout_seconds"] == 500
+    assert resolved["non_pro_timeout_seconds"] == 222
+    assert str(resolved["failed_docs_path"]).endswith("/tmp/failed-docs.json")
+
+
+def test_roundtrip_script_invalid_resilience_backoff_raises() -> None:
+    module = __import__("09_epub_translate_roundtrip")
+    resolve_epub_resilience_config = module.resolve_epub_resilience_config
+
+    config = {"epub_resilience": {"timeout_backoff_seconds": [10, 0]}}
+    try:
+        resolve_epub_resilience_config(config)
+    except ValueError as exc:
+        assert "timeout_backoff_seconds" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for invalid timeout_backoff_seconds")
+
+
 def test_epub_default_dry_run_uses_epub_workflow() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         input_epub = Path(temp_dir) / "book.epub"

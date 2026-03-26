@@ -36,6 +36,7 @@ RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
 FORCE_RESUME=false
 PROVIDER="cli"
+FALLBACK_PROVIDER=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -102,6 +103,7 @@ OPTIONS:
     --epub-translate-roundtrip Deprecated alias for --workflow epub
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --provider MODE        Translation provider: cli|api (default: cli)
+    --fallback-provider MODE Optional fallback provider when primary fails (currently: api)
     --force-resume         Allow resuming translation with different model (may cause quality inconsistency)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
@@ -401,6 +403,10 @@ parse_args() {
                 PROVIDER="$2"
                 shift 2
                 ;;
+            --fallback-provider)
+                FALLBACK_PROVIDER="$2"
+                shift 2
+                ;;
             --force-resume)
                 FORCE_RESUME=true
                 shift
@@ -465,6 +471,17 @@ parse_args() {
     if [[ ! "$PROVIDER" =~ ^(cli|api)$ ]]; then
         log_error "Invalid provider: $PROVIDER (must be cli|api)"
         exit 2
+    fi
+
+    if [[ -n "$FALLBACK_PROVIDER" ]]; then
+        if [[ ! "$FALLBACK_PROVIDER" =~ ^(api)$ ]]; then
+            log_error "Invalid fallback provider: $FALLBACK_PROVIDER (supported: api)"
+            exit 2
+        fi
+        if [[ "$PROVIDER" != "cli" ]]; then
+            log_error "--fallback-provider is only supported when --provider cli"
+            exit 2
+        fi
     fi
 }
 
@@ -545,6 +562,7 @@ show_config() {
     echo "  Workflow override: ${WORKFLOW_OVERRIDE:-auto}"
     echo "  Resolved workflow: $RESOLVED_WORKFLOW"
     echo "  Provider: $PROVIDER"
+    echo "  Fallback provider: ${FALLBACK_PROVIDER:-none}"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -685,6 +703,9 @@ main() {
         fi
         if [[ "$FORCE_RESUME" == true ]]; then
             cmd+=(--force-resume)
+        fi
+        if [[ "$FALLBACK_PROVIDER" == "api" ]]; then
+            cmd+=(--cli-api-fallback)
         fi
 
         local translate_cmd_display

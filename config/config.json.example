@@ -45,5 +45,16 @@
     "enabled": true,
     "api_key": null,
     "model": "gemini-2.5-flash"
+  },
+  "epub_resilience": {
+    "rate_limit_backoff_seconds": [60, 120],
+    "timeout_backoff_seconds": [60],
+    "transient_backoff_seconds": [45],
+    "max_split_depth": null,
+    "doc_failure_budget": null,
+    "failed_docs_path": null,
+    "cli_api_fallback_enabled": false,
+    "pro_timeout_seconds": 300,
+    "non_pro_timeout_seconds": 180
   }
 }

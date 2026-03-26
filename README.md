@@ -135,6 +135,9 @@ export GEMINI_API_KEY="your-api-key-here"
 
 # Use API provider instead of CLI
 ./translatebook.sh --workflow epub --provider api --output-format epub /path/to/book.epub
+
+# Keep CLI as primary but allow fallback to API on CLI failures
+./translatebook.sh --workflow epub --provider cli --fallback-provider api --output-format epub /path/to/book.epub
 ```
 
 **Advantages of API provider:**
@@ -147,6 +150,7 @@ export GEMINI_API_KEY="your-api-key-here"
 - Gemini API provider is now available via `--provider api`
 - CLI provider remains the default (`--provider cli`)
 - API provider requires `GEMINI_API_KEY` or `gemini_api.api_key` in config
+- Optional fallback is available via `--fallback-provider api` (only when `--provider cli`)
 
 Common commands:
 
@@ -233,6 +237,11 @@ If you encounter persistent `AbortError: The user aborted a request` or similar 
    export GEMINI_API_KEY="your-api-key"
    ./translatebook.sh --workflow epub --provider api book.epub
    ```
+4. **Use CLI + API fallback (opt-in)** - Keep CLI first, auto-fallback to API:
+   ```bash
+   export GEMINI_API_KEY="your-api-key"
+   ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
+   ```
 
 **Root cause:**
 Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery logic that aborts requests if they exceed internal timeout thresholds. This is a known limitation documented in [Gemini CLI updates](https://goo.gle/geminicli-updates).
@@ -242,6 +251,32 @@ Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery 
 - Try early morning or late night runs
 - Use `--model pro` if you have higher tier access
 - Consider using Gemini API provider for production workloads
+
+### EPUB resilience tuning (advanced, optional)
+
+You can tune retry/split/circuit-breaker behavior in `config/config.json`:
+
+```json
+{
+  "epub_resilience": {
+    "rate_limit_backoff_seconds": [60, 120],
+    "timeout_backoff_seconds": [60],
+    "transient_backoff_seconds": [45],
+    "max_split_depth": null,
+    "doc_failure_budget": null,
+    "failed_docs_path": null,
+    "cli_api_fallback_enabled": false,
+    "pro_timeout_seconds": 300,
+    "non_pro_timeout_seconds": 180
+  }
+}
+```
+
+Notes:
+- Defaults preserve current behavior.
+- `doc_failure_budget` enables a document-level circuit breaker.
+- `failed_docs_path` writes failed-document diagnostics as JSON.
+- CLI argument `--cli-api-fallback` (used internally by `--fallback-provider api`) can force fallback on for a run.
 
 ## Prompt definition
 
