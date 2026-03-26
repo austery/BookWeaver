@@ -1,15 +1,16 @@
 ---
 specId: SPEC-004
 title: Baoyu-Style Agent-Orchestrated Translation Workflow Evaluation
-status: 🟡 Ready for Implementation
+status: ⏸️ 已暂停 (Paused - Negative A/B Test Results)
 priority: P2 - Enhancement
 creationDate: 2026-03-17
-lastUpdateDate: 2026-03-17
+lastUpdateDate: 2026-03-26
 owner: Lei Peng (AI-Assisted)
 relatedSpecs:
   - SPEC-001
   - SPEC-002
   - SPEC-003
+  - SPEC-010
 tags:
   - agent-orchestration
   - translation-quality
@@ -17,6 +18,7 @@ tags:
   - latency
   - prompt-assembly
   - evaluation
+  - failed-experiment
 ---
 
 # SPEC-004: Baoyu-Style Agent-Orchestrated Translation Workflow Evaluation
@@ -212,8 +214,98 @@ Go/no-go must be explicitly recorded as:
 |------|--------|------|
 | 2026-03-17 | 📝 Draft | Initial draft created |
 | 2026-03-17 | 🟡 Ready for Implementation | Design validated with explicit gates, contracts, and benchmark definition |
+| 2026-03-22 | ⏸️ Paused | A/B test completed in `spec004-orchestrated-eval` worktree; **negative results** identified |
+| 2026-03-26 | ⏸️ Paused | Root cause analysis completed; archived for reference; superseded by SPEC-010 |
 
-## 11. Related
+## 11. A/B Test Results (2026-03-22)
+
+### Test Setup
+- **Branch**: `feature/spec004-agent-eval-wip` (worktree: `.worktrees/spec004-orchestrated-eval`)
+- **Commits**: 10 commits implementing orchestrated workflow
+- **Test book**: "How to Think Like a Roman Emperor" (Marcus Aurelius)
+- **Test scope**: Chapter 1 + Chapter 2 (first 2 segments analyzed)
+- **Variants**:
+  - **Baseline**: Current immersive prompt (no orchestration)
+  - **Dynamic**: Orchestrated workflow with `02-prompt.md` context injection
+
+### Test Results Summary
+
+| Metric | Baseline | Dynamic | Result |
+|--------|----------|---------|--------|
+| Translation quality | ✅ Better | ❌ Worse | **Baseline wins** |
+| Proper noun consistency | ✅ Consistent | ❌ Inconsistent | **Baseline wins** |
+| Context overhead | 0 tokens | ~5000+ tokens | **Baseline more efficient** |
+| Runtime | 57.96s | 57.69s | Similar (negligible difference) |
+
+### Critical Finding: Context Dilution Problem
+
+**What was injected in `02-prompt.md`**:
+- ❌ **16 full-text paragraph excerpts** (~5000+ tokens)
+- ❌ **NO actual glossary or terminology constraints**
+- ❌ **Vague instruction**: "Keep proper nouns unchanged **when appropriate**"
+
+**What should have been injected** (lessons learned):
+- ✅ Structured glossary with 10-20 critical terms
+- ✅ Explicit constraints: "Antoninus = 安敦宁 (fixed)"
+- ✅ Negative constraints: "Connascence ≠ 并发性"
+
+### Evidence of Quality Degradation
+
+**Proper noun translation inconsistencies** (Dynamic variant):
+- Antoninus: "安敦宁" ✅ vs "安东宁" ❌ (mixed in same chapter)
+- Fortuna: "福耳图娜" ✅ vs "福尔图娜" ❌
+- Commodus: "康茂德" ✅ vs "科莫多斯" ❌
+
+**Baseline variant** (no context):
+- Antoninus: "安敦宁" ✅ (consistent throughout)
+- Fortuna: "福耳图娜" ✅ (consistent)
+- Commodus: "康茂德" ✅ (consistent)
+
+### Root Cause Analysis
+
+**"上下文稀释" (Context Dilution)**:
+1. Model attention scattered across 5000+ tokens of raw text
+2. No actionable constraints provided (only vague "when appropriate")
+3. Each mention of a proper noun triggered independent translation decision
+4. Result: Inconsistency within the same chapter
+
+**Why baseline performed better**:
+- Clean prompt without noise
+- Model relied on trained knowledge of historical figures
+- Natural translation was more consistent
+
+### Decision
+
+**Gate 1 FAILED**: Dynamic orchestrated workflow showed **quality regression** vs. baseline.
+
+**Worktree archived**: `feature/spec004-agent-eval-wip` remains in worktree for reference but is not merged.
+
+**Superseded by**: [SPEC-010](./SPEC-010-terminology-extraction-translation-constraints.md) — redesigned approach based on failure analysis.
+
+### Lessons Learned (Informing SPEC-010)
+
+1. ❌ **Do NOT inject large raw text excerpts as "context"**
+   - Causes attention dilution, not improvement
+   
+2. ✅ **DO provide structured, minimal glossary**
+   - 10-20 critical terms only
+   - Explicit translation mappings
+   - Negative constraints for confusion-prone pairs
+
+3. ✅ **DO exclude proper names from glossary**
+   - Models handle historical figures well naturally
+   - Over-constraining can backfire
+
+4. ✅ **DO use explicit language**
+   - "必须使用" (must use) not "when appropriate"
+   - Clear rules > vague guidelines
+
+**Artifact locations**:
+- Test results: `/Users/leipeng/Documents/Projects/BookWeaver/tmp/ab_first2_roman_emperor/`
+- Failed 02-prompt.md: `/Users/leipeng/Documents/Projects/BookWeaver/tmp/ab_first2_roman_emperor/epub_orchestration/02-prompt.md`
+- Worktree: `/Users/leipeng/Documents/Projects/BookWeaver/.worktrees/spec004-orchestrated-eval`
+
+## 12. Related
 
 - **Code**: `translatebook.sh`, `03_translate_md.py`, `04_merge_md.py`, `05_md_to_html.py`
 - **Specs**: [SPEC-001](./SPEC-001-multi-tier-gemini-translation.md), [SPEC-002](./SPEC-002-prompt-model-stability.md), [SPEC-003](./SPEC-003-lint-quality-gates.md)

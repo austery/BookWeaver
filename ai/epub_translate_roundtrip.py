@@ -22,9 +22,15 @@ from ai.epub_package import (
     validate_manifest_assets,
     validate_package_structure,
 )
-from ai.gemini_api_provider import GeminiAPIProvider
 from ai.gemini_provider import GeminiProvider, RateLimitError, TransientCLIError
 from pipeline_utils import get_language_name as _get_language_name
+
+# Lazy import: GeminiAPIProvider is only imported when actually needed (API provider mode)
+# This allows CLI users to run without installing google-genai package
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ai.gemini_api_provider import GeminiAPIProvider
 
 TranslateFn = Callable[[str], str]
 # _MODEL_ALIASES is independent from the config.json alias table loaded by
@@ -676,7 +682,12 @@ def run_translate_roundtrip(
 
     resolved_model = _resolve_model_name(model)
     package_model = load_epub_package(source_epub)
-    primary_provider: GeminiProvider | GeminiAPIProvider
+    
+    # Lazy import GeminiAPIProvider only when actually needed (API provider or CLI with fallback)
+    if provider_name == "api" or (provider_name == "cli" and cli_api_fallback_enabled):
+        from ai.gemini_api_provider import GeminiAPIProvider
+    
+    primary_provider: GeminiProvider | "GeminiAPIProvider"
     if provider_name == "api":
         primary_provider = GeminiAPIProvider(
             api_key=api_key,
@@ -684,7 +695,8 @@ def run_translate_roundtrip(
         )
     else:
         primary_provider = GeminiProvider(model=resolved_model)
-    fallback_api_provider: GeminiAPIProvider | None = None
+    
+    fallback_api_provider: "GeminiAPIProvider | None" = None
     use_fallback_api = False
     if provider_name == "cli" and cli_api_fallback_enabled:
         fallback_api_provider = GeminiAPIProvider(api_key=api_key, model=resolved_model)
