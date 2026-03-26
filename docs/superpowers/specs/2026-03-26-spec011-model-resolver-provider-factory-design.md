@@ -72,9 +72,13 @@ ProviderPair(
 
 ## 4. ModelResolver API
 
+> **注：probe 无循环依赖**  
+> `ModelProbe` 直接调用 `subprocess`（Gemini CLI），不经过任何 `Provider` 对象。`ModelResolver` 持有 `ModelProbe` 实例是安全的。
+
 ```python
 # ai/model_resolver.py
 
+from dataclasses import dataclass
 from enum import Enum
 
 class ModelRole(Enum):
@@ -84,9 +88,16 @@ class ModelRole(Enum):
     UNKNOWN = "unknown"
 
 
+@dataclass(frozen=True)
+class ResolvedModel:
+    """resolve() 的返回值：在正向解析阶段同时确定 role，避免事后反查歧义。"""
+    name: str          # 具体 provider 模型名，如 "gemini-2.5-pro"
+    role: ModelRole    # 解析时确定的角色，如 ModelRole.PRO
+
+
 class ModelResolver:
     """
-    单一职责：将用户请求的模型标识符解析为最终的 provider 模型名。
+    单一职责：将用户请求的模型标识符解析为最终的 provider 模型名 + 角色。
 
     解析优先级：
       1. config.model_aliases（用户配置）
@@ -96,8 +107,13 @@ class ModelResolver:
 
     用法：
         resolver = ModelResolver(config)
-        model = resolver.resolve("pro")       # → "gemini-2.5-pro"
-        role  = resolver.get_role(model)      # → ModelRole.PRO
+        result = resolver.resolve("pro")
+        result.name  # → "gemini-2.5-pro"
+        result.role  # → ModelRole.PRO
+
+        # 直接传完整模型名也可以正常识别角色：
+        result = resolver.resolve("gemini-2.5-pro")
+        result.role  # → ModelRole.PRO
     """
 
     _BUILTIN_ALIASES: dict[str, str] = {
@@ -111,42 +127,36 @@ class ModelResolver:
         # 读取 config.fallback_chain
         # 读取 config.enable_fallback（默认 False）
         # 读取 config.model_probe.enabled（默认 False）
-        # 若 probe 开启，创建 ModelProbe 实例
+        # 若 probe 开启，创建 ModelProbe 实例（ModelProbe 用 subprocess，无循环依赖）
         ...
 
-    def resolve(self, requested: str) -> str:
+    def resolve(self, requested: str) -> ResolvedModel:
         """
-        完整解析：alias → (probe if enabled) → (fallback if enabled) → 模型名
+        完整解析：alias → (probe if enabled) → (fallback if enabled) → ResolvedModel
+
+        Role 在正向 alias 解析阶段确定：
+        - "pro" → alias 命中 → role=PRO, name="gemini-2.5-pro"
+        - "gemini-2.5-pro" → 无 alias 命中 → 反查 alias values → role=PRO
+        - 完全未知的模型名 → role=UNKNOWN
 
         Args:
             requested: 用户请求的模型名或别名（如 "pro", "flash", "gemini-2.5-pro"）
 
         Returns:
-            具体的 provider 模型名字符串
+            ResolvedModel(name, role)
 
         Raises:
             ValueError: 检测到 alias 循环
         """
         ...
-
-    def get_role(self, model: str) -> ModelRole:
-        """
-        反查：具体模型名 → ModelRole
-
-        Args:
-            model: 已 resolved 的模型名（如 "gemini-2.5-pro"）
-
-        Returns:
-            ModelRole.PRO / FLASH / LITE / UNKNOWN
-        """
-        ...
 ```
 
 **关键行为**：
-- `ModelResolver(config).resolve("pro")` → `"gemini-2.5-pro"`（从 config）
+- `resolver.resolve("pro").name` → `"gemini-2.5-pro"`（从 config）
+- `resolver.resolve("gemini-2.5-pro").role` → `ModelRole.PRO`（全名直接传入也能识别）
 - `config` 没有 `model_aliases.pro` 时，使用 `_BUILTIN_ALIASES["pro"]`
 - probe 失败时降级到下一个 candidate；全部失败时返回第一个 candidate（不崩溃）
-- `get_role("gemini-2.5-pro")` → `ModelRole.PRO`（反转 aliases 映射）
+- 多个 alias 指向同一模型时，取 alias key 字母序最小者的 role（无歧义）
 
 ---
 
@@ -214,7 +224,8 @@ class ProviderFactory:
 from ai.model_resolver import ModelResolver
 
 resolver = ModelResolver(config)
-model = resolver.resolve(requested_model)
+resolved = resolver.resolve(requested_model)   # → ResolvedModel(name, role)
+model = resolved.name
 ```
 
 ### `ai/epub_translate_roundtrip.py`
@@ -227,11 +238,11 @@ from ai.model_resolver import ModelResolver, ModelRole
 from ai.provider_factory import ProviderFactory
 
 resolver = ModelResolver(config)
-model = resolver.resolve(requested_model)
-is_pro = resolver.get_role(model) == ModelRole.PRO
+resolved = resolver.resolve(requested_model)   # → ResolvedModel(name, role)
+is_pro = resolved.role == ModelRole.PRO
 
 factory = ProviderFactory(config)
-pair = factory.create(model, provider_name, api_key, cli_api_fallback_enabled)
+pair = factory.create(resolved.name, provider_name, api_key, cli_api_fallback_enabled)
 # pair.primary → 主 provider
 # pair.fallback → CLI→API fallback（可为 None）
 ```
@@ -257,7 +268,8 @@ pair = factory.create(model, provider_name, api_key, cli_api_fallback_enabled)
 - alias 从 `config.model_aliases` 解析 ✅
 - alias 未定义时使用内置 fallback ✅
 - alias 循环检测 → `ValueError` ✅
-- `get_role()` 正反向映射 ✅
+- `get_role()` 正反向映射 ✅ → **改为：`resolve("pro").role == ModelRole.PRO` ✅**
+- `resolve("gemini-2.5-pro").role == ModelRole.PRO`（全名直接传入） ✅
 - `config.model_probe.enabled = false` 时直接返回 alias 结果 ✅
 - probe 开启时取第一个可用 candidate ✅（mock `ModelProbe`）
 - probe 全部失败时 fallback 到第一个 candidate ✅
@@ -293,3 +305,4 @@ pair = factory.create(model, provider_name, api_key, cli_api_fallback_enabled)
 - `GeminiAPIProvider.__init__` 内部的 model 解析逻辑（不做 alias 处理，直接传 resolved model name）
 - Provider 选择逻辑（"cli" vs "api"）的配置化（`cli_api_fallback_enabled` 仍由调用方传入）
 - SPEC-010 术语提取系统
+- **运行时模型切换**：pre-flight probe 通过不等于运行中不挂。若翻译中途 `gemini-2.5-pro` 配额耗尽，当前设计不支持自动降级到 `gemini-2.5-flash`。Provider 级 fallback（CLI→API）在同一模型上生效，但跨模型的运行时切换留到后续版本处理。
