@@ -18,6 +18,7 @@ from typing import TypedDict
 
 from ai.gemini_provider import GeminiProvider
 from ai.model_probe import ModelProbe
+from ai.model_resolver import ModelResolver
 from ai.model_selector import ModelSelector
 from pipeline_utils import load_pipeline_config, get_language_name
 
@@ -180,50 +181,32 @@ def load_prompt_template(runtime_config: RuntimeConfig | None = None) -> str:
 
 
 def resolve_model_name(requested_model: str, runtime_config: RuntimeConfig | None = None) -> str:
-    """Resolve a model alias to the concrete model name."""
-    if not isinstance(requested_model, str) or not requested_model.strip():
-        raise ValueError("requested_model must be a non-empty string")
-
-    config = runtime_config or {}
-    aliases_raw = config.get("model_aliases")
-    aliases: dict[str, str] = {}
-    if isinstance(aliases_raw, dict):
-        aliases = {
-            key: value.strip()
-            for key, value in aliases_raw.items()
-            if isinstance(key, str) and isinstance(value, str) and value.strip()
-        }
-
-    resolved_model = requested_model.strip()
-    visited: set[str] = set()
-    while resolved_model in aliases:
-        if resolved_model in visited:
-            raise ValueError(f"Model alias cycle detected at '{resolved_model}'")
-        visited.add(resolved_model)
-        resolved_model = aliases[resolved_model]
-    return resolved_model
+    """Shim: alias-only resolution. Use ModelResolver directly for new code."""
+    return ModelResolver(runtime_config or {}).resolve_alias(requested_model).name
 
 
 def build_model_candidates(
     requested_model: str, runtime_config: RuntimeConfig | None = None
 ) -> list[str]:
-    """Build requested->fallback ordered candidate model list."""
+    """Shim: returns alias-resolved primary + fallback chain. Use ModelResolver for new code."""
     config = runtime_config or {}
-    candidates: list[str] = [resolve_model_name(requested_model, config)]
-
+    primary = ModelResolver(config).resolve_alias(requested_model).name
+    candidates: list[str] = [primary]
     if bool(config.get("enable_fallback", True)):
         fallback_chain = config.get("fallback_chain")
         if isinstance(fallback_chain, list):
+            resolver = ModelResolver(config)
             for raw_fallback in fallback_chain:
                 if not isinstance(raw_fallback, str) or not raw_fallback.strip():
                     continue
-                resolved_fallback = resolve_model_name(raw_fallback, config)
+                resolved_fallback = resolver.resolve_alias(raw_fallback).name
                 if resolved_fallback not in candidates:
                     candidates.append(resolved_fallback)
     return candidates
 
 
 def _create_model_probe(runtime_config: RuntimeConfig) -> ModelProbe | None:
+    """Shim: kept for backward compat. ModelResolver creates probes internally."""
     probe_config_raw = runtime_config.get("model_probe")
     if not isinstance(probe_config_raw, dict):
         return None
@@ -231,10 +214,7 @@ def _create_model_probe(runtime_config: RuntimeConfig) -> ModelProbe | None:
         return None
 
     ttl_raw = probe_config_raw.get("cache_ttl_seconds", 3600)
-    ttl_seconds = 3600
-    if isinstance(ttl_raw, (int, float)):
-        ttl_seconds = int(ttl_raw)
-
+    ttl_seconds = int(ttl_raw) if isinstance(ttl_raw, (int, float)) else 3600
     cache_path_raw = probe_config_raw.get(
         "cache_path", "~/.cache/bookweaver/model_probe_cache.json"
     )
@@ -247,55 +227,26 @@ def select_model_with_fallback(
     runtime_config: RuntimeConfig | None = None,
     probe: ModelProbe | None = None,
 ) -> str:
-    """Select first available model from requested->fallback chain."""
+    """Shim: full resolution with probe/fallback. Use ModelResolver directly for new code."""
     config = runtime_config or {}
-    candidates = build_model_candidates(requested_model, config)
-    if not candidates:
-        raise RuntimeError("No model candidates available")
-
-    probe_config_raw = config.get("model_probe")
-    probe_enabled = True
-    if isinstance(probe_config_raw, dict):
-        probe_enabled = bool(probe_config_raw.get("enabled", True))
-
-    if not probe_enabled:
-        return candidates[0]
-
-    effective_probe = probe if probe is not None else _create_model_probe(config)
-    if effective_probe is None:
-        return candidates[0]
-
-    availability = effective_probe.probe(candidates)
-    for candidate in candidates:
-        if availability.get(candidate, False):
-            return candidate
-
-    errors_raw = getattr(effective_probe, "last_probe_errors", {})
-    errors: dict[str, str] = errors_raw if isinstance(errors_raw, dict) else {}
-    attempted = ", ".join(candidates)
-    error_details = "; ".join(
-        f"{model}: {errors[model]}" for model in candidates if model in errors
-    )
-    if not error_details:
-        error_details = "No stderr details from probe"
-    raise RuntimeError(
-        f"No available Gemini model after probe. Attempted: {attempted}. Errors: {error_details}"
-    )
+    # Preserve legacy default: enable_fallback was True when not explicitly set
+    if "enable_fallback" not in config:
+        config = {**config, "enable_fallback": True}
+    return ModelResolver(config, probe=probe).resolve(requested_model).name
 
 
 def print_model_selection_preview(requested_model: str, runtime_config: RuntimeConfig) -> None:
     """Print model resolution details without translating files."""
-    resolved_model = resolve_model_name(requested_model, runtime_config)
-    candidates = build_model_candidates(requested_model, runtime_config)
+    resolver = ModelResolver(runtime_config)
+    alias_result = resolver.resolve_alias(requested_model)
+    full_result = resolver.resolve(requested_model)
     print("Model selection preview:")
     print(f"  Requested: {requested_model}")
-    if resolved_model != requested_model:
-        print(f"  Alias resolved: {requested_model} -> {resolved_model}")
-    print(f"  Candidates: {' -> '.join(candidates)}")
-    selected_model = select_model_with_fallback(requested_model, runtime_config)
-    if selected_model != resolved_model:
-        print(f"  Fallback selected: {resolved_model} -> {selected_model}")
-    print(f"  Final selected model: {selected_model}")
+    if alias_result.name != requested_model:
+        print(f"  Alias resolved: {requested_model} -> {alias_result.name}")
+    if full_result.name != alias_result.name:
+        print(f"  Fallback selected: {alias_result.name} -> {full_result.name}")
+    print(f"  Final selected model: {full_result.name}")
 
 
 def create_translation_prompt(
@@ -396,6 +347,9 @@ def translate_markdown_files(
     print(f"Resume mode: {'enabled' if resume else 'disabled'}")
     selector = None
     probe = _create_model_probe(config)
+    # Preserve legacy default: enable_fallback was True when not explicitly set
+    resolver_config = config if "enable_fallback" in config else {**config, "enable_fallback": True}
+    resolver = ModelResolver(resolver_config, probe=probe)
     thresholds = config.get("model_thresholds")
     if isinstance(thresholds, dict):
         try:
@@ -478,11 +432,8 @@ def translate_markdown_files(
 
         requested_model = selected_model
         try:
-            selected_model = select_model_with_fallback(
-                requested_model,
-                config,
-                probe=probe,
-            )
+            resolved = resolver.resolve(requested_model)
+            selected_model = resolved.name
         except Exception as e:
             print(f"    Error selecting model for {filename}: {e}")
             failed_count += 1
@@ -495,11 +446,11 @@ def translate_markdown_files(
             )
             continue
 
-        resolved_requested_model = resolve_model_name(requested_model, config)
-        if resolved_requested_model != requested_model:
-            print(f"    Model alias resolved: {requested_model} -> {resolved_requested_model}")
-        if selected_model != resolved_requested_model:
-            print(f"    Model fallback selected: {resolved_requested_model} -> {selected_model}")
+        alias_resolved = resolver.resolve_alias(requested_model).name
+        if alias_resolved != requested_model:
+            print(f"    Model alias resolved: {requested_model} -> {alias_resolved}")
+        if selected_model != alias_resolved:
+            print(f"    Model fallback selected: {alias_resolved} -> {selected_model}")
         print(f"    Model: {selected_model}")
         translated_content = translate_with_gemini_cli(
             content,
