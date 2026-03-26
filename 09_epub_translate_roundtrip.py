@@ -180,6 +180,7 @@ def main() -> None:
         output_lang=args.output_lang,
         bilingual_style=args.bilingual_style,
         model=args.model,
+        config=runtime_config,
         provider_name=args.provider,
         api_key=api_key,
         custom_prompt=args.prompt,
