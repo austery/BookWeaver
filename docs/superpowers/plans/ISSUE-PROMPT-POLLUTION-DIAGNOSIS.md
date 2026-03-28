@@ -1,10 +1,12 @@
 # 🚨 ISSUE: Prompt Pollution in EPUB Glossary Injection
 
-**Status**: 🔴 BLOCKED - Awaiting Root Cause Analysis  
+**Status**: ✅ RESOLVED  
 **Severity**: CRITICAL  
 **Category**: SPEC-010 Glossary Injection  
 **Date Created**: 2026-03-28  
-**Evidence**: copilot-image-9f098c.png (Chapter 4 page showing prompt content in translated text)
+**Date Resolved**: 2026-03-28  
+**Evidence**: copilot-image-9f098c.png (Chapter 4 page showing prompt content in translated text)  
+**Fix Commit**: `e47cee0` — `fix(spec-010): prevent glossary prompt pollution in EPUB translation`
 
 ---
 
