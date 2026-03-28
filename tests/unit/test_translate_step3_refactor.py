@@ -294,3 +294,57 @@ def test_load_runtime_config_permission_error(
             module.load_runtime_config()
     finally:
         config_path.chmod(0o644)  # restore so tmp_path cleanup works
+
+
+def test_create_translation_prompt_injects_glossary_block(tmp_path: Path) -> None:
+    """GLOSSARY_BLOCK placeholder is replaced with glossary content when path given."""
+    module = _load_step3_module()
+
+    glossary_data = {
+        "critical_terminology": [
+            {
+                "term": "Connascence",
+                "suggested_translation": "共生性",
+                "negative_constraint": "NOT 并发性",
+                "reason": "author concept",
+                "priority": "critical",
+            }
+        ]
+    }
+    gpath = tmp_path / "glossary.json"
+    gpath.write_text(json.dumps(glossary_data), encoding="utf-8")
+
+    template_with_glossary = (
+        "Translate to {TARGET_LANGUAGE}\n{GLOSSARY_BLOCK}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:"
+    )
+
+    from unittest.mock import mock_open, patch
+
+    with patch(
+        "builtins.open",
+        mock_open(read_data=template_with_glossary),
+    ):
+        prompt = module.create_translation_prompt("zh", glossary_path=gpath)
+
+    assert "Connascence" in prompt
+    assert "共生性" in prompt
+    assert "{GLOSSARY_BLOCK}" not in prompt
+
+
+def test_create_translation_prompt_glossary_absent_when_no_path() -> None:
+    """When no glossary_path given, {GLOSSARY_BLOCK} placeholder is stripped."""
+    module = _load_step3_module()
+
+    template_with_glossary = (
+        "Translate to {TARGET_LANGUAGE}\n{GLOSSARY_BLOCK}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:"
+    )
+
+    from unittest.mock import mock_open, patch
+
+    with patch(
+        "builtins.open",
+        mock_open(read_data=template_with_glossary),
+    ):
+        prompt = module.create_translation_prompt("zh")
+
+    assert "{GLOSSARY_BLOCK}" not in prompt

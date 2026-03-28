@@ -22,4 +22,5 @@ IMPORTANT REQUIREMENTS:
    - 图片alt文本可以翻译，但必须保留图片引用结构
 10. 智能识别和处理多级标题，保持层级结构一致。
 
+{GLOSSARY_BLOCK}
 {CUSTOM_INSTRUCTIONS_BLOCK}
