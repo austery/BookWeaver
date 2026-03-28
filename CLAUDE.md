@@ -11,6 +11,7 @@ This is a concise contributor guide. User-facing usage is in `README.md`.
 ## Key entrypoints
 
 - `translatebook.sh` — main orchestrator
+- `00_extract_glossary.py` — optional pre-step: extract terminology glossary from EPUB index/toc
 - `01_convert_to_htmlz.py` — convert input to markdown chunks
 - `03_translate_md.py` — translate chunks with model selection
 - `04_merge_md.py` — merge source + translation
@@ -38,6 +39,9 @@ Extra user constraints are appended by `-p/--prompt`.
 - `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`
 - default workflow resolution: EPUB input -> `epub`, non-EPUB input -> `markdown`
 - `--output-format` is handled in Step 7 (`html` skips conversion)
+- `--extract-glossary` triggers `00_extract_glossary.py` before EPUB translation; writes `{temp_dir}/extracted_glossary.json`
+- `--glossary <path>` passes a pre-extracted glossary directly to the EPUB translation step
+- Glossary block injected via `{GLOSSARY_BLOCK}` placeholder in prompt templates (before `{CUSTOM_INSTRUCTIONS_BLOCK}`); empty string when no glossary
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
 - Step 3 model selection:
   1. Chunk size (if thresholds configured) → ModelSelector
