@@ -75,6 +75,12 @@ which pandoc
 # EPUB package-preserving workflow (default for .epub input)
 ./translatebook.sh --workflow epub --output-format epub /path/to/book.epub
 
+# EPUB workflow with automatic glossary extraction + injection
+./translatebook.sh --workflow epub --extract-glossary --output-format epub /path/to/book.epub
+
+# EPUB workflow with pre-extracted glossary and priority filtering
+./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority high --output-format epub /path/to/book.epub
+
 # Force model for EPUB workflow
 ./translatebook.sh --workflow epub --model flash --output-format epub /path/to/book.epub
 ./translatebook.sh --workflow epub --model gemini-3-pro-preview --output-format epub /path/to/book.epub
@@ -284,15 +290,79 @@ Prompt rendering is profile-driven:
 
 - `config/prompts/default_prompt.txt`
 - `config/prompts/ebook_prompt.txt`
-- runtime keys in `config/config.json.example`:
-  - `prompt_profile`
-  - `prompt_templates`
+- selected via `config/config.json.example` (`prompt_profile`, `prompt_templates`)
+- `{GLOSSARY_BLOCK}` placeholder injected with terminology constraints (see glossary section below)
 
 You can append extra instructions with:
 
 ```bash
 ./translatebook.sh -p "Your custom translation constraints" /path/to/book.epub
 ```
+
+## Glossary extraction & injection (SPEC-010)
+
+BookWeaver can automatically extract terminology from EPUB index/TOC and inject it as translation constraints via prompt injection.
+
+### Quick start
+
+**Automatic extraction + injection (single command):**
+```bash
+./translatebook.sh --workflow epub --extract-glossary --output-format epub /path/to/book.epub
+```
+
+**Manual extraction (pre-run glossary preparation):**
+```bash
+# Extract glossary JSON from EPUB
+uv run python3 00_extract_glossary.py /path/to/book.epub --output glossary.json --model pro
+
+# View extracted terms
+cat glossary.json | jq '.[0:3]'  # First 3 terms
+
+# Translate with glossary
+./translatebook.sh --workflow epub --glossary glossary.json --output-format epub /path/to/book.epub
+```
+
+### Priority-based filtering
+
+By default, glossary injection includes all terms. Use `--glossary-min-priority` to reduce prompt bloat:
+
+```bash
+# Only inject critical + high priority terms (excludes medium, reduces prompt by ~60%)
+./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority high --output-format epub /path/to/book.epub
+
+# Only inject critical terms (most aggressive filtering, ~85% reduction)
+./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority critical --output-format epub /path/to/book.epub
+```
+
+**Priority levels** (extracted by AI analysis):
+- `critical` — Core domain concepts essential for accurate translation
+- `high` — Important terms that appear frequently
+- `medium` — Supporting vocabulary with lower frequency (default inclusion, can be filtered)
+
+### Extraction behavior
+
+- **Index detection**: Two-pass approach (filename hints first, then content heuristics for Kindle-format EPUBs)
+- **Default model**: Pro model (slower but more reliable terminology selection)
+- **Full-index mode**: Use `--full-index` to extract all index entries without AI filtering (comprehensive but slower)
+- **CLI→API fallback**: If Gemini CLI unavailable, automatically falls back to Gemini API (requires `GEMINI_API_KEY` or config)
+- **API-only extraction**: Use `--api-key` to force direct API extraction:
+  ```bash
+  export GEMINI_API_KEY="your-api-key"
+  uv run python3 00_extract_glossary.py /path/to/book.epub --output glossary.json --api-key $GEMINI_API_KEY
+  ```
+
+### Chapter-level A/B testing
+
+To test glossary on specific chapters:
+```bash
+# Extract glossary
+uv run python3 00_extract_glossary.py book.epub -o glossary.json
+
+# Translate only Chapter 3-4 with glossary (--only-docs accepts EPUB spine doc indices)
+./translatebook.sh --workflow epub --glossary glossary.json --only-docs 3,4 --output-format epub book.epub
+```
+
+
 
 ## Important behavior notes
 
