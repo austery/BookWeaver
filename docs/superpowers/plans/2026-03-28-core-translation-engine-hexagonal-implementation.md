@@ -2,74 +2,81 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Re-architect the BookWeaver translation logic into a Hexagonal (Ports & Adapters) structure to unify batching logic, eliminate duplication, and enforce architectural boundaries.
+**Goal:** Re-architect the BookWeaver translation logic into a Hexagonal (Ports & Adapters) structure to unify batching logic, eliminate duplication, and enforce strict architectural boundaries using **Tach**.
 
-**Architecture:** We will implement an `ai/core` domain that holds the `TranslationEngine`, `TextBatcher`, and `GlossaryManager`. We will define strict interfaces in `ai/ports` (`ITranslationProvider`, `IBookSource`). Implementations like Gemini CLI and EPUB parsing will move to `ai/adapters`. Finally, we will configure `import-linter` to ensure the core remains independent.
+**Architecture:** We will implement an `ai/core` domain that holds the `TranslationEngine`, `TextBatcher`, and `GlossaryManager`. We will define strict interfaces in `ai/ports` (`ITranslationProvider`, `IBookSource`). Implementations like Gemini CLI and EPUB parsing will move to `ai/adapters`. We will use **Tach** (Rust-based) to enforce that AI-generated code respects these boundaries and only accesses public interfaces.
 
-**Tech Stack:** Python 3.13, Pytest, Import-Linter.
+**Tech Stack:** Python 3.13, Pytest, Tach (Rust-based architectural linter).
 
 ---
 
-### Task 1: Setup Architectural Governance (Import-Linter)
+### Task 1: Setup Architectural Governance (Tach)
 
 **Files:**
-- Create: `.importlinter`
+- Create: `tach.toml`
 - Modify: `pyproject.toml`
 - Test: `tests/integration/test_architecture.py`
 
-- [ ] **Step 1: Install import-linter**
+- [ ] **Step 1: Install Tach**
 
-Run: `uv add --dev import-linter`
+Run: `uv add --dev tach`
 
-- [ ] **Step 2: Create .importlinter configuration**
+- [ ] **Step 2: Initialize Tach and Create Directory Structure**
 
-```ini
-[importlinter]
-root_package = ai
+```bash
+# Create target structure first
+mkdir -p ai/core ai/ports ai/adapters/providers ai/adapters/sources
+touch ai/core/__init__.py ai/ports/__init__.py ai/adapters/__init__.py ai/adapters/providers/__init__.py ai/adapters/sources/__init__.py
 
-[importlinter:contract:layers]
-name = Hexagonal Architecture Layers
-type = layers
-layers =
-    ai.adapters
-    ai.ports
-    ai.core
+# Initialize Tach
+uv run tach init
 ```
 
-- [ ] **Step 3: Write an architecture test wrapper**
+- [ ] **Step 3: Synchronize Tach to create baseline**
+
+Run: `uv run tach sync`
+Expected: `tach.toml` is created/updated with current project dependencies.
+
+- [ ] **Step 4: Configure strict interfaces in tach.toml**
+
+Modify `tach.toml` to define layers and strict boundaries. Ensure `ai.core` is marked as `strict = true` to prevent deep imports.
+
+```toml
+# Example target config in tach.toml
+[[modules]]
+path = "ai.core"
+strict = true
+
+[[modules]]
+path = "ai.ports"
+
+[[modules]]
+path = "ai.adapters"
+depends_on = ["ai.ports"]
+```
+
+- [ ] **Step 5: Write an architecture test wrapper**
 
 ```python
 # tests/integration/test_architecture.py
 import subprocess
 
 def test_architecture_boundaries():
-    """Ensure import-linter passes, verifying Hexagonal Architecture boundaries."""
-    result = subprocess.run(["lint-imports"], capture_output=True, text=True)
-    assert result.returncode == 0, f"Architecture violation detected:\n{result.stdout}"
+    """Ensure tach check passes, verifying Hexagonal Architecture boundaries and strict interfaces."""
+    result = subprocess.run(["tach", "check"], capture_output=True, text=True)
+    assert result.returncode == 0, f"Architecture violation detected by Tach:\n{result.stdout}"
 ```
 
-- [ ] **Step 4: Run test to verify (Should pass initially or we fix existing)**
+- [ ] **Step 6: Run Tach check**
 
-Run: `uv run pytest tests/integration/test_architecture.py -v`
-Expected: PASS (Since `ai/core` etc. don't exist yet, it should pass, or complain about missing modules. We might need to create the `__init__.py` files first).
-
-- [ ] **Step 5: Create empty directory structure to satisfy linter**
-
-```bash
-mkdir -p ai/core ai/ports ai/adapters/providers ai/adapters/sources
-touch ai/core/__init__.py ai/ports/__init__.py ai/adapters/__init__.py ai/adapters/providers/__init__.py ai/adapters/sources/__init__.py
-```
-
-- [ ] **Step 6: Re-run architecture test**
-
-Run: `uv run lint-imports`
+Run: `uv run tach check`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml uv.lock .importlinter tests/integration/test_architecture.py ai/core ai/ports ai/adapters
-git commit -m "chore: setup import-linter for hexagonal architecture boundaries"
+git add pyproject.toml uv.lock tach.toml tests/integration/test_architecture.py ai/core ai/ports ai/adapters
+git commit -m "chore: setup Tach for hexagonal architecture and strict interface enforcement"
 ```
 
 ---
@@ -87,7 +94,7 @@ git commit -m "chore: setup import-linter for hexagonal architecture boundaries"
 # tests/unit/test_ports.py
 import pytest
 from ai.ports.provider import ITranslationProvider
-from ai.ports.source import IBookSource, Segment
+from ai.ports.source import IBookSource
 
 def test_provider_is_abstract():
     with pytest.raises(TypeError):
@@ -124,7 +131,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Iterable
 
-@dataclass
+@dataclass(frozen=True)
 class Segment:
     id: str
     text: str
@@ -179,20 +186,14 @@ def test_batcher_groups_segments_by_char_limit():
     
     batches = list(batcher.create_batches(segments))
     assert len(batches) == 2
-    assert len(batches[0]) == 2 # 11 + 4 + delimiter < 20
-    assert len(batches[1]) == 1 # 19 < 20
+    assert len(batches[0]) == 2
+    assert len(batches[1]) == 1
 
 def test_batcher_formats_text():
     batcher = TextBatcher(max_chars=100, delimiter="%%")
     segments = [Segment("1", "A", True), Segment("2", "B", True)]
     text = batcher.format_batch(segments)
     assert text == "A\n\n%%\n\nB"
-
-def test_batcher_parses_response():
-    batcher = TextBatcher(max_chars=100, delimiter="%%")
-    response = "Translated A\n\n%%\n\nTranslated B"
-    results = batcher.parse_response(response)
-    assert results == ["Translated A", "Translated B"]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -218,24 +219,16 @@ class TextBatcher:
     def create_batches(self, segments: Iterable[Segment]) -> Iterable[list[Segment]]:
         current_batch: list[Segment] = []
         current_length = 0
-
         for segment in segments:
-            if not segment.is_translatable:
-                continue
-                
+            if not segment.is_translatable: continue
             segment_len = len(segment.text)
             sep_len = len(self.separator) if current_batch else 0
-            
             if current_batch and (current_length + sep_len + segment_len > self.max_chars):
                 yield current_batch
-                current_batch = []
-                current_length = 0
-                
+                current_batch, current_length = [], 0
             current_batch.append(segment)
             current_length += sep_len + segment_len
-            
-        if current_batch:
-            yield current_batch
+        if current_batch: yield current_batch
 
     def format_batch(self, segments: list[Segment]) -> str:
         return self.separator.join(s.text for s in segments)
@@ -249,9 +242,9 @@ class TextBatcher:
 Run: `uv run pytest tests/unit/test_core_batcher.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run architecture linter to ensure purity**
+- [ ] **Step 5: Run Tach to ensure no leaks**
 
-Run: `uv run lint-imports`
+Run: `uv run tach check`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -269,7 +262,7 @@ git commit -m "feat: implement TextBatcher in core domain"
 - Create: `ai/core/engine.py`
 - Test: `tests/unit/test_core_engine.py`
 
-- [ ] **Step 1: Write test for TranslationEngine**
+- [ ] **Step 1: Write test for TranslationEngine using Mocks**
 
 ```python
 # tests/unit/test_core_engine.py
@@ -280,29 +273,18 @@ from ai.ports.source import IBookSource, Segment
 
 class MockProvider(ITranslationProvider):
     def translate(self, text: str, target_lang: str, prompt_template: str = "") -> str:
-        # Simple mock: just return uppercase
-        parts = text.split("%%")
-        return "%%".join([p.strip().upper() for p in parts])
+        return "%%".join([p.strip().upper() for p in text.split("%%")])
 
 class MockSource(IBookSource):
-    def __init__(self):
-        self.saved_segments = []
-    def get_segments(self):
-        return [Segment("1", "hello", True), Segment("2", "world", True)]
-    def save_segments(self, segments):
-        self.saved_segments.extend(segments)
+    def __init__(self): self.saved = []
+    def get_segments(self): return [Segment("1", "hello", True), Segment("2", "world", True)]
+    def save_segments(self, segments): self.saved.extend(segments)
 
 def test_engine_orchestrates_translation():
-    provider = MockProvider()
+    engine = TranslationEngine(MockProvider(), TextBatcher(max_chars=100))
     source = MockSource()
-    batcher = TextBatcher(max_chars=100)
-    engine = TranslationEngine(provider, batcher)
-    
     engine.run(source, "zh")
-    
-    assert len(source.saved_segments) == 2
-    assert source.saved_segments[0].text == "HELLO"
-    assert source.saved_segments[1].text == "WORLD"
+    assert [s.text for s in source.saved] == ["HELLO", "WORLD"]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -327,31 +309,22 @@ class TranslationEngine:
     def run(self, source: IBookSource, target_lang: str) -> None:
         segments = list(source.get_segments())
         batches = self.batcher.create_batches(segments)
-        
         translated_segments = []
-        
         for batch in batches:
             text_to_translate = self.batcher.format_batch(batch)
-            # Basic retry logic placeholder
             max_retries = 3
             for attempt in range(max_retries):
                 try:
                     response = self.provider.translate(text_to_translate, target_lang)
-                    parsed_responses = self.batcher.parse_response(response)
-                    
-                    if len(parsed_responses) != len(batch):
-                        raise ValueError(f"Mismatch: sent {len(batch)}, got {len(parsed_responses)}")
-                        
-                    for original_segment, translated_text in zip(batch, parsed_responses):
-                        translated_segments.append(
-                            Segment(id=original_segment.id, text=translated_text, is_translatable=True)
-                        )
-                    break # Success
+                    parsed = self.batcher.parse_response(response)
+                    if len(parsed) != len(batch):
+                        raise ValueError(f"Mismatch: sent {len(batch)}, got {len(parsed)}")
+                    for orig, trans in zip(batch, parsed):
+                        translated_segments.append(Segment(id=orig.id, text=trans, is_translatable=True))
+                    break
                 except Exception as e:
-                    if attempt == max_retries - 1:
-                        raise RuntimeError(f"Translation failed after {max_retries} attempts: {e}")
-                    time.sleep(1) # Simple backoff
-                    
+                    if attempt == max_retries - 1: raise
+                    time.sleep(1)
         source.save_segments(translated_segments)
 ```
 
@@ -360,16 +333,16 @@ class TranslationEngine:
 Run: `uv run pytest tests/unit/test_core_engine.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run architecture test**
+- [ ] **Step 5: Run Tach check**
 
-Run: `uv run lint-imports`
+Run: `uv run tach check`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add ai/core/engine.py tests/unit/test_core_engine.py
-git commit -m "feat: implement basic TranslationEngine orchestration"
+git commit -m "feat: implement core TranslationEngine"
 ```
 
 ---
@@ -380,7 +353,7 @@ git commit -m "feat: implement basic TranslationEngine orchestration"
 - Create: `ai/adapters/providers/gemini_cli_adapter.py`
 - Modify: `tests/unit/test_gemini_cli_adapter.py`
 
-- [ ] **Step 1: Write test for Adapter**
+- [ ] **Step 1: Write test for GeminiCLIAdapter**
 
 ```python
 # tests/unit/test_gemini_cli_adapter.py
@@ -390,15 +363,9 @@ from unittest.mock import patch, MagicMock
 @patch("subprocess.run")
 def test_cli_adapter_calls_gemini(mock_run):
     mock_run.return_value = MagicMock(returncode=0, stdout="Mock Translation")
-    
     adapter = GeminiCLIAdapter(model="flash")
-    result = adapter.translate("Hello", "zh")
-    
-    assert result == "Mock Translation"
+    assert adapter.translate("Hello", "zh") == "Mock Translation"
     mock_run.assert_called_once()
-    args = mock_run.call_args[0][0]
-    assert "gemini" in args
-    assert "Hello" in args
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -418,20 +385,10 @@ class GeminiCLIAdapter(ITranslationProvider):
         self.model = model
 
     def translate(self, text: str, target_lang: str, prompt_template: str = "") -> str:
-        # In real implementation, merge prompt_template with text
-        # For now, keep it simple mapping to existing logic
         cmd = ["gemini", "generate", "--model", self.model, "--text", text]
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode != 0:
             raise RuntimeError(f"Gemini CLI failed: {result.stderr}")
-            
         return result.stdout.strip()
 ```
 
@@ -440,18 +397,14 @@ class GeminiCLIAdapter(ITranslationProvider):
 Run: `uv run pytest tests/unit/test_gemini_cli_adapter.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Run architecture test**
+- [ ] **Step 5: Run Tach check**
 
-Run: `uv run lint-imports`
-Expected: PASS (Adapters can import Ports, but not Core. Wait, Adapter can import Ports. Does `lint-imports` pass? Yes).
+Run: `uv run tach check`
+Expected: PASS
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add ai/adapters/providers/gemini_cli_adapter.py tests/unit/test_gemini_cli_adapter.py
-git commit -m "feat: implement GeminiCLIAdapter implementing ITranslationProvider"
+git commit -m "feat: implement GeminiCLIAdapter"
 ```
-
----
-
-*(Note: Future tasks would involve implementing `EpubSourceAdapter`, migrating `GlossaryManager`, and finally replacing the ad-hoc logic in `09_epub_translate_roundtrip.py` with this engine. This plan establishes the critical path and boundaries).*

@@ -51,7 +51,11 @@ class GlossaryInjector:
         terms = self.terms
         if min_priority is not None:
             cutoff = self._PRIORITY_ORDER.get(min_priority, 2)
-            terms = [t for t in terms if self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2) <= cutoff]
+            terms = [
+                t
+                for t in terms
+                if self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2) <= cutoff
+            ]
         if not terms:
             return ""
         lines: list[str] = ["【关键术语约束】以下术语必须严格遵守标准译法："]

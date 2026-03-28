@@ -146,12 +146,16 @@ def test_looks_like_index_content_kindle_nav_bar() -> None:
 
 def test_looks_like_index_content_normal_chapter_text() -> None:
     """Normal chapter prose is not detected as index content."""
-    assert _looks_like_index_content("In this chapter we explore the concept of connascence") is False
+    assert (
+        _looks_like_index_content("In this chapter we explore the concept of connascence") is False
+    )
 
 
 def test_build_extraction_prompt_full_index_uses_full_template() -> None:
     """full_index=True uses the full-index template (no max_terms placeholder)."""
-    prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=True)
+    prompt = _build_extraction_prompt(
+        "Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=True
+    )
     assert "Connascence" in prompt
     assert "max_terms" not in prompt
     assert "{max_terms}" not in prompt
@@ -159,6 +163,8 @@ def test_build_extraction_prompt_full_index_uses_full_template() -> None:
 
 def test_build_extraction_prompt_selective_uses_max_terms() -> None:
     """full_index=False uses selective template containing the max_terms value."""
-    prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=False)
+    prompt = _build_extraction_prompt(
+        "Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=False
+    )
     assert "Connascence" in prompt
     assert "15" in prompt

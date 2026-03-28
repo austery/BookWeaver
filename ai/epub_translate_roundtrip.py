@@ -108,15 +108,19 @@ def _create_translation_prompt(
     language_name = _get_language_name(output_lang)
     base_prompt = _IMMERSIVE_SYSTEM_PROMPT_TEMPLATE.format(target_language=language_name)
 
-    user_prompt = _IMMERSIVE_SINGLE_PROMPT_TEMPLATE
-    if segment_count > 1:
-        user_prompt = _IMMERSIVE_MULTI_PROMPT_TEMPLATE
-    base_prompt = f"{base_prompt}\n{user_prompt.format(target_language=language_name)}"
-
+    # Glossary and custom instructions MUST come BEFORE the "Translate to X:"
+    # marker. The CLI provider concatenates prompt + source text, so anything
+    # after the marker looks like content to translate — causing prompt pollution.
     if glossary:
         base_prompt = f"{base_prompt}\n\n{glossary}"
     if custom_prompt:
-        return f"{base_prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
+        base_prompt = f"{base_prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
+
+    user_prompt = _IMMERSIVE_SINGLE_PROMPT_TEMPLATE
+    if segment_count > 1:
+        user_prompt = _IMMERSIVE_MULTI_PROMPT_TEMPLATE
+    base_prompt = f"{base_prompt}\n\n{user_prompt.format(target_language=language_name)}"
+
     return base_prompt
 
 
@@ -397,9 +401,11 @@ def plan_segment_batches(
 
 def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
     """Split batch translation output into expected number of segments.
-    
-    Handles cases where Gemini may not perfectly follow separator format.
-    Uses multiple fallback strategies for robust parsing.
+
+    Uses %% separator (exact then flexible pattern). For single-segment
+    inputs, returns the whole output without separator validation.
+    If count still doesn't match, raises ValueError so the caller's
+    split-and-retry logic can subdivide the batch.
     """
     if expected_count < 0:
         raise ValueError("expected_count must be >= 0")
@@ -409,53 +415,19 @@ def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
     normalized = output_text.strip()
     if expected_count == 1:
         return [normalized]
-    
-    # Strategy 1: Try exact separator
+
+    # Strategy 1: exact separator "\n\n%%\n\n"
     segments = [part.strip() for part in normalized.split(_BATCH_SEPARATOR)]
     segments = [s for s in segments if s]
     if len(segments) == expected_count:
         return segments
-    
-    # Strategy 2: Try flexible pattern
+
+    # Strategy 2: flexible pattern (whitespace around %%)
     segments = [part.strip() for part in _BATCH_SPLIT_PATTERN.split(normalized)]
     segments = [s for s in segments if s]
     if len(segments) == expected_count:
         return segments
-    
-    # Strategy 3: Try newline-based splitting (for when separators are missing)
-    # Split by double newlines, which often separate paragraphs
-    segments = [part.strip() for part in normalized.split('\n\n')]
-    segments = [s for s in segments if s]
-    if len(segments) == expected_count:
-        return segments
-    
-    # Strategy 4: Try triple newlines
-    segments = [part.strip() for part in normalized.split('\n\n\n')]
-    segments = [s for s in segments if s]
-    if len(segments) == expected_count:
-        return segments
-    
-    # Last resort: If we have more segments than expected, try merging adjacent segments
-    # This handles cases where Gemini splits incorrectly
-    if len(segments) > expected_count:
-        # Find the best merge points (prefer merging shorter segments)
-        while len(segments) > expected_count and len(segments) > 1:
-            # Find smallest adjacent pair and merge
-            min_size = float('inf')
-            merge_idx = 0
-            for i in range(len(segments) - 1):
-                combined_size = len(segments[i]) + len(segments[i+1])
-                if combined_size < min_size:
-                    min_size = combined_size
-                    merge_idx = i
-            
-            segments[merge_idx] = segments[merge_idx] + "\n\n" + segments[merge_idx + 1]
-            segments.pop(merge_idx + 1)
-    
-    if len(segments) == expected_count:
-        return segments
-    
-    # If nothing worked, raise error with diagnostic info
+
     raise ValueError(
         f"batch translation count mismatch: expected {expected_count}, got {len(segments)}"
     )
@@ -714,7 +686,9 @@ def run_translate_roundtrip(
     if glossary_path is not None:
         from ai.glossary_injector import GlossaryInjector
 
-        _glossary_block = GlossaryInjector(glossary_path).format_block(min_priority=glossary_min_priority) or None
+        _glossary_block = (
+            GlossaryInjector(glossary_path).format_block(min_priority=glossary_min_priority) or None
+        )
         if glossary_min_priority:
             print(f"[INFO] Glossary filter: min_priority={glossary_min_priority}", flush=True)
 
@@ -777,7 +751,11 @@ def run_translate_roundtrip(
                 continue
             # --only-docs filter: pass through non-matching docs untranslated
             doc_basename = doc_path.split("/")[-1]
-            if only_docs is not None and doc_basename not in only_docs and doc_path not in only_docs:
+            if (
+                only_docs is not None
+                and doc_basename not in only_docs
+                and doc_path not in only_docs
+            ):
                 print(
                     f"[INFO] [{doc_index}/{len(spine_docs)}] Skip {doc_path} (not in --only-docs)",
                     flush=True,
