@@ -396,6 +396,11 @@ def plan_segment_batches(
 
 
 def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
+    """Split batch translation output into expected number of segments.
+    
+    Handles cases where Gemini may not perfectly follow separator format.
+    Uses multiple fallback strategies for robust parsing.
+    """
     if expected_count < 0:
         raise ValueError("expected_count must be >= 0")
     if expected_count == 0:
@@ -403,19 +408,57 @@ def split_batch_translation(output_text: str, expected_count: int) -> list[str]:
 
     normalized = output_text.strip()
     if expected_count == 1:
-        if _BATCH_SEPARATOR in normalized or _BATCH_SPLIT_PATTERN.search(normalized):
-            raise ValueError("batch translation count mismatch: expected 1, got multiple")
         return [normalized]
-
+    
+    # Strategy 1: Try exact separator
     segments = [part.strip() for part in normalized.split(_BATCH_SEPARATOR)]
-    if len(segments) != expected_count:
-        segments = [part.strip() for part in _BATCH_SPLIT_PATTERN.split(normalized)]
-
-    if len(segments) != expected_count:
-        raise ValueError(
-            f"batch translation count mismatch: expected {expected_count}, got {len(segments)}"
-        )
-    return segments
+    segments = [s for s in segments if s]
+    if len(segments) == expected_count:
+        return segments
+    
+    # Strategy 2: Try flexible pattern
+    segments = [part.strip() for part in _BATCH_SPLIT_PATTERN.split(normalized)]
+    segments = [s for s in segments if s]
+    if len(segments) == expected_count:
+        return segments
+    
+    # Strategy 3: Try newline-based splitting (for when separators are missing)
+    # Split by double newlines, which often separate paragraphs
+    segments = [part.strip() for part in normalized.split('\n\n')]
+    segments = [s for s in segments if s]
+    if len(segments) == expected_count:
+        return segments
+    
+    # Strategy 4: Try triple newlines
+    segments = [part.strip() for part in normalized.split('\n\n\n')]
+    segments = [s for s in segments if s]
+    if len(segments) == expected_count:
+        return segments
+    
+    # Last resort: If we have more segments than expected, try merging adjacent segments
+    # This handles cases where Gemini splits incorrectly
+    if len(segments) > expected_count:
+        # Find the best merge points (prefer merging shorter segments)
+        while len(segments) > expected_count and len(segments) > 1:
+            # Find smallest adjacent pair and merge
+            min_size = float('inf')
+            merge_idx = 0
+            for i in range(len(segments) - 1):
+                combined_size = len(segments[i]) + len(segments[i+1])
+                if combined_size < min_size:
+                    min_size = combined_size
+                    merge_idx = i
+            
+            segments[merge_idx] = segments[merge_idx] + "\n\n" + segments[merge_idx + 1]
+            segments.pop(merge_idx + 1)
+    
+    if len(segments) == expected_count:
+        return segments
+    
+    # If nothing worked, raise error with diagnostic info
+    raise ValueError(
+        f"batch translation count mismatch: expected {expected_count}, got {len(segments)}"
+    )
 
 
 def translate_segments_with_batch_retry(
