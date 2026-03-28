@@ -1,10 +1,10 @@
 ---
 specId: SPEC-010
 title: Terminology Extraction and Translation Constraints System
-status: 🟡 待实施 (Ready for Implementation)
+status: ✅ 已完成 — Strategy A MVP
 priority: P2 - Quality Enhancement
 creationDate: 2026-03-26
-lastUpdateDate: 2026-03-26
+lastUpdateDate: 2026-03-28
 owner: Lei Peng (AI-Assisted)
 relatedSpecs:
   - SPEC-002
@@ -480,12 +480,12 @@ Rationale:
 
 ### Strategy A MVP
 - [x] Design document completed (this SPEC)
-- [ ] `00_extract_glossary.py` implemented and tested
-- [ ] `03_translate_md.py` or `ai/epub_translate_roundtrip.py` supports glossary injection
-- [ ] `translatebook.sh` exposes `--extract-glossary` flag
-- [ ] Unit tests: glossary schema, prompt injection, extraction logic
+- [x] `00_extract_glossary.py` implemented and tested
+- [x] `03_translate_md.py` or `ai/epub_translate_roundtrip.py` supports glossary injection
+- [x] `translatebook.sh` exposes `--extract-glossary` flag
+- [x] Unit tests: glossary schema, prompt injection, extraction logic
 - [ ] Integration test: A/B comparison on 1 book shows improvement
-- [ ] Documentation: README, CLAUDE.md, user guide
+- [x] Documentation: README, CLAUDE.md, user guide
 
 ### Strategy B Extension (Conditional on A success)
 - [ ] Priority-based filtering implemented

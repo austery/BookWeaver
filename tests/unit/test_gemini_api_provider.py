@@ -231,9 +231,7 @@ def test_translate_chunk_fails_after_max_retries() -> None:
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
     with patch.object(provider._client, "generate_content") as mock_generate:
-        mock_generate.side_effect = RateLimitError(
-            "Rate limit exceeded", retry_after_seconds=1
-        )
+        mock_generate.side_effect = RateLimitError("Rate limit exceeded", retry_after_seconds=1)
 
         with patch("time.sleep"), pytest.raises(RateLimitError):
             provider.translate_chunk(
@@ -245,4 +243,3 @@ def test_translate_chunk_fails_after_max_retries() -> None:
             )
 
         assert mock_generate.call_count == 3
-

@@ -103,6 +103,7 @@ def _create_translation_prompt(
     custom_prompt: str | None,
     *,
     segment_count: int,
+    glossary: str | None = None,
 ) -> str:
     language_name = _get_language_name(output_lang)
     base_prompt = _IMMERSIVE_SYSTEM_PROMPT_TEMPLATE.format(target_language=language_name)
@@ -112,6 +113,8 @@ def _create_translation_prompt(
         user_prompt = _IMMERSIVE_MULTI_PROMPT_TEMPLATE
     base_prompt = f"{base_prompt}\n{user_prompt.format(target_language=language_name)}"
 
+    if glossary:
+        base_prompt = f"{base_prompt}\n\n{glossary}"
     if custom_prompt:
         return f"{base_prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
     return base_prompt
@@ -653,6 +656,9 @@ def run_translate_roundtrip(
     cli_api_fallback_enabled: bool = False,
     pro_timeout_seconds: int = _PRO_TIMEOUT_SECONDS,
     non_pro_timeout_seconds: int = _NON_PRO_TIMEOUT_SECONDS,
+    glossary_path: Path | None = None,
+    only_docs: set[str] | None = None,
+    glossary_min_priority: str | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -660,6 +666,14 @@ def run_translate_roundtrip(
         raise ValueError("doc_failure_budget must be > 0 when provided")
     if pro_timeout_seconds <= 0 or non_pro_timeout_seconds <= 0:
         raise ValueError("timeout seconds must be > 0")
+
+    _glossary_block: str | None = None
+    if glossary_path is not None:
+        from ai.glossary_injector import GlossaryInjector
+
+        _glossary_block = GlossaryInjector(glossary_path).format_block(min_priority=glossary_min_priority) or None
+        if glossary_min_priority:
+            print(f"[INFO] Glossary filter: min_priority={glossary_min_priority}", flush=True)
 
     _config = config or {}
     resolver = ModelResolver(_config)
@@ -718,6 +732,14 @@ def run_translate_roundtrip(
                     flush=True,
                 )
                 continue
+            # --only-docs filter: pass through non-matching docs untranslated
+            doc_basename = doc_path.split("/")[-1]
+            if only_docs is not None and doc_basename not in only_docs and doc_path not in only_docs:
+                print(
+                    f"[INFO] [{doc_index}/{len(spine_docs)}] Skip {doc_path} (not in --only-docs)",
+                    flush=True,
+                )
+                continue
             source_xhtml = _read_zip_text(source_zip, doc_path)
             segments = extract_translatable_segments(source_xhtml)
             if not segments:
@@ -739,6 +761,7 @@ def run_translate_roundtrip(
                     output_lang,
                     custom_prompt,
                     segment_count=len(segment_texts),
+                    glossary=_glossary_block,
                 )
 
             def batch_translate(batch_text: str) -> str:

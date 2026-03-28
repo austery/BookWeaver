@@ -7,4 +7,5 @@ REQUIREMENTS:
 5. 保持标题层级清晰
 6. 输出必须以 <!-- START --> 开始并以 <!-- END --> 结束
 
+{GLOSSARY_BLOCK}
 {CUSTOM_INSTRUCTIONS_BLOCK}

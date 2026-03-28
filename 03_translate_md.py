@@ -250,15 +250,27 @@ def print_model_selection_preview(requested_model: str, runtime_config: RuntimeC
 
 
 def create_translation_prompt(
-    output_lang: str, custom_prompt: str | None = None, runtime_config: RuntimeConfig | None = None
+    output_lang: str,
+    custom_prompt: str | None = None,
+    runtime_config: RuntimeConfig | None = None,
+    glossary_path: Path | None = None,
 ) -> str:
-    """Create translation prompt with optional custom additions."""
+    """Create translation prompt with optional glossary constraints and custom additions."""
     lang_name = get_language_name(output_lang)
     template = load_prompt_template(runtime_config)
-    has_custom_placeholder = "{CUSTOM_INSTRUCTIONS_BLOCK}" in template
+
+    glossary_block = ""
+    if glossary_path is not None:
+        from ai.glossary_injector import GlossaryInjector
+
+        glossary_block = GlossaryInjector(glossary_path).format_block()
+
     custom_block = f"ADDITIONAL INSTRUCTIONS:\n{custom_prompt}" if custom_prompt else ""
 
     prompt = template.replace("{TARGET_LANGUAGE}", lang_name)
+    prompt = prompt.replace("{GLOSSARY_BLOCK}", glossary_block)
+
+    has_custom_placeholder = "{CUSTOM_INSTRUCTIONS_BLOCK}" in prompt
     if has_custom_placeholder:
         prompt = prompt.replace("{CUSTOM_INSTRUCTIONS_BLOCK}", custom_block)
     elif custom_block:

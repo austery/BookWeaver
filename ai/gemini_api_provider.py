@@ -137,9 +137,7 @@ class GeminiAPIProvider:
                 code = getattr(exc, "code", None)
                 if code == 429 or "RESOURCE_EXHAUSTED" in message:
                     retry_after = _parse_retry_after(message)
-                    last_exception = RateLimitError(
-                        f"Rate limit exceeded: {message}", retry_after
-                    )
+                    last_exception = RateLimitError(f"Rate limit exceeded: {message}", retry_after)
                     wait_time = retry_after or retry_delay_seconds
                     logger.warning(
                         f"Rate limit detected. Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
