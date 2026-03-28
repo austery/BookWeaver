@@ -79,15 +79,7 @@ class GeminiAPIProvider:
 
         self.api_key = resolved_api_key
         self.model = resolved_model
-        self._client = genai.GenerativeModel(
-            self.model,
-            safety_settings=[
-                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-            ],
-        )
+        self._client = genai.Client(api_key=resolved_api_key)
 
     def translate_chunk(
         self,
@@ -107,13 +99,32 @@ class GeminiAPIProvider:
         last_exception: Exception | None = None
         for attempt in range(max_retries):
             try:
-                response = self._client.generate_content(
+                response = self._client.models.generate_content(
+                    model=self.model,
                     contents=text,
-                    generation_config=types.GenerationConfig(
+                    config=types.GenerateContentConfig(
                         temperature=0.3,
                         max_output_tokens=8192,
+                        system_instruction=system_prompt or None,
+                        safety_settings=[
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
                     ),
-                    request_options={"timeout": timeout_seconds},
                 )
                 result_text = (response.text or "").strip()
                 if not result_text:
@@ -126,8 +137,8 @@ class GeminiAPIProvider:
                     f"Rate limit exceeded. Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                 )
                 time.sleep(wait_time)
-            except (errors.ServerError, errors.InternalServerError) as exc:
-                last_exception = exc
+            except errors.ServerError as exc:
+                last_exception = RuntimeError(f"Gemini API server error: {exc}")
                 logger.warning(
                     f"Gemini API server error: {exc}. Retrying in {retry_delay_seconds}s... (Attempt {attempt + 1}/{max_retries})"
                 )

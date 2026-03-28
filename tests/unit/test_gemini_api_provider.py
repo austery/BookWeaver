@@ -187,7 +187,7 @@ def test_empty_response_raises_error() -> None:
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch.object(provider._client, "generate_content") as mock_generate:
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
         mock_response = MagicMock()
         mock_response.text = ""  # Empty response
         mock_generate.return_value = mock_response
@@ -202,7 +202,7 @@ def test_translate_chunk_retries_on_rate_limit() -> None:
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch.object(provider._client, "generate_content") as mock_generate:
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
         mock_response = MagicMock()
         mock_response.text = "这是翻译后的文本"
         mock_generate.side_effect = [
@@ -230,7 +230,7 @@ def test_translate_chunk_fails_after_max_retries() -> None:
 
     provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
 
-    with patch.object(provider._client, "generate_content") as mock_generate:
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
         mock_generate.side_effect = RateLimitError("Rate limit exceeded", retry_after_seconds=1)
 
         with patch("time.sleep"), pytest.raises(RateLimitError):
