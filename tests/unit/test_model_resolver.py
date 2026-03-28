@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ai.model_resolver import ModelResolver, ModelRole, ResolvedModel
+from ai.model_resolver import ModelResolver, ModelRole
 
 
 # ─── Basic alias resolution ────────────────────────────────────────────────

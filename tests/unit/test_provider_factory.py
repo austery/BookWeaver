@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from ai.gemini_provider import GeminiProvider
-from ai.provider_factory import ProviderFactory, ProviderPair
+from ai.provider_factory import ProviderFactory
 
 
 def test_cli_creates_gemini_provider_no_fallback() -> None:
