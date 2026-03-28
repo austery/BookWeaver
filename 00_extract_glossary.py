@@ -60,10 +60,10 @@ def _make_translate_fn(provider: str, model: str) -> Callable[[str], str]:
         p = GeminiAPIProvider(model=model, api_key=api_key)
         return lambda prompt: p.translate_chunk(text=prompt, chunk_size=0, system_prompt="")
     else:
-        from ai.gemini_provider import GeminiCLIProvider
+        from ai.gemini_provider import GeminiProvider
 
-        p = GeminiCLIProvider(model=model)
-        return lambda prompt: p.translate_chunk(text=prompt, chunk_size=0, system_prompt="")
+        p = GeminiProvider(model=model)
+        return lambda prompt: p.translate_chunk(prompt, 0, "")
 
 
 def main() -> None:
