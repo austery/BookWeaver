@@ -66,6 +66,42 @@ _EXTRACTION_PROMPT_TEMPLATE = """\
 priority分级：critical（作者原创/核心概念）, high（高频技术术语）, medium（重要但非核心）
 """
 
+_FULL_INDEX_PROMPT_TEMPLATE = """\
+你是技术书籍翻译专家。下面是一本书的Index（书后索引）和目录。
+
+<INDEX>
+{index_content}
+</INDEX>
+
+<TOC>
+{toc_content}
+</TOC>
+
+任务：将Index中**所有顶级术语**翻译为中文，输出完整术语对照表。
+
+规则：
+1. 顶级条目（Index中非缩进的条目）= 必须全部翻译，一条不漏
+2. 子条目（缩进的子项，如"  avoiding if statements"）= 跳过
+3. 字母导航栏（如"[ A ][ B ][ C ]"）= 跳过
+4. 页码引用（"2nd", "3rd" 等）= 忽略
+5. 缩写/专有名词（如"AAA", "API", "SUT"）= term保留英文，suggested_translation填展开式译名
+6. negative_constraint 仅在有易混淆错译时填写，否则省略此字段
+7. priority: critical=本书核心概念, high=高频重要术语, medium=其他术语
+
+严格输出以下JSON格式，不要包含任何其他文字：
+{{
+  "critical_terminology": [
+    {{
+      "term": "原文术语",
+      "suggested_translation": "建议中文翻译",
+      "negative_constraint": "NOT 错误译法（可选）",
+      "reason": "简短说明",
+      "priority": "critical|high|medium"
+    }}
+  ]
+}}
+"""
+
 
 def _is_index_document(document_path: str | None) -> bool:
     if not document_path:
@@ -137,8 +173,15 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     return index_text, toc_text
 
 
-def _build_extraction_prompt(index_text: str, toc_text: str, max_terms: int) -> str:
+def _build_extraction_prompt(
+    index_text: str, toc_text: str, max_terms: int, full_index: bool = False
+) -> str:
     """Format the extraction prompt with index and TOC content."""
+    if full_index:
+        return _FULL_INDEX_PROMPT_TEMPLATE.format(
+            index_content=index_text or "(no index found)",
+            toc_content=toc_text or "(no TOC found)",
+        )
     return _EXTRACTION_PROMPT_TEMPLATE.format(
         index_content=index_text or "(no index found)",
         toc_content=toc_text or "(no TOC found)",
@@ -179,6 +222,7 @@ def extract_glossary_from_epub(
     output_path: Path,
     translate_fn: Callable[[str], str],
     max_terms: int = 20,
+    full_index: bool = False,
 ) -> dict:
     """Extract terminology from EPUB and write glossary JSON to output_path.
 
@@ -187,19 +231,24 @@ def extract_glossary_from_epub(
         output_path: Where to write the extracted glossary JSON.
         translate_fn: Callable(prompt: str) -> str. Takes the extraction prompt
                       and returns the model's raw text response.
-        max_terms: Maximum number of terms to extract (Strategy A default: 20).
+        max_terms: Maximum number of terms to extract (ignored when full_index=True).
+        full_index: When True, translate ALL top-level index entries instead of
+                    selecting the most critical ones. More comprehensive but produces
+                    a larger glossary.
 
     Returns:
         The parsed glossary dict.
     """
     print(f"[glossary] Extracting from: {epub_path.name}", flush=True)
+    mode = "full-index" if full_index else f"selective (max {max_terms})"
+    print(f"[glossary] Mode: {mode}", flush=True)
     index_text, toc_text = extract_epub_index_and_toc(epub_path)
     print(
         f"[glossary] Index: {len(index_text)} chars, TOC: {len(toc_text)} chars",
         flush=True,
     )
 
-    prompt = _build_extraction_prompt(index_text, toc_text, max_terms)
+    prompt = _build_extraction_prompt(index_text, toc_text, max_terms, full_index=full_index)
     raw_output = translate_fn(prompt)
 
     glossary = _validate_and_parse_glossary(raw_output)

@@ -39,6 +39,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Maximum number of terms to extract (default: 20)",
     )
     parser.add_argument(
+        "--full-index",
+        action="store_true",
+        help="Translate ALL top-level index entries (no filtering). Overrides --max-terms.",
+    )
+    parser.add_argument(
         "--provider",
         default="cli",
         choices=["cli", "api"],
@@ -51,6 +56,7 @@ def _make_translate_fn(provider: str, model: str) -> Callable[[str], str]:
     """Create a translate_fn callable for the given provider.
 
     Returns a function that takes a prompt string and returns the model's response.
+    Uses a generous timeout (600s) since glossary extraction sends large prompts.
     """
     if provider == "api":
         from ai.gemini_api_provider import GeminiAPIProvider
@@ -63,7 +69,7 @@ def _make_translate_fn(provider: str, model: str) -> Callable[[str], str]:
         from ai.gemini_provider import GeminiProvider
 
         p = GeminiProvider(model=model)
-        return lambda prompt: p.translate_chunk(prompt, 0, "")
+        return lambda prompt: p.translate_chunk(prompt, 0, "", timeout_seconds=600)
 
 
 def main() -> None:
@@ -83,6 +89,7 @@ def main() -> None:
         output_path=output_path,
         translate_fn=translate_fn,
         max_terms=args.max_terms,
+        full_index=args.full_index,
     )
 
 

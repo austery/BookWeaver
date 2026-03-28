@@ -39,6 +39,11 @@ def parse_arguments() -> argparse.Namespace:
         help="Path to extracted glossary JSON (from 00_extract_glossary.py)",
     )
     parser.add_argument(
+        "--only-docs",
+        default=None,
+        help="Comma-separated list of spine doc filenames to translate (e.g. kindle_split_013.html,kindle_split_015.html). Others are passed through untranslated.",
+    )
+    parser.add_argument(
         "--checkpoint-dir",
         default=None,
         help="Optional checkpoint directory for resume; if omitted, no checkpoint is written",
@@ -170,6 +175,7 @@ def main() -> None:
         Path(args.checkpoint_dir).expanduser().resolve() if args.checkpoint_dir else None
     )
     glossary_path = Path(args.glossary).expanduser().resolve() if args.glossary else None
+    only_docs = set(args.only_docs.split(",")) if args.only_docs else None
     runtime_config = load_runtime_config()
     api_key = resolve_api_key_from_config(runtime_config) if args.provider == "api" else None
     resilience_overrides = resolve_epub_resilience_config(runtime_config)
@@ -193,6 +199,7 @@ def main() -> None:
         checkpoint_dir=checkpoint_dir,
         force_resume=args.force_resume,
         glossary_path=glossary_path,
+        only_docs=only_docs,
         **resilience_overrides,
     )
     print(

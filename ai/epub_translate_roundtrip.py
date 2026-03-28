@@ -657,6 +657,7 @@ def run_translate_roundtrip(
     pro_timeout_seconds: int = _PRO_TIMEOUT_SECONDS,
     non_pro_timeout_seconds: int = _NON_PRO_TIMEOUT_SECONDS,
     glossary_path: Path | None = None,
+    only_docs: set[str] | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -725,6 +726,14 @@ def run_translate_roundtrip(
                 print(
                     f"[INFO] [{doc_index}/{len(spine_docs)}] "
                     f"Resume skip {doc_path} (checkpoint hit)",
+                    flush=True,
+                )
+                continue
+            # --only-docs filter: pass through non-matching docs untranslated
+            doc_basename = doc_path.split("/")[-1]
+            if only_docs is not None and doc_basename not in only_docs and doc_path not in only_docs:
+                print(
+                    f"[INFO] [{doc_index}/{len(spine_docs)}] Skip {doc_path} (not in --only-docs)",
                     flush=True,
                 )
                 continue
