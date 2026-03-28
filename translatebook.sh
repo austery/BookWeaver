@@ -762,11 +762,13 @@ main() {
             _glossary_output="${base_temp_dir}/extracted_glossary.json"
             log_step "workflow-epub" "Extracting terminology glossary"
             
+            # Glossary extraction always uses Pro model (for quality)
+            # regardless of MODEL_OVERRIDE (which applies only to translation)
             local _extract_cmd=(
                 python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
                 "$INPUT_FILE"
                 --output "$_glossary_output"
-                --model "${MODEL_OVERRIDE:-pro}"
+                --model "pro"
                 --provider "$PROVIDER"
             )
             if [[ "$DRY_RUN" == true ]]; then
