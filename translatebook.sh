@@ -708,7 +708,7 @@ main() {
         fi
 
         # Optional: glossary extraction
-        local _glossary_arg=""
+        local _glossary_output=""
         if [[ "$EXTRACT_GLOSSARY" == true ]]; then
             local _glossary_output="${base_temp_dir}/extracted_glossary.json"
             log_step "workflow-epub" "Extracting terminology glossary"
@@ -721,12 +721,12 @@ main() {
             )
             if [[ "$DRY_RUN" == true ]]; then
                 log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
+                _glossary_output=""
             else
                 "${_extract_cmd[@]}" || { log_error "Glossary extraction failed"; exit 1; }
-                _glossary_arg="--glossary $_glossary_output"
             fi
         elif [[ -n "$GLOSSARY_PATH" ]]; then
-            _glossary_arg="--glossary $GLOSSARY_PATH"
+            _glossary_output="$GLOSSARY_PATH"
         fi
 
         local cmd=(
@@ -743,9 +743,8 @@ main() {
         if [[ -n "$CUSTOM_PROMPT" ]]; then
             cmd+=(-p "$CUSTOM_PROMPT")
         fi
-        if [[ -n "$_glossary_arg" ]]; then
-            # shellcheck disable=SC2206
-            cmd+=($_glossary_arg)
+        if [[ -n "$_glossary_output" ]]; then
+            cmd+=(--glossary "$_glossary_output")
             if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
                 cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
             fi

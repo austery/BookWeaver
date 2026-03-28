@@ -9,6 +9,7 @@ import pytest
 
 from ai.glossary_extractor import (
     _build_extraction_prompt,
+    _looks_like_index_content,
     _validate_and_parse_glossary,
     extract_epub_index_and_toc,
     extract_glossary_from_epub,
@@ -136,3 +137,28 @@ def test_extract_glossary_from_epub_writes_json(tmp_path: Path) -> None:
     assert output_path.exists()
     data = json.loads(output_path.read_text(encoding="utf-8"))
     assert data["critical_terminology"][0]["term"] == "Connascence"
+
+
+def test_looks_like_index_content_kindle_nav_bar() -> None:
+    """Kindle-style alpha nav bar is detected as index content."""
+    assert _looks_like_index_content("[ a ][ b ][ c ][ d ] some terms here") is True
+
+
+def test_looks_like_index_content_normal_chapter_text() -> None:
+    """Normal chapter prose is not detected as index content."""
+    assert _looks_like_index_content("In this chapter we explore the concept of connascence") is False
+
+
+def test_build_extraction_prompt_full_index_uses_full_template() -> None:
+    """full_index=True uses the full-index template (no max_terms placeholder)."""
+    prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=True)
+    assert "Connascence" in prompt
+    assert "max_terms" not in prompt
+    assert "{max_terms}" not in prompt
+
+
+def test_build_extraction_prompt_selective_uses_max_terms() -> None:
+    """full_index=False uses selective template containing the max_terms value."""
+    prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15, full_index=False)
+    assert "Connascence" in prompt
+    assert "15" in prompt

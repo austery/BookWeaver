@@ -75,11 +75,16 @@ def _load_config() -> dict:
 
 
 def _resolve_model(alias: str, config: dict) -> str:
-    """Resolve model alias (pro/flash/lite) using config, fallback to literal name."""
+    """Resolve model alias (pro/flash/lite) using config, fallback to built-in defaults."""
+    _BUILTIN_ALIASES = {
+        "pro": "gemini-2.5-pro",
+        "flash": "gemini-2.5-flash",
+        "lite": "gemini-2.5-flash-lite",
+    }
     model_aliases = config.get("model_aliases", {})
     if isinstance(model_aliases, dict) and alias in model_aliases:
         return str(model_aliases[alias])
-    return alias
+    return _BUILTIN_ALIASES.get(alias, alias)
 
 
 def _get_api_key(config: dict) -> str:

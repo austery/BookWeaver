@@ -115,3 +115,50 @@ def test_format_block_prioritizes_critical_terms(tmp_path: Path) -> None:
     idx_critical = block.index("Connascence")
     idx_medium = block.index("Evolutionary Architecture")
     assert idx_critical < idx_medium
+
+
+def test_format_block_min_priority_critical_only(tmp_path: Path) -> None:
+    """min_priority='critical' includes only critical terms."""
+    path = write_glossary(tmp_path, MEDIUM_GLOSSARY)
+    injector = GlossaryInjector(path)
+    block = injector.format_block(min_priority="critical")
+    assert "Connascence" in block
+    assert "Shift Left" not in block
+    assert "Evolutionary Architecture" not in block
+
+
+def test_format_block_min_priority_high_includes_critical_and_high(tmp_path: Path) -> None:
+    """min_priority='high' includes critical + high, excludes medium."""
+    path = write_glossary(tmp_path, MEDIUM_GLOSSARY)
+    injector = GlossaryInjector(path)
+    block = injector.format_block(min_priority="high")
+    assert "Connascence" in block
+    assert "Shift Left" in block
+    assert "Evolutionary Architecture" not in block
+
+
+def test_format_block_min_priority_medium_includes_all(tmp_path: Path) -> None:
+    """min_priority='medium' includes all terms (same as None)."""
+    path = write_glossary(tmp_path, MEDIUM_GLOSSARY)
+    injector = GlossaryInjector(path)
+    block = injector.format_block(min_priority="medium")
+    assert "Connascence" in block
+    assert "Shift Left" in block
+    assert "Evolutionary Architecture" in block
+
+
+def test_format_block_min_priority_high_all_medium_returns_empty(tmp_path: Path) -> None:
+    """min_priority='high' when all terms are medium returns empty string."""
+    glossary_all_medium = {
+        "critical_terminology": [
+            {
+                "term": "Technical Debt",
+                "suggested_translation": "技术债务",
+                "reason": "Common concept",
+                "priority": "medium",
+            }
+        ]
+    }
+    path = write_glossary(tmp_path, glossary_all_medium)
+    injector = GlossaryInjector(path)
+    assert injector.format_block(min_priority="high") == ""

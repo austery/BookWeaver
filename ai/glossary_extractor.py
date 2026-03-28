@@ -248,6 +248,12 @@ def extract_glossary_from_epub(
         flush=True,
     )
 
+    if not index_text and not toc_text:
+        raise ValueError(
+            "Cannot extract glossary: no Index or TOC content found in EPUB. "
+            "The EPUB may not have a standard index or table of contents."
+        )
+
     prompt = _build_extraction_prompt(index_text, toc_text, max_terms, full_index=full_index)
     raw_output = translate_fn(prompt)
 
