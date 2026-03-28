@@ -658,6 +658,7 @@ def run_translate_roundtrip(
     non_pro_timeout_seconds: int = _NON_PRO_TIMEOUT_SECONDS,
     glossary_path: Path | None = None,
     only_docs: set[str] | None = None,
+    glossary_min_priority: str | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -670,7 +671,9 @@ def run_translate_roundtrip(
     if glossary_path is not None:
         from ai.glossary_injector import GlossaryInjector
 
-        _glossary_block = GlossaryInjector(glossary_path).format_block() or None
+        _glossary_block = GlossaryInjector(glossary_path).format_block(min_priority=glossary_min_priority) or None
+        if glossary_min_priority:
+            print(f"[INFO] Glossary filter: min_priority={glossary_min_priority}", flush=True)
 
     _config = config or {}
     resolver = ModelResolver(_config)

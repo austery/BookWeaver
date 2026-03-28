@@ -12,6 +12,7 @@ JSON glossary that subsequent translation steps can inject into prompts.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Callable
@@ -29,8 +30,8 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="gemini-2.5-pro",
-        help="Gemini model for extraction (default: gemini-2.5-pro)",
+        default="pro",
+        help="Gemini model for extraction (default: pro). Accepts aliases: pro, flash, lite.",
     )
     parser.add_argument(
         "--max-terms",
@@ -47,29 +48,95 @@ def parse_arguments() -> argparse.Namespace:
         "--provider",
         default="cli",
         choices=["cli", "api"],
-        help="Provider to use for extraction (default: cli)",
+        help="Provider to use for extraction (default: cli). Use 'api' to skip CLI.",
+    )
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="Disable automatic CLI→API fallback on CLI failure.",
     )
     return parser.parse_args()
 
 
-def _make_translate_fn(provider: str, model: str) -> Callable[[str], str]:
-    """Create a translate_fn callable for the given provider.
+def _load_config() -> dict:
+    """Load runtime config to resolve model aliases and API key."""
+    script_dir = Path(__file__).resolve().parent
+    for path in [
+        script_dir / "config" / "config.json",
+        Path.home() / ".config" / "translatebook" / "config.json",
+        script_dir / "config" / "config.json.example",
+    ]:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+    return {}
 
-    Returns a function that takes a prompt string and returns the model's response.
-    Uses a generous timeout (600s) since glossary extraction sends large prompts.
-    """
+
+def _resolve_model(alias: str, config: dict) -> str:
+    """Resolve model alias (pro/flash/lite) using config, fallback to literal name."""
+    model_aliases = config.get("model_aliases", {})
+    if isinstance(model_aliases, dict) and alias in model_aliases:
+        return str(model_aliases[alias])
+    return alias
+
+
+def _get_api_key(config: dict) -> str:
+    """Read API key from config or environment."""
+    import os
+
+    gemini_api = config.get("gemini_api", {})
+    if isinstance(gemini_api, dict):
+        key = gemini_api.get("api_key", "")
+        if isinstance(key, str) and key.strip():
+            return key.strip()
+    return os.environ.get("GEMINI_API_KEY", "")
+
+
+def _make_cli_translate_fn(model: str) -> Callable[[str], str]:
+    from ai.gemini_provider import GeminiProvider
+
+    p = GeminiProvider(model=model)
+    return lambda prompt: p.translate_chunk(prompt, 0, "", timeout_seconds=600)
+
+
+def _make_api_translate_fn(model: str, api_key: str) -> Callable[[str], str]:
+    from ai.gemini_api_provider import GeminiAPIProvider
+
+    p = GeminiAPIProvider(model=model, api_key=api_key)
+    return lambda prompt: p.translate_chunk(text=prompt, chunk_size=0, system_prompt="")
+
+
+def _make_translate_fn_with_fallback(
+    provider: str, model: str, config: dict, no_fallback: bool
+) -> Callable[[str], str]:
+    """Build a translate_fn that falls back CLI→API automatically on failure."""
+    api_key = _get_api_key(config)
+
     if provider == "api":
-        from ai.gemini_api_provider import GeminiAPIProvider
-        import os
+        print(f"[glossary] Provider: API (model={model})", flush=True)
+        return _make_api_translate_fn(model, api_key)
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        p = GeminiAPIProvider(model=model, api_key=api_key)
-        return lambda prompt: p.translate_chunk(text=prompt, chunk_size=0, system_prompt="")
-    else:
-        from ai.gemini_provider import GeminiProvider
+    cli_fn = _make_cli_translate_fn(model)
 
-        p = GeminiProvider(model=model)
-        return lambda prompt: p.translate_chunk(prompt, 0, "", timeout_seconds=600)
+    if no_fallback or not api_key:
+        if not api_key and not no_fallback:
+            print("[glossary] Warning: no API key found, CLI→API fallback disabled", flush=True)
+        print(f"[glossary] Provider: CLI (model={model}, no fallback)", flush=True)
+        return cli_fn
+
+    api_fn = _make_api_translate_fn(model, api_key)
+
+    def cli_with_fallback(prompt: str) -> str:
+        try:
+            return cli_fn(prompt)
+        except Exception as e:
+            print(f"[glossary] CLI failed ({e}), retrying with API...", flush=True)
+            return api_fn(prompt)
+
+    print(f"[glossary] Provider: CLI with API fallback (model={model})", flush=True)
+    return cli_with_fallback
 
 
 def main() -> None:
@@ -81,9 +148,17 @@ def main() -> None:
         print(f"ERROR: Input EPUB not found: {epub_path}", file=sys.stderr)
         sys.exit(1)
 
+    config = _load_config()
+    model = _resolve_model(args.model, config)
+
     from ai.glossary_extractor import extract_glossary_from_epub
 
-    translate_fn = _make_translate_fn(args.provider, args.model)
+    translate_fn = _make_translate_fn_with_fallback(
+        provider=args.provider,
+        model=model,
+        config=config,
+        no_fallback=args.no_fallback,
+    )
     extract_glossary_from_epub(
         epub_path=epub_path,
         output_path=output_path,
@@ -95,3 +170,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

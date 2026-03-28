@@ -18,6 +18,7 @@ OUTPUT_LANG="zh"
 CUSTOM_PROMPT=""
 EXTRACT_GLOSSARY=false
 GLOSSARY_PATH=""
+GLOSSARY_MIN_PRIORITY=""
 CLEAN_TEMP=false
 SKIP_EXISTING=true
 VERBOSE=false
@@ -337,6 +338,10 @@ parse_args() {
                 GLOSSARY_PATH="$2"
                 shift 2
                 ;;
+            --glossary-min-priority)
+                GLOSSARY_MIN_PRIORITY="$2"
+                shift 2
+                ;;
             --clean)
                 CLEAN_TEMP=true
                 shift
@@ -562,6 +567,7 @@ show_config() {
     echo "  Custom prompt: ${CUSTOM_PROMPT:-'None'}"
     echo "  Extract glossary: ${EXTRACT_GLOSSARY}"
     echo "  Glossary path:    ${GLOSSARY_PATH:-'None'}"
+  echo "  Glossary min pri: ${GLOSSARY_MIN_PRIORITY:-'all'}"
     echo "  Steps to run: $STEP_START-$STEP_END"
     echo "  Clean temp: $CLEAN_TEMP"
     echo "  Skip existing: $SKIP_EXISTING"
@@ -710,7 +716,7 @@ main() {
                 python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
                 "$INPUT_FILE"
                 --output "$_glossary_output"
-                --model "${MODEL_OVERRIDE:-gemini-2.5-pro}"
+                --model "${MODEL_OVERRIDE:-pro}"
                 --provider "$PROVIDER"
             )
             if [[ "$DRY_RUN" == true ]]; then
@@ -740,6 +746,9 @@ main() {
         if [[ -n "$_glossary_arg" ]]; then
             # shellcheck disable=SC2206
             cmd+=($_glossary_arg)
+            if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
+                cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
+            fi
         fi
         if [[ "$FORCE_RESUME" == true ]]; then
             cmd+=(--force-resume)

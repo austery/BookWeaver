@@ -40,12 +40,22 @@ class GlossaryInjector:
             key=lambda t: self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2),
         )
 
-    def format_block(self) -> str:
-        """Return a prompt block string, or empty string if no terms."""
-        if not self.terms:
+    def format_block(self, min_priority: str | None = None) -> str:
+        """Return a prompt block string, or empty string if no terms.
+
+        Args:
+            min_priority: If set, only include terms at this priority or higher.
+                          Values: "critical" (strictest), "high", "medium" (all).
+                          Default None means include all terms.
+        """
+        terms = self.terms
+        if min_priority is not None:
+            cutoff = self._PRIORITY_ORDER.get(min_priority, 2)
+            terms = [t for t in terms if self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2) <= cutoff]
+        if not terms:
             return ""
         lines: list[str] = ["【关键术语约束】以下术语必须严格遵守标准译法："]
-        for entry in self.terms:
+        for entry in terms:
             term = entry.get("term", "")
             translation = entry.get("suggested_translation", "")
             negative = entry.get("negative_constraint", "")
