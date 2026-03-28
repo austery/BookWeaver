@@ -7,7 +7,7 @@
   "properties": {
     "critical_terminology": {
       "type": "array",
-      "maxItems": 20,
+      "maxItems": 50,
       "items": {
         "type": "object",
         "required": ["term", "suggested_translation", "priority"],
