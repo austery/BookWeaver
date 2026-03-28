@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+import time
 
 try:
     from google import genai
@@ -12,6 +14,8 @@ except ImportError as exc:
     raise ImportError(
         "google-genai package required for GeminiAPIProvider. Install with: uv add google-genai"
     ) from exc
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimitError(RuntimeError):
@@ -63,7 +67,7 @@ class GeminiAPIProvider:
             )
 
         if model is None:
-            resolved_model = "gemini-2.5-flash"
+            resolved_model = "gemini-1.5-flash"
             if config:
                 gemini_api_config = config.get("gemini_api")
                 if isinstance(gemini_api_config, dict):
@@ -75,7 +79,7 @@ class GeminiAPIProvider:
 
         self.api_key = resolved_api_key
         self.model = resolved_model
-        self._client = genai.Client(api_key=self.api_key)
+        self._client = genai.Client(api_key=resolved_api_key)
 
     def translate_chunk(
         self,
@@ -84,42 +88,101 @@ class GeminiAPIProvider:
         chunk_size: int,
         system_prompt: str,
         timeout_seconds: int = 180,
+        max_retries: int = 3,
+        retry_delay_seconds: int = 1,
     ) -> str:
         if chunk_size < 0:
             raise ValueError("chunk_size must be >= 0")
         if not text.strip():
             return ""
 
-        try:
-            response = self._client.models.generate_content(
-                model=self.model,
-                contents=text,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.3,
-                    max_output_tokens=8192,
-                    http_options=types.HttpOptions(timeout=timeout_seconds),
-                ),
-            )
-            result_text = (response.text or "").strip()
-            if not result_text:
-                raise RuntimeError("Gemini API returned empty response")
-            return result_text
-        except errors.ClientError as exc:
-            message = str(exc)
-            code = getattr(exc, "code", None)
-            if code == 429 or "RESOURCE_EXHAUSTED" in message:
-                retry_after = _parse_retry_after(message)
-                raise RateLimitError(f"Rate limit exceeded: {message}", retry_after) from exc
-            if code == 408 or "timeout" in message.lower():
-                raise RuntimeError(f"Gemini API request timeout after {timeout_seconds}s") from exc
-            raise RuntimeError(f"Gemini API client error: {message}") from exc
-        except errors.ServerError as exc:
-            raise RuntimeError(f"Gemini API server error: {exc}") from exc
-        except errors.APIError as exc:
-            message = str(exc)
-            if "timeout" in message.lower():
-                raise RuntimeError(f"Gemini API request timeout after {timeout_seconds}s") from exc
-            raise RuntimeError(f"Gemini API call failed: {message}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"Gemini API call failed: {exc}") from exc
+        last_exception: Exception | None = None
+        for attempt in range(max_retries):
+            try:
+                response = self._client.models.generate_content(
+                    model=self.model,
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=8192,
+                        system_instruction=system_prompt or None,
+                        safety_settings=[
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
+                    ),
+                )
+                result_text = (response.text or "").strip()
+                if not result_text:
+                    raise RuntimeError("Gemini API returned empty response")
+                return result_text
+            except RateLimitError as exc:
+                last_exception = exc
+                wait_time = exc.retry_after_seconds or retry_delay_seconds
+                logger.warning(
+                    f"Rate limit exceeded. Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(wait_time)
+            except errors.ServerError as exc:
+                last_exception = RuntimeError(f"Gemini API server error: {exc}")
+                logger.warning(
+                    f"Gemini API server error: {exc}. Retrying in {retry_delay_seconds}s... (Attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(retry_delay_seconds)
+            except errors.ClientError as exc:
+                message = str(exc)
+                code = getattr(exc, "code", None)
+                if code == 429 or "RESOURCE_EXHAUSTED" in message:
+                    retry_after = _parse_retry_after(message)
+                    last_exception = RateLimitError(f"Rate limit exceeded: {message}", retry_after)
+                    wait_time = retry_after or retry_delay_seconds
+                    logger.warning(
+                        f"Rate limit detected. Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                elif code == 408 or "timeout" in message.lower():
+                    last_exception = RuntimeError(
+                        f"Gemini API request timeout after {timeout_seconds}s"
+                    )
+                    logger.warning(
+                        f"Gemini API timeout. Retrying in {retry_delay_seconds}s... (Attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay_seconds)
+                else:
+                    raise RuntimeError(f"Gemini API client error: {message}") from exc
+            except errors.APIError as exc:
+                message = str(exc)
+                if "timeout" in message.lower():
+                    last_exception = RuntimeError(
+                        f"Gemini API request timeout after {timeout_seconds}s"
+                    )
+                    logger.warning(
+                        f"Gemini API timeout. Retrying in {retry_delay_seconds}s... (Attempt {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(retry_delay_seconds)
+                else:
+                    raise RuntimeError(f"Gemini API call failed: {message}") from exc
+            except Exception as exc:
+                last_exception = exc
+                logger.warning(
+                    f"An unexpected error occurred: {exc}. Retrying in {retry_delay_seconds}s... (Attempt {attempt + 1}/{max_retries})"
+                )
+                time.sleep(retry_delay_seconds)
+
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Gemini API call failed after multiple retries")

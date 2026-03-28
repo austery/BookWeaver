@@ -22,25 +22,12 @@ from ai.epub_package import (
     validate_manifest_assets,
     validate_package_structure,
 )
-from ai.gemini_provider import GeminiProvider, RateLimitError, TransientCLIError
+from ai.gemini_provider import RateLimitError, TransientCLIError
+from ai.model_resolver import ModelResolver, ModelRole
+from ai.provider_factory import ProviderFactory
 from pipeline_utils import get_language_name as _get_language_name
 
-# Lazy import: GeminiAPIProvider is only imported when actually needed (API provider mode)
-# This allows CLI users to run without installing google-genai package
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ai.gemini_api_provider import GeminiAPIProvider
-
 TranslateFn = Callable[[str], str]
-# _MODEL_ALIASES is independent from the config.json alias table loaded by
-# load_runtime_config(). This local table maps short CLI names to full EPUB
-# workflow model identifiers and is not affected by user config overrides.
-_MODEL_ALIASES = {
-    "pro": "gemini-3-pro-preview",
-    "flash": "gemini-2.5-flash",
-    "lite": "gemini-2.5-flash-lite",
-}
 _PRO_PREBATCH_MAX_CHARS: int = 60_000  # TODO(SPEC-007): move to config.json
 _PRO_TIMEOUT_SECONDS: int = 300  # TODO(SPEC-007): move to config.json
 _RATE_LIMIT_BACKOFF_SECONDS: list[int] = [60, 120]  # TODO(SPEC-007): move to config.json
@@ -116,6 +103,7 @@ def _create_translation_prompt(
     custom_prompt: str | None,
     *,
     segment_count: int,
+    glossary: str | None = None,
 ) -> str:
     language_name = _get_language_name(output_lang)
     base_prompt = _IMMERSIVE_SYSTEM_PROMPT_TEMPLATE.format(target_language=language_name)
@@ -125,16 +113,11 @@ def _create_translation_prompt(
         user_prompt = _IMMERSIVE_MULTI_PROMPT_TEMPLATE
     base_prompt = f"{base_prompt}\n{user_prompt.format(target_language=language_name)}"
 
+    if glossary:
+        base_prompt = f"{base_prompt}\n\n{glossary}"
     if custom_prompt:
         return f"{base_prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
     return base_prompt
-
-
-def _resolve_model_name(model: str) -> str:
-    resolved = _MODEL_ALIASES.get(model.strip(), model.strip())
-    if not resolved:
-        raise ValueError("model must be a non-empty string")
-    return resolved
 
 
 def _compute_source_signature(source_epub: Path) -> str:
@@ -657,6 +640,7 @@ def run_translate_roundtrip(
     output_lang: str,
     bilingual_style: str,
     model: str,
+    config: dict | None = None,
     provider_name: str = "cli",
     api_key: str | None = None,
     custom_prompt: str | None = None,
@@ -672,6 +656,9 @@ def run_translate_roundtrip(
     cli_api_fallback_enabled: bool = False,
     pro_timeout_seconds: int = _PRO_TIMEOUT_SECONDS,
     non_pro_timeout_seconds: int = _NON_PRO_TIMEOUT_SECONDS,
+    glossary_path: Path | None = None,
+    only_docs: set[str] | None = None,
+    glossary_min_priority: str | None = None,
 ) -> TranslateRoundtripResult:
     if bilingual_style != "alternating":
         raise ValueError("Only 'alternating' bilingual style is supported")
@@ -680,26 +667,32 @@ def run_translate_roundtrip(
     if pro_timeout_seconds <= 0 or non_pro_timeout_seconds <= 0:
         raise ValueError("timeout seconds must be > 0")
 
-    resolved_model = _resolve_model_name(model)
+    _glossary_block: str | None = None
+    if glossary_path is not None:
+        from ai.glossary_injector import GlossaryInjector
+
+        _glossary_block = GlossaryInjector(glossary_path).format_block(min_priority=glossary_min_priority) or None
+        if glossary_min_priority:
+            print(f"[INFO] Glossary filter: min_priority={glossary_min_priority}", flush=True)
+
+    _config = config or {}
+    resolver = ModelResolver(_config)
+    resolved = resolver.resolve(model)
+    resolved_model = resolved.name
+    is_pro_model = resolved.role == ModelRole.PRO
+
     package_model = load_epub_package(source_epub)
-    
-    # Lazy import GeminiAPIProvider only when actually needed (API provider or CLI with fallback)
-    if provider_name == "api" or (provider_name == "cli" and cli_api_fallback_enabled):
-        from ai.gemini_api_provider import GeminiAPIProvider
-    
-    primary_provider: GeminiProvider | "GeminiAPIProvider"
-    if provider_name == "api":
-        primary_provider = GeminiAPIProvider(
-            api_key=api_key,
-            model=resolved_model,
-        )
-    else:
-        primary_provider = GeminiProvider(model=resolved_model)
-    
-    fallback_api_provider: "GeminiAPIProvider | None" = None
+
+    factory = ProviderFactory(_config)
+    provider_pair = factory.create(
+        resolved_model,
+        provider_name=provider_name,
+        api_key=api_key,
+        cli_api_fallback_enabled=cli_api_fallback_enabled,
+    )
+    primary_provider = provider_pair.primary
+    fallback_api_provider = provider_pair.fallback
     use_fallback_api = False
-    if provider_name == "cli" and cli_api_fallback_enabled:
-        fallback_api_provider = GeminiAPIProvider(api_key=api_key, model=resolved_model)
 
     source_signature = _compute_source_signature(source_epub)
     checkpoint = _load_checkpoint_snapshot(
@@ -739,6 +732,14 @@ def run_translate_roundtrip(
                     flush=True,
                 )
                 continue
+            # --only-docs filter: pass through non-matching docs untranslated
+            doc_basename = doc_path.split("/")[-1]
+            if only_docs is not None and doc_basename not in only_docs and doc_path not in only_docs:
+                print(
+                    f"[INFO] [{doc_index}/{len(spine_docs)}] Skip {doc_path} (not in --only-docs)",
+                    flush=True,
+                )
+                continue
             source_xhtml = _read_zip_text(source_zip, doc_path)
             segments = extract_translatable_segments(source_xhtml)
             if not segments:
@@ -760,6 +761,7 @@ def run_translate_roundtrip(
                     output_lang,
                     custom_prompt,
                     segment_count=len(segment_texts),
+                    glossary=_glossary_block,
                 )
 
             def batch_translate(batch_text: str) -> str:
@@ -807,7 +809,6 @@ def run_translate_roundtrip(
                         timeout_seconds=timeout_seconds,
                     )
 
-            is_pro_model = resolved_model == _MODEL_ALIASES["pro"]
             planned_batches = [segment_texts]
             if is_pro_model:
                 planned_batches = plan_segment_batches(

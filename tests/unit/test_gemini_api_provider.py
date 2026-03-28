@@ -194,3 +194,52 @@ def test_empty_response_raises_error() -> None:
 
         with pytest.raises(RuntimeError, match="[Ee]mpty.*response"):
             provider.translate_chunk(text="test", chunk_size=10, system_prompt="translate")
+
+
+def test_translate_chunk_retries_on_rate_limit() -> None:
+    """Test that translate_chunk retries on RateLimitError and eventually succeeds."""
+    from ai.gemini_api_provider import GeminiAPIProvider, RateLimitError
+
+    provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
+
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_response = MagicMock()
+        mock_response.text = "这是翻译后的文本"
+        mock_generate.side_effect = [
+            RateLimitError("Rate limit exceeded", retry_after_seconds=1),
+            mock_response,
+        ]
+
+        with patch("time.sleep") as mock_sleep:
+            result = provider.translate_chunk(
+                text="This is source text",
+                chunk_size=100,
+                system_prompt="Translate to Chinese",
+                max_retries=2,
+                retry_delay_seconds=0,
+            )
+
+            assert result == "这是翻译后的文本"
+            assert mock_generate.call_count == 2
+            mock_sleep.assert_called_once_with(1)
+
+
+def test_translate_chunk_fails_after_max_retries() -> None:
+    """Test that translate_chunk fails after all retries are exhausted."""
+    from ai.gemini_api_provider import GeminiAPIProvider, RateLimitError
+
+    provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
+
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_generate.side_effect = RateLimitError("Rate limit exceeded", retry_after_seconds=1)
+
+        with patch("time.sleep"), pytest.raises(RateLimitError):
+            provider.translate_chunk(
+                text="This is source text",
+                chunk_size=100,
+                system_prompt="Translate to Chinese",
+                max_retries=3,
+                retry_delay_seconds=0,
+            )
+
+        assert mock_generate.call_count == 3

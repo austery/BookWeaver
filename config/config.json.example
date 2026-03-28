@@ -56,5 +56,12 @@
     "cli_api_fallback_enabled": false,
     "pro_timeout_seconds": 300,
     "non_pro_timeout_seconds": 180
+  },
+  "terminology_extraction": {
+    "enabled": false,
+    "strategy": "minimal",
+    "extraction_model": "gemini-2.5-pro",
+    "max_terms": 20,
+    "glossary_output_path": "{temp_dir}/extracted_glossary.json"
   }
 }
