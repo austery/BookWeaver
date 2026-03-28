@@ -1,0 +1,54 @@
+<h2>Current "Messy" Architecture</h2>
+<p class="subtitle">Identified fragmentation and redundancy between legacy and EPUB workflows</p>
+
+<div class="mockup">
+  <div class="mockup-header">System Map: Current State</div>
+  <div class="mockup-body" style="padding: 20px; background: #1e1e1e; color: #d4d4d4; font-family: monospace; border-radius: 8px;">
+    <div style="display: flex; justify-content: space-around;">
+      <!-- Workflow 1: Legacy Markdown -->
+      <div style="border: 2px dashed #ff4757; padding: 15px; border-radius: 8px;">
+        <h3 style="color: #ff4757; margin-top: 0;">Markdown Workflow (Legacy)</h3>
+        <ul style="list-style: none; padding: 0;">
+          <li>➡️ 01_convert_to_htmlz.py</li>
+          <li>➡️ 03_translate_md.py <span style="color: #ffa502;">(Refactored but duplicated)</span></li>
+          <li>➡️ 04_merge_md.py</li>
+          <li>➡️ 05_md_to_html.py</li>
+          <li>➡️ 07_generate_formats.py</li>
+        </ul>
+      </div>
+
+      <!-- Workflow 2: EPUB Package-Aware -->
+      <div style="border: 2px solid #2ed573; padding: 15px; border-radius: 8px;">
+        <h3 style="color: #2ed573; margin-top: 0;">EPUB Workflow (Modern)</h3>
+        <ul style="list-style: none; padding: 0;">
+          <li>➡️ 09_epub_translate_roundtrip.py</li>
+          <li>   ↳ ai/epub_translate_roundtrip.py</li>
+          <li>   ↳ ai/epub_package.py</li>
+          <li>   ↳ ai/gemini_provider.py <span style="color: #ffa502;">(Shared)</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; border: 1px solid #70a1ff; padding: 10px; border-radius: 8px; text-align: center;">
+      <h4 style="color: #70a1ff; margin: 0 0 10px 0;">Cross-Cutting Redundancy</h4>
+      <div style="display: flex; justify-content: space-around; font-size: 0.9em;">
+        <div>⚙️ <strong>Config Loading</strong><br>(Duplicated in 03, 09, ai/...)</div>
+        <div>📜 <strong>Prompt Templates</strong><br>(External file vs. Hardcoded)</div>
+        <div>🤖 <strong>Model Logic</strong><br>(SPEC-011 in progress)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Key Clarifying Questions</h3>
+  <div class="options">
+    <div class="option" data-choice="1" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>Should we unify the core translation logic?</h3>
+        <p>Currently, 03_translate_md and epub_translate_roundtrip handle chunking/batching differently. Do you want a single unified "TranslationEngine" that handles both markdown files and EPUB segments?</p>
+      </div>
+    </div>
+  </div>
+</div>

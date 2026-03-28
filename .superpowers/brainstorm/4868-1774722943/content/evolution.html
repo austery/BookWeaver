@@ -1,0 +1,68 @@
+<h2>Architecture Evolution: Toward a Unified Engine</h2>
+<p class="subtitle">Focusing on EPUB-first and shared core logic</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Option 1: Status Quo (Split)</div>
+    <div class="mockup-body" style="font-size: 0.8em;">
+      <p style="color: #ff4757;">🔴 Problem: Redundant Code</p>
+      <div style="border: 1px solid #444; padding: 5px; margin-bottom: 5px;">
+        <strong>Markdown Workflow</strong><br>
+        [Split] -> [Translate V1] -> [Merge]
+      </div>
+      <div style="border: 1px solid #444; padding: 5px;">
+        <strong>EPUB Workflow</strong><br>
+        [Unpack] -> [Translate V2] -> [Repack]
+      </div>
+      <p style="font-size: 0.9em; margin-top: 10px;">❌ Bug fixes in V2 don't help V1.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Option 2: Unified Engine (Recommended)</div>
+    <div class="mockup-body" style="font-size: 0.8em;">
+      <p style="color: #2ed573;">🟢 Benefit: Robust & Consistent</p>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <div style="border: 1px solid #70a1ff; padding: 5px; flex: 1;">Any File<br>(EPUB/PDF/...)</div>
+        <div style="font-size: 1.5em;">➡️</div>
+        <div style="border: 2px solid #2ed573; padding: 10px; flex: 2; text-align: center; background: #1a3a1a;">
+          <strong>Shared Translation Engine</strong><br>
+          <span style="font-size: 0.8em;">Retry | Rate Limit | Fallback</span>
+        </div>
+      </div>
+      <p style="font-size: 0.9em; margin-top: 10px;">✅ One prompt system, one config, one set of tests.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Proposal for "Everything-to-EPUB"</h3>
+  <p>Since the user prefers EPUB quality, we can make the EPUB pipeline the <strong>Standard</strong> path. Non-EPUB files (PDF/DOCX) get converted to EPUB via Calibre first, then processed by the same logic. This eliminates the "broken format" issue entirely.</p>
+</div>
+
+<div class="section">
+  <h3>My Recommendation: Strategy</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="unify" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>Unify Translation Logic</h3>
+        <p>Extract the batching, retry, and API calling logic into a standalone <code>TranslationEngine</code> class.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="epub_first" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>EPUB as Universal Format</h3>
+        <p>Prioritize EPUB workflow. Use Calibre to convert other formats to EPUB first to preserve high-fidelity layout.</p>
+      </div>
+    </div>
+    <div class="option" data-choice="central_config" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>Strict Centralized Config</h3>
+        <p>Refactor all scripts to use a single <code>ConfigManager</code> that handles JSON loading and prompt templating.</p>
+      </div>
+    </div>
+  </div>
+</div>
