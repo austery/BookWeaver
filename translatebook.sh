@@ -16,6 +16,8 @@ INPUT_FILE=""
 INPUT_LANG="auto"
 OUTPUT_LANG="zh"
 CUSTOM_PROMPT=""
+EXTRACT_GLOSSARY=false
+GLOSSARY_PATH=""
 CLEAN_TEMP=false
 SKIP_EXISTING=true
 VERBOSE=false
@@ -88,6 +90,8 @@ OPTIONS:
     -l, --ilang LANG        Input language (default: auto)
     --olang LANG           Output language (default: zh)
     -p, --prompt TEXT      Custom prompt for translation (step 3)
+    --extract-glossary     Extract terminology glossary before translation (EPUB input only)
+    --glossary PATH        Path to pre-extracted glossary JSON (skip extraction step)
     --clean                Clean temp directory before starting
     --no-skip              Don't skip existing intermediate files
     --reinstall-packages   Reinstall Python packages in virtual environment
@@ -325,6 +329,14 @@ parse_args() {
                 CUSTOM_PROMPT="$2"
                 shift 2
                 ;;
+            --extract-glossary)
+                EXTRACT_GLOSSARY=true
+                shift
+                ;;
+            --glossary)
+                GLOSSARY_PATH="$2"
+                shift 2
+                ;;
             --clean)
                 CLEAN_TEMP=true
                 shift
@@ -548,6 +560,8 @@ show_config() {
     echo "  Input language: $INPUT_LANG"
     echo "  Output language: $OUTPUT_LANG"
     echo "  Custom prompt: ${CUSTOM_PROMPT:-'None'}"
+    echo "  Extract glossary: ${EXTRACT_GLOSSARY}"
+    echo "  Glossary path:    ${GLOSSARY_PATH:-'None'}"
     echo "  Steps to run: $STEP_START-$STEP_END"
     echo "  Clean temp: $CLEAN_TEMP"
     echo "  Skip existing: $SKIP_EXISTING"
@@ -687,6 +701,28 @@ main() {
             exit 3
         fi
 
+        # Optional: glossary extraction
+        local _glossary_arg=""
+        if [[ "$EXTRACT_GLOSSARY" == true ]]; then
+            local _glossary_output="${base_temp_dir}/extracted_glossary.json"
+            log_step "workflow-epub" "Extracting terminology glossary"
+            local _extract_cmd=(
+                python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
+                "$INPUT_FILE"
+                --output "$_glossary_output"
+                --model "${MODEL_OVERRIDE:-gemini-2.5-pro}"
+                --provider "$PROVIDER"
+            )
+            if [[ "$DRY_RUN" == true ]]; then
+                log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
+            else
+                "${_extract_cmd[@]}" || { log_error "Glossary extraction failed"; exit 1; }
+                _glossary_arg="--glossary $_glossary_output"
+            fi
+        elif [[ -n "$GLOSSARY_PATH" ]]; then
+            _glossary_arg="--glossary $GLOSSARY_PATH"
+        fi
+
         local cmd=(
             python3 -u "$translate_script" "$INPUT_FILE"
             --output "$translate_output"
@@ -700,6 +736,10 @@ main() {
         fi
         if [[ -n "$CUSTOM_PROMPT" ]]; then
             cmd+=(-p "$CUSTOM_PROMPT")
+        fi
+        if [[ -n "$_glossary_arg" ]]; then
+            # shellcheck disable=SC2206
+            cmd+=($_glossary_arg)
         fi
         if [[ "$FORCE_RESUME" == true ]]; then
             cmd+=(--force-resume)
