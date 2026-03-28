@@ -119,6 +119,43 @@ def _xhtml_to_text(xhtml: str) -> str:
         return re.sub(r"<[^>]+>", " ", xhtml).strip()
 
 
+def _separate_mixed_index(text: str) -> tuple[str, str]:
+    """Separate mixed English+Chinese index content into two parts.
+    
+    Detects lines that appear to be English terms followed by Chinese translations
+    and returns (english_lines, chinese_lines) as separate texts.
+    
+    Example input:
+        AAA (arrange, act, and assert) pattern
+        arrange, act, and assert pattern.
+        AAA（安排、执行和断言）模式
+        安排、执行和断言模式。
+    
+    Returns:
+        (english_text, chinese_text) — each is a block of lines
+    """
+    lines = text.split('\n')
+    english_lines = []
+    chinese_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        
+        # Simple heuristic: if line has mostly CJK characters (>50% Chinese/Japanese/Korean)
+        # it's likely Chinese translation
+        cjk_count = sum(1 for c in stripped if ord(c) > 0x4E00)
+        cjk_ratio = cjk_count / len(stripped) if stripped else 0
+        
+        if cjk_ratio > 0.3:  # >30% CJK chars → likely Chinese
+            chinese_lines.append(line)
+        else:
+            english_lines.append(line)
+    
+    return '\n'.join(english_lines), '\n'.join(chinese_lines)
+
+
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     """Extract plain text from Index and TOC documents inside the EPUB.
 
@@ -126,6 +163,9 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     1. Filename hints ("index", "idx") — fast, works for standard EPUB naming.
     2. Content heuristics — scans the last 10 spine docs in reverse for
        alphabetical nav markers (e.g. Kindle format uses "[ A ][ B ][ C ]").
+    
+    Also handles mixed English+Chinese index content by separating them
+    and preferring English for terminology extraction.
 
     Returns:
         (index_text, toc_text) — either may be empty string if not found.
@@ -142,14 +182,21 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
             if _is_index_document(item.href) and not index_text:
                 try:
                     raw = zf.read(resolved_path).decode("utf-8")
-                    index_text = _xhtml_to_text(raw)
+                    extracted = _xhtml_to_text(raw)
+                    # Separate mixed English+Chinese if needed
+                    english_part, chinese_part = _separate_mixed_index(extracted)
+                    # Use English part if available (more valuable for terminology)
+                    index_text = english_part if english_part.strip() else extracted
                 except (KeyError, UnicodeDecodeError):
                     pass
 
             if model.toc_item_id and item_id == model.toc_item_id and not toc_text:
                 try:
                     raw = zf.read(resolved_path).decode("utf-8")
-                    toc_text = _xhtml_to_text(raw)
+                    extracted = _xhtml_to_text(raw)
+                    # Same separation for TOC
+                    english_part, chinese_part = _separate_mixed_index(extracted)
+                    toc_text = english_part if english_part.strip() else extracted
                 except (KeyError, UnicodeDecodeError):
                     pass
 
@@ -165,7 +212,9 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                     raw = zf.read(resolved_path).decode("utf-8")
                     candidate = _xhtml_to_text(raw)
                     if _looks_like_index_content(candidate):
-                        index_text = candidate
+                        # Separate mixed content here too
+                        english_part, chinese_part = _separate_mixed_index(candidate)
+                        index_text = english_part if english_part.strip() else candidate
                         break
                 except (KeyError, UnicodeDecodeError):
                     pass
