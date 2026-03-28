@@ -19,6 +19,20 @@ from ai.epub_package import load_epub_package, resolve_opf_href
 
 _INDEX_DOC_HINTS = ("index", "idx")
 
+# Content-based heuristics for Kindle/generic EPUBs where the index file
+# isn't named "index.xhtml" but starts with alphabetical navigation markers.
+_INDEX_CONTENT_MARKERS = (
+    "[ a ][ b ][ c ]",  # Kindle-style alpha nav bar
+    "[ a ][ b ]",
+)
+
+
+def _looks_like_index_content(text: str) -> bool:
+    """Return True if the plain-text content looks like a book index."""
+    sample = text[:500].lower()
+    return any(marker in sample for marker in _INDEX_CONTENT_MARKERS)
+
+
 _EXTRACTION_PROMPT_TEMPLATE = """\
 你是技术书籍翻译专家。从以下EPUB的Index和目录中提取**容易翻译错误**的关键术语。
 
@@ -72,6 +86,11 @@ def _xhtml_to_text(xhtml: str) -> str:
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     """Extract plain text from Index and TOC documents inside the EPUB.
 
+    Detection is two-stage:
+    1. Filename hints ("index", "idx") — fast, works for standard EPUB naming.
+    2. Content heuristics — scans the last 10 spine docs in reverse for
+       alphabetical nav markers (e.g. Kindle format uses "[ A ][ B ][ C ]").
+
     Returns:
         (index_text, toc_text) — either may be empty string if not found.
     """
@@ -80,8 +99,8 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     toc_text = ""
 
     with zipfile.ZipFile(epub_path, "r") as zf:
+        # Pass 1: filename-based detection + TOC
         for item_id, item in model.manifest_items.items():
-            # Resolve the item path relative to the OPF file location
             resolved_path = resolve_opf_href(model.opf_path, item.href)
 
             if _is_index_document(item.href) and not index_text:
@@ -95,6 +114,23 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                 try:
                     raw = zf.read(resolved_path).decode("utf-8")
                     toc_text = _xhtml_to_text(raw)
+                except (KeyError, UnicodeDecodeError):
+                    pass
+
+        # Pass 2: content-based fallback for Kindle/non-standard EPUBs
+        if not index_text and model.spine_itemrefs:
+            spine_tail = list(model.spine_itemrefs)[-10:]
+            for idref in reversed(spine_tail):
+                item = model.manifest_items.get(idref)
+                if not item:
+                    continue
+                resolved_path = resolve_opf_href(model.opf_path, item.href)
+                try:
+                    raw = zf.read(resolved_path).decode("utf-8")
+                    candidate = _xhtml_to_text(raw)
+                    if _looks_like_index_content(candidate):
+                        index_text = candidate
+                        break
                 except (KeyError, UnicodeDecodeError):
                     pass
 
