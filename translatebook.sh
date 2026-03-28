@@ -214,7 +214,7 @@ setup_venv() {
             uv pip install -r "$requirements_file"
         else
             log_info "Installing essential packages..."
-            uv pip install python-docx PyMuPDF ebooklib beautifulsoup4 lxml markdown Pillow pdf2image pypandoc
+            uv pip install python-docx PyMuPDF ebooklib beautifulsoup4 lxml markdown Pillow pdf2image pypandoc google-genai
         fi
         
         if [[ $? -ne 0 ]]; then
@@ -707,28 +707,6 @@ main() {
             exit 3
         fi
 
-        # Optional: glossary extraction
-        local _glossary_output=""
-        if [[ "$EXTRACT_GLOSSARY" == true ]]; then
-            local _glossary_output="${base_temp_dir}/extracted_glossary.json"
-            log_step "workflow-epub" "Extracting terminology glossary"
-            local _extract_cmd=(
-                python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
-                "$INPUT_FILE"
-                --output "$_glossary_output"
-                --model "${MODEL_OVERRIDE:-pro}"
-                --provider "$PROVIDER"
-            )
-            if [[ "$DRY_RUN" == true ]]; then
-                log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
-                _glossary_output=""
-            else
-                "${_extract_cmd[@]}" || { log_error "Glossary extraction failed"; exit 1; }
-            fi
-        elif [[ -n "$GLOSSARY_PATH" ]]; then
-            _glossary_output="$GLOSSARY_PATH"
-        fi
-
         local cmd=(
             python3 -u "$translate_script" "$INPUT_FILE"
             --output "$translate_output"
@@ -743,8 +721,8 @@ main() {
         if [[ -n "$CUSTOM_PROMPT" ]]; then
             cmd+=(-p "$CUSTOM_PROMPT")
         fi
-        if [[ -n "$_glossary_output" ]]; then
-            cmd+=(--glossary "$_glossary_output")
+        if [[ -n "$GLOSSARY_PATH" ]]; then
+            cmd+=(--glossary "$GLOSSARY_PATH")
             if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
                 cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
             fi
@@ -766,15 +744,44 @@ main() {
         fi
 
         setup_venv
-        if [[ "$PROVIDER" == "api" ]]; then
+        
+        # Ensure google-genai is available if extract-glossary is enabled or provider is api
+        if [[ "$EXTRACT_GLOSSARY" == true ]] || [[ "$PROVIDER" == "api" ]]; then
             if ! python3 -c "from google import genai" >/dev/null 2>&1; then
                 log_info "Installing Gemini API SDK into venv..."
                 if ! uv pip install google-genai; then
-                    log_error "Failed to install google-genai for API provider"
+                    log_error "Failed to install google-genai"
                     exit 3
                 fi
             fi
         fi
+        
+        # Optional: glossary extraction (after venv setup)
+        local _glossary_output=""
+        if [[ "$EXTRACT_GLOSSARY" == true ]]; then
+            _glossary_output="${base_temp_dir}/extracted_glossary.json"
+            log_step "workflow-epub" "Extracting terminology glossary"
+            
+            local _extract_cmd=(
+                python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
+                "$INPUT_FILE"
+                --output "$_glossary_output"
+                --model "${MODEL_OVERRIDE:-pro}"
+                --provider "$PROVIDER"
+            )
+            if [[ "$DRY_RUN" == true ]]; then
+                log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
+                _glossary_output=""
+            else
+                "${_extract_cmd[@]}" || { log_error "Glossary extraction failed"; exit 1; }
+                # Update cmd with extracted glossary
+                cmd+=(--glossary "$_glossary_output")
+                if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
+                    cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
+                fi
+            fi
+        fi
+        
         log_info "Starting translate roundtrip (progress logs will show per spine document)..."
         if [[ "$PROVIDER" == "cli" ]]; then
             if ! command -v gemini &> /dev/null; then
