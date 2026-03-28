@@ -24,8 +24,11 @@ def test_split_batch_translation_raises_on_mismatch() -> None:
         split_batch_translation("only-one", expected_count=2)
 
 
-def test_split_batch_translation_rejects_delimiter_for_single_expected_segment() -> None:
+def test_split_batch_translation_merges_segments_for_single_expected() -> None:
     from ai.epub_translate_roundtrip import split_batch_translation
 
-    with pytest.raises(ValueError, match="count mismatch"):
-        split_batch_translation("A\n\n%%\n\nB", expected_count=1)
+    # New behavior: merge segments back if only 1 is expected
+    # This handles Gemini adding separators to single-segment output
+    result = split_batch_translation("A\n\n%%\n\nB", expected_count=1)
+    assert len(result) == 1
+    assert "A" in result[0] and "B" in result[0]
