@@ -15,9 +15,7 @@ from ai.ports.provider import TranslationError
 
 _SEGMENT_DELIMITER = "%%"
 _BATCH_SEPARATOR = f"\n\n{_SEGMENT_DELIMITER}\n\n"
-_BATCH_SPLIT_PATTERN = re.compile(
-    rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n"
-)
+_BATCH_SPLIT_PATTERN = re.compile(rf"\n\s*{re.escape(_SEGMENT_DELIMITER)}\s*\n")
 
 SEPARATOR_OVERHEAD: int = len(_BATCH_SEPARATOR)  # 6 chars
 
@@ -73,8 +71,7 @@ def split_response(output: str, expected_count: int) -> list[str]:
         return parts
 
     raise TranslationError(
-        f"batch segment count mismatch: expected {expected_count},"
-        f" got {len(parts)}"
+        f"batch segment count mismatch: expected {expected_count}, got {len(parts)}"
     )
 
 

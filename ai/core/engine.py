@@ -94,9 +94,7 @@ class TranslationEngine:
         segments = source.get_segments()
         if not segments:
             source.save(output_path)
-            return TranslationResult(
-                total_segments=0, total_batches=0, translated_segments=0
-            )
+            return TranslationResult(total_segments=0, total_batches=0, translated_segments=0)
 
         texts = [s.text for s in segments]
         batches = self._batcher.plan_batches(texts)
@@ -146,10 +144,6 @@ class TranslationEngine:
                 raise
 
             mid = len(segments) // 2
-            left = self._translate_with_resilience(
-                segments[:mid], _depth=_depth + 1
-            )
-            right = self._translate_with_resilience(
-                segments[mid:], _depth=_depth + 1
-            )
+            left = self._translate_with_resilience(segments[:mid], _depth=_depth + 1)
+            right = self._translate_with_resilience(segments[mid:], _depth=_depth + 1)
             return left + right

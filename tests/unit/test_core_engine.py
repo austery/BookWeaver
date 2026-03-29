@@ -57,9 +57,7 @@ class FailThenSucceedProvider(ITranslationProvider):
         if self._fail_remaining > 0:
             self._fail_remaining -= 1
             raise TranslationError("simulated failure")
-        return self._delegate.translate_batch(
-            segments, system_prompt=system_prompt
-        )
+        return self._delegate.translate_batch(segments, system_prompt=system_prompt)
 
 
 class FailOnLargeBatchProvider(ITranslationProvider):
@@ -79,9 +77,7 @@ class FailOnLargeBatchProvider(ITranslationProvider):
         seg_list = list(segments)
         self.calls.append((seg_list, system_prompt))
         if len(seg_list) > self.max_segments:
-            raise TranslationError(
-                f"batch too large: {len(seg_list)} > {self.max_segments}"
-            )
+            raise TranslationError(f"batch too large: {len(seg_list)} > {self.max_segments}")
         return [f"{self.prefix}{s}" for s in seg_list]
 
 
@@ -135,9 +131,7 @@ class TestTranslateHappyPath:
     def test_multiple_segments_one_batch(self) -> None:
         provider = FakeProvider()
         source = FakeSource(_make_segments(["A", "B", "C"]))
-        engine = TranslationEngine(
-            provider, _default_config(max_batch_chars=1000)
-        )
+        engine = TranslationEngine(provider, _default_config(max_batch_chars=1000))
 
         result = engine.translate(source, "/tmp/out.epub")
 

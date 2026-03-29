@@ -48,9 +48,7 @@ def _default_patch_xhtml(
 ) -> str:
     from ai.epub_package import patch_xhtml_alternating
 
-    return patch_xhtml_alternating(
-        xhtml, translations, document_path=document_path
-    )
+    return patch_xhtml_alternating(xhtml, translations, document_path=document_path)
 
 
 def _default_repack(
@@ -153,9 +151,7 @@ class EpubSourceAdapter(IBookSource):
 
     def save(self, output_path: str) -> None:
         """Repack the EPUB with patched XHTML documents."""
-        self._repack_fn(
-            self._epub_path, Path(output_path), self._overrides
-        )
+        self._repack_fn(self._epub_path, Path(output_path), self._overrides)
 
     # ── Internal ──────────────────────────────────────────────
 

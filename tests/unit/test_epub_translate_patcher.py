@@ -220,6 +220,7 @@ def test_patch_xhtml_alternating_adds_caption_horizontal_compat_css() -> None:
 
 # ── TDD: Index structure preservation (multiline segments with <br/>) ──────────
 
+
 def test_patch_xhtml_alternating_preserves_br_linebreaks_in_translation() -> None:
     """Translation of <p> blocks containing <br/> tags must render with <br/>
     in the injected translation element.

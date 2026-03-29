@@ -92,9 +92,7 @@ class TestResolveSpinePaths:
             spine_itemrefs=["ch1", "img1"],
             manifest_items={
                 "ch1": FakeManifestItem(id="ch1", href="chapter1.xhtml"),
-                "img1": FakeManifestItem(
-                    id="img1", href="cover.png", media_type="image/png"
-                ),
+                "img1": FakeManifestItem(id="img1", href="cover.png", media_type="image/png"),
             },
         )
         assert _resolve_spine_xhtml_paths(model) == ["OEBPS/chapter1.xhtml"]
@@ -116,10 +114,12 @@ class TestResolveSpinePaths:
 
 class TestGetSegments:
     def test_returns_segments_with_stable_ids(self) -> None:
-        epub_path = _make_test_epub({
-            "OEBPS/chapter1.xhtml": "<p>Hello</p>",
-            "OEBPS/chapter2.xhtml": "<p>World</p>",
-        })
+        epub_path = _make_test_epub(
+            {
+                "OEBPS/chapter1.xhtml": "<p>Hello</p>",
+                "OEBPS/chapter2.xhtml": "<p>World</p>",
+            }
+        )
 
         def fake_extract(xhtml: str) -> list[FakeRawSegment]:
             if "Hello" in xhtml:
@@ -142,9 +142,11 @@ class TestGetSegments:
         epub_path.unlink()
 
     def test_multiple_segments_per_document(self) -> None:
-        epub_path = _make_test_epub({
-            "OEBPS/chapter1.xhtml": "<p>A</p><p>B</p>",
-        })
+        epub_path = _make_test_epub(
+            {
+                "OEBPS/chapter1.xhtml": "<p>A</p><p>B</p>",
+            }
+        )
         model = FakeModel(
             epub_path=epub_path,
             opf_path="OEBPS/content.opf",
@@ -173,9 +175,11 @@ class TestGetSegments:
         epub_path.unlink()
 
     def test_metadata_includes_doc_path_and_tag(self) -> None:
-        epub_path = _make_test_epub({
-            "OEBPS/chapter1.xhtml": "<p>Text</p>",
-        })
+        epub_path = _make_test_epub(
+            {
+                "OEBPS/chapter1.xhtml": "<p>Text</p>",
+            }
+        )
         model = FakeModel(
             epub_path=epub_path,
             opf_path="OEBPS/content.opf",
@@ -225,10 +229,12 @@ class TestGetSegments:
 
 class TestApplyTranslations:
     def test_groups_by_document_and_patches(self) -> None:
-        epub_path = _make_test_epub({
-            "OEBPS/ch1.xhtml": "<p>A</p><p>B</p>",
-            "OEBPS/ch2.xhtml": "<p>C</p>",
-        })
+        epub_path = _make_test_epub(
+            {
+                "OEBPS/ch1.xhtml": "<p>A</p><p>B</p>",
+                "OEBPS/ch2.xhtml": "<p>C</p>",
+            }
+        )
         model = FakeModel(
             epub_path=epub_path,
             opf_path="OEBPS/content.opf",
@@ -262,11 +268,13 @@ class TestApplyTranslations:
         )
 
         adapter.get_segments()
-        adapter.apply_translations([
-            TranslatedSegment(id="OEBPS/ch1.xhtml::0", original="A", translated="甲"),
-            TranslatedSegment(id="OEBPS/ch1.xhtml::1", original="B", translated="乙"),
-            TranslatedSegment(id="OEBPS/ch2.xhtml::0", original="C", translated="丙"),
-        ])
+        adapter.apply_translations(
+            [
+                TranslatedSegment(id="OEBPS/ch1.xhtml::0", original="A", translated="甲"),
+                TranslatedSegment(id="OEBPS/ch1.xhtml::1", original="B", translated="乙"),
+                TranslatedSegment(id="OEBPS/ch2.xhtml::0", original="C", translated="丙"),
+            ]
+        )
 
         assert len(patch_calls) == 2
         # Ch1: translations in order
@@ -308,10 +316,12 @@ class TestApplyTranslations:
 
         adapter.get_segments()
         # Provide translations in REVERSE order
-        adapter.apply_translations([
-            TranslatedSegment(id="OEBPS/ch.xhtml::1", original="Y", translated="乙"),
-            TranslatedSegment(id="OEBPS/ch.xhtml::0", original="X", translated="甲"),
-        ])
+        adapter.apply_translations(
+            [
+                TranslatedSegment(id="OEBPS/ch.xhtml::1", original="Y", translated="乙"),
+                TranslatedSegment(id="OEBPS/ch.xhtml::0", original="X", translated="甲"),
+            ]
+        )
 
         assert captured[0] == ["甲", "乙"]  # sorted by index
         epub_path.unlink()
@@ -339,15 +349,15 @@ class TestSave:
             _load_package=lambda _: model,
             _extract_segments=lambda _: [FakeRawSegment("Hi", (0,), "p")],
             _patch_xhtml=lambda xhtml, trans, **kw: "PATCHED",
-            _repack_epub=lambda src, out, overrides: repack_calls.append(
-                (src, out, overrides)
-            ),
+            _repack_epub=lambda src, out, overrides: repack_calls.append((src, out, overrides)),
         )
 
         adapter.get_segments()
-        adapter.apply_translations([
-            TranslatedSegment(id="OEBPS/ch.xhtml::0", original="Hi", translated="你好"),
-        ])
+        adapter.apply_translations(
+            [
+                TranslatedSegment(id="OEBPS/ch.xhtml::0", original="Hi", translated="你好"),
+            ]
+        )
         adapter.save("/tmp/output.epub")
 
         assert len(repack_calls) == 1

@@ -30,9 +30,7 @@ class TextBatcher:
         if max_batch_chars <= 0:
             raise ValueError(f"max_batch_chars must be > 0, got {max_batch_chars}")
         if separator_overhead < 0:
-            raise ValueError(
-                f"separator_overhead must be >= 0, got {separator_overhead}"
-            )
+            raise ValueError(f"separator_overhead must be >= 0, got {separator_overhead}")
         self._max = max_batch_chars
         self._sep = separator_overhead
 
