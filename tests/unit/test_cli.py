@@ -6,7 +6,11 @@ Does NOT test actual translation (that's covered by engine + adapter tests).
 
 from __future__ import annotations
 
-from ai.cli import build_parser, build_system_prompt, detect_input_format, _get_language_name
+from pathlib import Path
+
+import pytest
+
+from ai.cli import build_parser, build_system_prompt, detect_input_format, run, _get_language_name
 
 
 # ── Prompt assembly ───────────────────────────────────────────
@@ -162,3 +166,37 @@ class TestDetectInputFormat:
 
     def test_unknown_defaults_to_epub(self) -> None:
         assert detect_input_format("book.pdf") == "epub"
+
+
+# ── Input validation ─────────────────────────────────────────
+
+
+class TestRunInputValidation:
+    def test_missing_input_file_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match="does not exist"):
+            run(
+                input_path=str(tmp_path / "nonexistent.epub"),
+                output=str(tmp_path / "out.epub"),
+            )
+
+    def test_missing_markdown_dir_raises(self, tmp_path: Path) -> None:
+        fake_input = tmp_path / "input.md"
+        fake_input.write_text("x")
+        with pytest.raises(FileNotFoundError, match="directory does not exist"):
+            run(
+                input_path=str(fake_input),
+                output=str(tmp_path / "out.md"),
+                input_format="markdown",
+                markdown_dir=str(tmp_path / "no_such_dir"),
+            )
+
+    def test_empty_markdown_dir_raises(self, tmp_path: Path) -> None:
+        fake_input = tmp_path / "input.md"
+        fake_input.write_text("x")
+        with pytest.raises(FileNotFoundError, match="No page\\*.md files"):
+            run(
+                input_path=str(fake_input),
+                output=str(tmp_path / "out.md"),
+                input_format="markdown",
+                markdown_dir=str(tmp_path),
+            )

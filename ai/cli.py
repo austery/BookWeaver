@@ -302,9 +302,21 @@ def run(
     engine = TranslationEngine(provider_adapter, engine_config)
 
     # 5. Create source adapter (format routing)
+    input_file = Path(input_path)
+    if not input_file.exists():
+        msg = f"Input file does not exist: {input_path}"
+        raise FileNotFoundError(msg)
+
     fmt = input_format if input_format != "auto" else detect_input_format(input_path)
     if fmt == "markdown":
-        md_dir = markdown_dir or str(Path(input_path).parent)
+        md_dir = markdown_dir or str(input_file.parent)
+        md_dir_path = Path(md_dir)
+        if not md_dir_path.is_dir():
+            msg = f"Markdown directory does not exist: {md_dir}"
+            raise FileNotFoundError(msg)
+        if not list(md_dir_path.glob("page*.md")):
+            msg = f"No page*.md files found in: {md_dir}"
+            raise FileNotFoundError(msg)
         source = MarkdownSourceAdapter(md_dir)
     else:
         source = EpubSourceAdapter(input_path)
