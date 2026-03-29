@@ -216,3 +216,85 @@ def test_patch_xhtml_alternating_adds_caption_horizontal_compat_css() -> None:
     assert "writing-mode: horizontal-tb" in patched
     assert "text-orientation: mixed" in patched
     assert "display: table-caption" in patched
+
+
+# ── TDD: Index structure preservation (multiline segments with <br/>) ──────────
+
+def test_patch_xhtml_alternating_preserves_br_linebreaks_in_translation() -> None:
+    """Translation of <p> blocks containing <br/> tags must render with <br/>
+    in the injected translation element.
+
+    Root cause: _insert_translation_block() sets translated_block.text = translation
+    (plain text). When the source has <p>...<br/>...<br/>...</p>, the extracted
+    text has \\n characters. The translation also returns \\n-separated lines.
+    But .text = "line1\\nline2" in HTML renders as whitespace — NOT as line breaks.
+    The translated index therefore collapses into one dense paragraph.
+
+    Correct behavior: \\n in translated text → <br/> element in the output.
+    """
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    # Simulate a Kindle-style index block: <p><kbd><small>entries with <br/></small></kbd></p>
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<p class='calibre16'><kbd><small>"
+        "<a href='#1'>AAA pattern</a><br/>\n"
+        "    <a href='#2'>avoiding if statements</a><br/>\n"
+        "    <a href='#3'>avoiding multiple AAA sections</a>"
+        "</small></kbd></p>"
+        "</body></html>"
+    )
+
+    # Translation preserves newline structure (what Gemini returns)
+    translation = "AAA 模式\n    避免 if 语句\n    避免多个 AAA 节"
+
+    patched = patch_xhtml_alternating(source, [translation])
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+
+    # Find the injected translation element
+    bw = root.find(".//*[@class='bw-translation']", ns)
+    assert bw is not None, "Translation block not found"
+
+    # The translation must contain <br/> elements — not just plain text with \n
+    br_elements = list(bw.iter("{http://www.w3.org/1999/xhtml}br")) + list(bw.iter("br"))
+    assert len(br_elements) > 0, (
+        "Translation block must contain <br/> elements to preserve line structure. "
+        "Plain text \\n chars render as whitespace in HTML and collapse the index hierarchy."
+    )
+
+    # The content must still contain the translated text
+    full_text = "".join(bw.itertext())
+    assert "AAA 模式" in full_text
+    assert "避免 if 语句" in full_text
+    assert "避免多个 AAA 节" in full_text
+
+
+def test_patch_xhtml_alternating_no_br_in_simple_translation() -> None:
+    """For normal paragraphs without \\n, translation is still injected as plain text
+    (no spurious <br/> elements added)."""
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<p>This is a simple paragraph.</p>"
+        "</body></html>"
+    )
+    translation = "这是一个简单的段落。"
+    patched = patch_xhtml_alternating(source, [translation])
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+    bw = root.find(".//*[@class='bw-translation']", ns)
+    assert bw is not None
+
+    # Simple translations should NOT have <br/> elements
+    br_elements = list(bw.iter("{http://www.w3.org/1999/xhtml}br")) + list(bw.iter("br"))
+    assert len(br_elements) == 0
+
+    assert bw.text == translation

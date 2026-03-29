@@ -138,6 +138,25 @@ def _determine_translation_sibling_tag(parent: ET.Element) -> str:
     return "p"
 
 
+def _set_translation_text(elem: ET.Element, translation: str, namespace: str) -> None:
+    """Set translated text on an element, preserving \\n as <br/> elements.
+
+    When the source block contains <br/> tags (e.g. Kindle index entries), the
+    extracted text uses \\n as line-break markers. Plain-text assignment loses
+    those breaks because HTML collapses whitespace. Convert \\n back to <br/>
+    so the hierarchical index structure is visible in the translated output.
+    """
+    if "\n" not in translation:
+        elem.text = translation
+        return
+
+    lines = translation.split("\n")
+    elem.text = lines[0]
+    for line in lines[1:]:
+        br = ET.SubElement(elem, _qualified_tag("br", namespace))
+        br.tail = line
+
+
 def _insert_translation_block(
     *,
     block_node: ET.Element,
@@ -158,7 +177,7 @@ def _insert_translation_block(
             _qualified_tag("p", namespace),
             attrib={"class": _TRANSLATION_CLASS},
         )
-        translated_block.text = translation
+        _set_translation_text(translated_block, translation, namespace)
         return
 
     sibling_tag = _determine_translation_sibling_tag(parent)
@@ -166,7 +185,7 @@ def _insert_translation_block(
         _qualified_tag(sibling_tag, namespace),
         attrib={"class": _TRANSLATION_CLASS},
     )
-    translated_block.text = translation
+    _set_translation_text(translated_block, translation, namespace)
 
     children = list(parent)
     block_index = children.index(block_node)
