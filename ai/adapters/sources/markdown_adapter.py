@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
-_PAGE_RE = re.compile(r"^page\d+\.md$")
+_PAGE_RE = re.compile(r"^page[_\-]?\d+\.md$")
 
 
 class MarkdownSourceAdapter(IBookSource):

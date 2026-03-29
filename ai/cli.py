@@ -6,6 +6,7 @@ allowed to import from all layers.
 
 Usage:
     python -m ai.cli input.epub --output translated.epub [options]
+    python -m ai.cli ./pages_dir/ --output translated.md [options]
 """
 
 from __future__ import annotations
@@ -66,12 +67,16 @@ _FORMAT_MAP: dict[str, str] = {
 
 
 def detect_input_format(input_path: str) -> str:
-    """Detect input format from file extension.
+    """Detect input format from path.
 
-    Returns ``"epub"`` for ``.epub``, ``"markdown"`` for ``.md``,
-    and ``"epub"`` as default (PDF/DOCX go through Calibre first).
+    Returns ``"markdown"`` for directories or ``.md`` files,
+    ``"epub"`` for ``.epub``, and ``"epub"`` as default
+    (PDF/DOCX go through Calibre first).
     """
-    suffix = Path(input_path).suffix.lower()
+    p = Path(input_path)
+    if p.is_dir():
+        return "markdown"
+    suffix = p.suffix.lower()
     return _FORMAT_MAP.get(suffix, "epub")
 
 
@@ -84,8 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bookweaver",
         description="Translate books using the hexagonal translation engine.",
     )
-    p.add_argument("input_epub", help="Source EPUB file path")
-    p.add_argument("--output", required=True, help="Output EPUB path")
+    p.add_argument("input_path", help="Source file (.epub) or directory of page*.md files")
+    p.add_argument("--output", required=True, help="Output path")
     p.add_argument("--output-lang", default="zh", help="Target language code (default: zh)")
     p.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name or alias")
     p.add_argument(
@@ -117,12 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-format",
         choices=["auto", "epub", "markdown"],
         default="auto",
-        help="Input format (default: auto-detect from extension)",
-    )
-    p.add_argument(
-        "--markdown-dir",
-        default=None,
-        help="Directory with page*.md files (markdown format only)",
+        help="Input format (default: auto-detect from path)",
     )
     return p
 
@@ -262,7 +262,6 @@ def run(
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
     input_format: str = "auto",
-    markdown_dir: str | None = None,
     config: dict[str, object] | None = None,
 ) -> None:
     """Execute the translation pipeline.
@@ -304,12 +303,12 @@ def run(
     # 5. Create source adapter (format routing)
     input_file = Path(input_path)
     if not input_file.exists():
-        msg = f"Input file does not exist: {input_path}"
+        msg = f"Input path does not exist: {input_path}"
         raise FileNotFoundError(msg)
 
     fmt = input_format if input_format != "auto" else detect_input_format(input_path)
     if fmt == "markdown":
-        md_dir = markdown_dir or str(input_file.parent)
+        md_dir = str(input_file) if input_file.is_dir() else str(input_file.parent)
         md_dir_path = Path(md_dir)
         if not md_dir_path.is_dir():
             msg = f"Markdown directory does not exist: {md_dir}"
@@ -337,7 +336,7 @@ def main() -> None:
     args = parser.parse_args()
 
     run(
-        input_path=args.input_epub,
+        input_path=args.input_path,
         output=args.output,
         output_lang=args.output_lang,
         model=args.model,
@@ -348,7 +347,6 @@ def main() -> None:
         cli_api_fallback=args.cli_api_fallback,
         max_batch_chars=args.max_batch_chars,
         input_format=args.input_format,
-        markdown_dir=args.markdown_dir,
     )
 
 

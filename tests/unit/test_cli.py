@@ -68,7 +68,7 @@ class TestBuildParser:
     def test_minimal_args(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["input.epub", "--output", "out.epub"])
-        assert args.input_epub == "input.epub"
+        assert args.input_path == "input.epub"
         assert args.output == "out.epub"
         assert args.output_lang == "zh"
         assert args.model == "gemini-2.5-flash"
@@ -124,21 +124,19 @@ class TestBuildParserFormatRouting:
         args = parser.parse_args(["input.epub", "--output", "out.epub"])
         assert args.input_format == "auto"
 
-    def test_input_format_markdown(self) -> None:
+    def test_input_format_markdown_with_directory(self) -> None:
         parser = build_parser()
         args = parser.parse_args(
             [
-                "input.md",
+                "./pages_dir",
                 "--output",
-                "out.epub",
+                "out.md",
                 "--input-format",
                 "markdown",
-                "--markdown-dir",
-                "/pages",
             ]
         )
         assert args.input_format == "markdown"
-        assert args.markdown_dir == "/pages"
+        assert args.input_path == "./pages_dir"
 
     def test_input_format_epub(self) -> None:
         parser = build_parser()
@@ -164,6 +162,9 @@ class TestDetectInputFormat:
     def test_md_extension(self) -> None:
         assert detect_input_format("page.md") == "markdown"
 
+    def test_directory_detected_as_markdown(self, tmp_path: Path) -> None:
+        assert detect_input_format(str(tmp_path)) == "markdown"
+
     def test_unknown_defaults_to_epub(self) -> None:
         assert detect_input_format("book.pdf") == "epub"
 
@@ -172,31 +173,29 @@ class TestDetectInputFormat:
 
 
 class TestRunInputValidation:
-    def test_missing_input_file_raises(self, tmp_path: Path) -> None:
+    def test_missing_input_path_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="does not exist"):
             run(
                 input_path=str(tmp_path / "nonexistent.epub"),
                 output=str(tmp_path / "out.epub"),
             )
 
-    def test_missing_markdown_dir_raises(self, tmp_path: Path) -> None:
-        fake_input = tmp_path / "input.md"
-        fake_input.write_text("x")
-        with pytest.raises(FileNotFoundError, match="directory does not exist"):
+    def test_empty_markdown_dir_raises(self, tmp_path: Path) -> None:
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        with pytest.raises(FileNotFoundError, match="No page\\*.md files"):
             run(
-                input_path=str(fake_input),
+                input_path=str(empty_dir),
                 output=str(tmp_path / "out.md"),
                 input_format="markdown",
-                markdown_dir=str(tmp_path / "no_such_dir"),
             )
 
-    def test_empty_markdown_dir_raises(self, tmp_path: Path) -> None:
-        fake_input = tmp_path / "input.md"
+    def test_md_file_with_no_pages_in_parent_raises(self, tmp_path: Path) -> None:
+        fake_input = tmp_path / "notes.md"
         fake_input.write_text("x")
         with pytest.raises(FileNotFoundError, match="No page\\*.md files"):
             run(
                 input_path=str(fake_input),
                 output=str(tmp_path / "out.md"),
                 input_format="markdown",
-                markdown_dir=str(tmp_path),
             )
