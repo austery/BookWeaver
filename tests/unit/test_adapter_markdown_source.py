@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter, _split_blocks
+from ai.adapters.sources.markdown_adapter import (
+    MarkdownSourceAdapter,
+    _is_fenced_code_block,
+    _render_clean_bilingual,
+    _split_blocks,
+)
 from ai.ports.source import TranslatedSegment
 
 
@@ -64,6 +69,51 @@ class TestSplitBlocks:
         assert blocks[0] == "# Title"
         assert "1. First" in blocks[1]
         assert "Sub-item" in blocks[1]
+
+
+class TestRenderHelpers:
+    def test_is_fenced_code_block_true(self) -> None:
+        text = "```python\ndef foo():\n    return 1\n```"
+        assert _is_fenced_code_block(text) is True
+
+    def test_is_fenced_code_block_false(self) -> None:
+        assert _is_fenced_code_block("normal paragraph") is False
+
+    def test_render_clean_bilingual_no_meta_labels(self, tmp_path: Path) -> None:
+        _write_pages(tmp_path, {"page0001.md": "# Title\n\nParagraph."})
+        adapter = MarkdownSourceAdapter(tmp_path)
+        segments = adapter.get_segments()
+        adapter.apply_translations(
+            [
+                TranslatedSegment(
+                    id=segments[0].id, original=segments[0].text, translated="# 标题"
+                ),
+                TranslatedSegment(
+                    id=segments[1].id, original=segments[1].text, translated="段落。"
+                ),
+            ]
+        )
+        content = _render_clean_bilingual(segments, adapter._translations)
+        assert "## Segment" not in content
+        assert "**中文译文**" not in content
+        assert "\n---\n" not in content
+        assert content.startswith("# Title\n\n# 标题")
+
+    def test_render_clean_bilingual_skips_duplicate_code_block(self, tmp_path: Path) -> None:
+        _write_pages(tmp_path, {"page0001.md": "```python\nprint('x')\n```"})
+        adapter = MarkdownSourceAdapter(tmp_path)
+        segments = adapter.get_segments()
+        adapter.apply_translations(
+            [
+                TranslatedSegment(
+                    id=segments[0].id,
+                    original=segments[0].text,
+                    translated=segments[0].text,
+                )
+            ]
+        )
+        content = _render_clean_bilingual(segments, adapter._translations)
+        assert content.count("```python") == 1
 
 
 # ── get_segments ──────────────────────────────────────────────
@@ -183,24 +233,14 @@ class TestApplyTranslations:
 
 
 class TestSave:
-    def test_produces_alternating_bilingual_markdown(self, tmp_path: Path) -> None:
+    def test_produces_clean_alternating_bilingual_markdown(self, tmp_path: Path) -> None:
         src_dir = tmp_path / "src"
         src_dir.mkdir()
         _write_pages(
             src_dir,
             {"page0001.md": "# Title\n\nHello world"},
         )
-
-        merge_calls: list[tuple[list[str], list[str]]] = []
-
-        def fake_merge(originals: list[str], translations: list[str]) -> str:
-            merge_calls.append((originals, translations))
-            blocks: list[str] = []
-            for i, (o, t) in enumerate(zip(originals, translations), start=1):
-                blocks.append(f"## Segment {i}\n\n{o}\n\n**中文译文**\n\n{t}\n\n---\n\n")
-            return "".join(blocks).strip() + "\n"
-
-        adapter = MarkdownSourceAdapter(src_dir, _merge_fn=fake_merge)
+        adapter = MarkdownSourceAdapter(src_dir)
         adapter.get_segments()
         adapter.apply_translations(
             [
@@ -213,17 +253,37 @@ class TestSave:
         adapter.save(str(output_file))
 
         content = output_file.read_text(encoding="utf-8")
-        assert "## Segment 1" in content
-        assert "## Segment 2" in content
-        assert "**中文译文**" in content
+        assert "## Segment" not in content
+        assert "**中文译文**" not in content
+        assert "\n---\n" not in content
         assert "# Title" in content
         assert "# 标题" in content
         assert "你好世界" in content
+        assert content.startswith("# Title\n\n# 标题")
+        assert "\n\nHello world\n\n你好世界\n" in content
 
-        # Verify block-level segments passed to merge
-        assert len(merge_calls) == 1
-        assert merge_calls[0][0] == ["# Title", "Hello world"]
-        assert merge_calls[0][1] == ["# 标题", "你好世界"]
+    def test_save_does_not_duplicate_unchanged_code_block(self, tmp_path: Path) -> None:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        _write_pages(src_dir, {"page0001.md": "```python\nprint('x')\n```"})
+
+        adapter = MarkdownSourceAdapter(src_dir)
+        segs = adapter.get_segments()
+        adapter.apply_translations(
+            [
+                TranslatedSegment(
+                    id=segs[0].id,
+                    original=segs[0].text,
+                    translated=segs[0].text,
+                )
+            ]
+        )
+
+        output_file = tmp_path / "output.md"
+        adapter.save(str(output_file))
+
+        content = output_file.read_text(encoding="utf-8")
+        assert content.count("```python") == 1
 
     def test_save_preserves_page_ordering(self, tmp_path: Path) -> None:
         src_dir = tmp_path / "src"
@@ -236,13 +296,7 @@ class TestSave:
             },
         )
 
-        captured_originals: list[list[str]] = []
-
-        def fake_merge(originals: list[str], translations: list[str]) -> str:
-            captured_originals.append(list(originals))
-            return "merged\n"
-
-        adapter = MarkdownSourceAdapter(src_dir, _merge_fn=fake_merge)
+        adapter = MarkdownSourceAdapter(src_dir)
         adapter.get_segments()
         adapter.apply_translations(
             [
@@ -254,6 +308,5 @@ class TestSave:
 
         output_file = tmp_path / "output.md"
         adapter.save(str(output_file))
-
-        # page0001 blocks before page0010
-        assert captured_originals[0] == ["# First", "Body", "Tenth"]
+        content = output_file.read_text(encoding="utf-8")
+        assert content.find("# First") < content.find("Tenth")

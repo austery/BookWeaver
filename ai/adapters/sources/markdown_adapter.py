@@ -65,6 +65,58 @@ def _split_blocks(text: str) -> list[str]:
     return [b for b in blocks if b.strip()]
 
 
+def _is_fenced_code_block(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+
+    lines = stripped.splitlines()
+    if len(lines) < 2:
+        return False
+
+    start = lines[0].strip()
+    end = lines[-1].strip()
+    start_match = _FENCE_RE.match(start)
+    if start_match is None:
+        return False
+
+    marker = start_match.group(1)
+    return end.startswith(marker[0] * 3)
+
+
+def _render_clean_bilingual(
+    segments: list[Segment],
+    translations: dict[str, str],
+) -> str:
+    """Render markdown in clean alternating bilingual layout.
+
+    For each segment: original block, one blank line, translated block.
+    For fenced code blocks, avoid duplication when translation is unchanged.
+    """
+    blocks: list[str] = []
+
+    for seg in segments:
+        original = seg.text.strip()
+        translated = translations.get(seg.id, "").strip()
+        if not original and not translated:
+            continue
+
+        if _is_fenced_code_block(original):
+            blocks.append(original)
+            # Only duplicate code block when translated version actually differs.
+            if translated and translated != original:
+                blocks.append(translated)
+            continue
+
+        blocks.append(original)
+        if translated:
+            blocks.append(translated)
+
+    if not blocks:
+        return ""
+    return "\n\n".join(blocks).strip() + "\n"
+
+
 class MarkdownSourceAdapter(IBookSource):
     """Adapter for split-Markdown directories (``page*.md`` files).
 
@@ -73,8 +125,7 @@ class MarkdownSourceAdapter(IBookSource):
 
     Args:
         markdown_dir: Directory containing ``page*.md`` files.
-        _merge_fn: Injectable merge callable (for testing).  Defaults
-            to ``BilingualMerger().merge`` loaded lazily.
+        _merge_fn: Optional injectable merge callable for tests.
     """
 
     def __init__(
@@ -101,21 +152,18 @@ class MarkdownSourceAdapter(IBookSource):
             self._translations[ts.id] = ts.translated
 
     def save(self, output_path: str) -> None:
-        """Merge originals + translations into bilingual markdown."""
+        """Render clean alternating bilingual markdown."""
         self._ensure_loaded()
         merge = self._merge_fn
         if merge is None:
-            from ai.bilingual_merger import BilingualMerger
-
-            merge = BilingualMerger().merge
-
-        originals: list[str] = []
-        translations: list[str] = []
-        for seg in self._segments:
-            originals.append(seg.text)
-            translations.append(self._translations.get(seg.id, ""))
-
-        content = merge(originals, translations)
+            content = _render_clean_bilingual(self._segments, self._translations)
+        else:
+            originals: list[str] = []
+            translations: list[str] = []
+            for seg in self._segments:
+                originals.append(seg.text)
+                translations.append(self._translations.get(seg.id, ""))
+            content = merge(originals, translations)
         Path(output_path).write_text(content, encoding="utf-8")
 
     # ── Internal ──────────────────────────────────────────────
