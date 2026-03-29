@@ -19,6 +19,7 @@ CUSTOM_PROMPT=""
 EXTRACT_GLOSSARY=false
 GLOSSARY_PATH=""
 GLOSSARY_MIN_PRIORITY=""
+GLOSSARY_MAX_TERMS=""
 CLEAN_TEMP=false
 SKIP_EXISTING=true
 VERBOSE=false
@@ -342,6 +343,10 @@ parse_args() {
                 GLOSSARY_MIN_PRIORITY="$2"
                 shift 2
                 ;;
+            --glossary-max-terms)
+                GLOSSARY_MAX_TERMS="$2"
+                shift 2
+                ;;
             --clean)
                 CLEAN_TEMP=true
                 shift
@@ -568,6 +573,7 @@ show_config() {
     echo "  Extract glossary: ${EXTRACT_GLOSSARY}"
     echo "  Glossary path:    ${GLOSSARY_PATH:-'None'}"
   echo "  Glossary min pri: ${GLOSSARY_MIN_PRIORITY:-'all'}"
+  echo "  Glossary max terms: ${GLOSSARY_MAX_TERMS:-'20 (default)'}"
     echo "  Steps to run: $STEP_START-$STEP_END"
     echo "  Clean temp: $CLEAN_TEMP"
     echo "  Skip existing: $SKIP_EXISTING"
@@ -771,6 +777,9 @@ main() {
                 --model "pro"
                 --provider "$PROVIDER"
             )
+            if [[ -n "$GLOSSARY_MAX_TERMS" ]]; then
+                _extract_cmd+=(--max-terms "$GLOSSARY_MAX_TERMS")
+            fi
             if [[ "$DRY_RUN" == true ]]; then
                 log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
                 _glossary_output=""
