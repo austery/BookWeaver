@@ -19,6 +19,7 @@ from ai.adapters.providers.gemini_api_adapter import GeminiAPIAdapter
 from ai.adapters.providers.gemini_cli_adapter import GeminiCLIAdapter
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
 from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
+from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider
 
@@ -63,6 +64,7 @@ nouns, code, URLs), keep the original text"""
 _FORMAT_MAP: dict[str, str] = {
     ".epub": "epub",
     ".md": "markdown",
+    ".pdf": "pdf",
 }
 
 
@@ -70,8 +72,8 @@ def detect_input_format(input_path: str) -> str:
     """Detect input format from path.
 
     Returns ``"markdown"`` for directories or ``.md`` files,
-    ``"epub"`` for ``.epub``, and ``"epub"`` as default
-    (PDF/DOCX go through Calibre first).
+    ``"pdf"`` for ``.pdf`` files, ``"epub"`` for ``.epub``,
+    and ``"epub"`` as default.
     """
     p = Path(input_path)
     if p.is_dir():
@@ -89,7 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bookweaver",
         description="Translate books using the hexagonal translation engine.",
     )
-    p.add_argument("input_path", help="Source file (.epub) or directory of page*.md files")
+    p.add_argument(
+        "input_path",
+        help="Source file (.epub/.pdf) or directory of page*.md files",
+    )
     p.add_argument("--output", required=True, help="Output path")
     p.add_argument("--output-lang", default="zh", help="Target language code (default: zh)")
     p.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name or alias")
@@ -120,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--input-format",
-        choices=["auto", "epub", "markdown"],
+        choices=["auto", "epub", "markdown", "pdf"],
         default="auto",
         help="Input format (default: auto-detect from path)",
     )
@@ -317,6 +322,8 @@ def run(
             msg = f"No page*.md files found in: {md_dir}"
             raise FileNotFoundError(msg)
         source = MarkdownSourceAdapter(md_dir)
+    elif fmt == "pdf":
+        source = PdfSourceAdapter(input_path)
     else:
         source = EpubSourceAdapter(input_path)
 

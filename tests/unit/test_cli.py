@@ -166,7 +166,10 @@ class TestDetectInputFormat:
         assert detect_input_format(str(tmp_path)) == "markdown"
 
     def test_unknown_defaults_to_epub(self) -> None:
-        assert detect_input_format("book.pdf") == "epub"
+        assert detect_input_format("book.unknownext") == "epub"
+
+    def test_pdf_extension(self) -> None:
+        assert detect_input_format("report.pdf") == "pdf"
 
 
 # ── Input validation ─────────────────────────────────────────
