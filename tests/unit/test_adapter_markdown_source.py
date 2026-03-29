@@ -115,6 +115,46 @@ class TestRenderHelpers:
         content = _render_clean_bilingual(segments, adapter._translations)
         assert content.count("```python") == 1
 
+    def test_render_clean_bilingual_skips_duplicate_identical_non_code(
+        self, tmp_path: Path
+    ) -> None:
+        _write_pages(tmp_path, {"page0001.md": "No change line."})
+        adapter = MarkdownSourceAdapter(tmp_path)
+        segments = adapter.get_segments()
+        adapter.apply_translations(
+            [
+                TranslatedSegment(
+                    id=segments[0].id,
+                    original=segments[0].text,
+                    translated=segments[0].text,
+                )
+            ]
+        )
+        content = _render_clean_bilingual(segments, adapter._translations)
+        assert content.count("No change line.") == 1
+
+    def test_render_clean_bilingual_code_block_changed_still_single_copy(
+        self, tmp_path: Path
+    ) -> None:
+        original = "```python\n# original comment\nprint('x')\n```"
+        translated = "```python\n# 已翻译注释\nprint('x')\n```"
+        _write_pages(tmp_path, {"page0001.md": original})
+        adapter = MarkdownSourceAdapter(tmp_path)
+        segments = adapter.get_segments()
+        adapter.apply_translations(
+            [
+                TranslatedSegment(
+                    id=segments[0].id,
+                    original=segments[0].text,
+                    translated=translated,
+                )
+            ]
+        )
+        content = _render_clean_bilingual(segments, adapter._translations)
+        assert content.count("```python") == 1
+        assert "# 已翻译注释" in content
+        assert "# original comment" not in content
+
 
 # ── get_segments ──────────────────────────────────────────────
 

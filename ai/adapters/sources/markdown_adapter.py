@@ -102,10 +102,14 @@ def _render_clean_bilingual(
             continue
 
         if _is_fenced_code_block(original):
+            # Code block rule: output only once. Prefer translated variant
+            # when available (e.g., translated comments inside code).
+            blocks.append(translated or original)
+            continue
+
+        if translated and translated == original:
+            # Identical text rule: output only once.
             blocks.append(original)
-            # Only duplicate code block when translated version actually differs.
-            if translated and translated != original:
-                blocks.append(translated)
             continue
 
         blocks.append(original)
