@@ -27,3 +27,6 @@ config/config.json
 # Local git worktrees
 .worktrees/
 .claude/settings.local.json
+
+# E2E test output EPUBs (generated, not committed)
+tmp/e2e/
