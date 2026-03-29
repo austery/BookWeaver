@@ -1,8 +1,9 @@
 """Markdown source adapter — reads split ``page*.md`` directories.
 
 Handles the split-Markdown format produced by ``02_split_to_md.py``.
-The engine sees only flat ``Segment`` objects; page ordering and
-bilingual merging are handled internally.
+Each page file is split into **block-level** segments (paragraphs,
+headings, code blocks, lists) so the bilingual output alternates
+paragraph-by-paragraph instead of one giant English/Chinese block.
 """
 
 from __future__ import annotations
@@ -14,10 +15,61 @@ from pathlib import Path
 from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
 _PAGE_RE = re.compile(r"^page[_\-]?\d+\.md$")
+_FENCE_RE = re.compile(r"^(`{3,}|~{3,})")
+
+
+def _split_blocks(text: str) -> list[str]:
+    """Split markdown into block-level elements.
+
+    Blank-line separated, but fenced code blocks are kept atomic.
+    Empty blocks are discarded.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    in_fence = False
+    fence_marker = ""
+
+    for line in text.splitlines():
+        fence_match = _FENCE_RE.match(line.strip())
+        if fence_match and not in_fence:
+            # Start of fenced code block — flush any pending block first
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            in_fence = True
+            fence_marker = fence_match.group(1)[0]
+            current.append(line)
+        elif (
+            in_fence
+            and line.strip().startswith(fence_marker)
+            and len(line.strip().rstrip(fence_marker[0])) == 0
+        ):
+            # End of fenced code block
+            current.append(line)
+            blocks.append("\n".join(current))
+            current = []
+            in_fence = False
+            fence_marker = ""
+        elif in_fence:
+            current.append(line)
+        elif line.strip() == "":
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+        else:
+            current.append(line)
+
+    if current:
+        blocks.append("\n".join(current))
+
+    return [b for b in blocks if b.strip()]
 
 
 class MarkdownSourceAdapter(IBookSource):
     """Adapter for split-Markdown directories (``page*.md`` files).
+
+    Each page file is parsed into block-level segments so translations
+    alternate paragraph-by-paragraph in the output.
 
     Args:
         markdown_dir: Directory containing ``page*.md`` files.
@@ -39,7 +91,7 @@ class MarkdownSourceAdapter(IBookSource):
         self._loaded = False
 
     def get_segments(self) -> list[Segment]:
-        """Return one ``Segment`` per ``page*.md`` file, naturally sorted."""
+        """Return block-level ``Segment`` objects, naturally sorted by page."""
         self._ensure_loaded()
         return list(self._segments)
 
@@ -81,12 +133,16 @@ class MarkdownSourceAdapter(IBookSource):
             key=lambda f: f.name,
         )
 
-        self._segments = [
-            Segment(
-                id=f.stem,
-                text=f.read_text(encoding="utf-8"),
-                metadata={"filename": f.name, "path": str(f)},
-            )
-            for f in page_files
-        ]
+        for f in page_files:
+            text = f.read_text(encoding="utf-8")
+            blocks = _split_blocks(text)
+            for idx, block in enumerate(blocks):
+                self._segments.append(
+                    Segment(
+                        id=f"{f.stem}::{idx}",
+                        text=block,
+                        metadata={"filename": f.name, "path": str(f), "block_index": idx},
+                    )
+                )
+
         self._loaded = True

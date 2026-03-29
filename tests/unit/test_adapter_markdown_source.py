@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
+from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter, _split_blocks
 from ai.ports.source import TranslatedSegment
 
 
@@ -22,36 +22,89 @@ def _write_pages(directory: Path, pages: dict[str, str]) -> None:
         (directory / name).write_text(content, encoding="utf-8")
 
 
+# ── _split_blocks ─────────────────────────────────────────────
+
+
+class TestSplitBlocks:
+    def test_single_paragraph(self) -> None:
+        assert _split_blocks("Hello world") == ["Hello world"]
+
+    def test_two_paragraphs(self) -> None:
+        text = "First paragraph.\n\nSecond paragraph."
+        assert _split_blocks(text) == ["First paragraph.", "Second paragraph."]
+
+    def test_heading_and_paragraph(self) -> None:
+        text = "# Title\n\nSome body text."
+        blocks = _split_blocks(text)
+        assert blocks == ["# Title", "Some body text."]
+
+    def test_fenced_code_block_kept_atomic(self) -> None:
+        text = "Before.\n\n```python\ndef foo():\n    pass\n```\n\nAfter."
+        blocks = _split_blocks(text)
+        assert len(blocks) == 3
+        assert blocks[0] == "Before."
+        assert "def foo():" in blocks[1]
+        assert "```" in blocks[1]
+        assert blocks[2] == "After."
+
+    def test_blank_lines_inside_fence_preserved(self) -> None:
+        text = "```\nline1\n\nline2\n```"
+        blocks = _split_blocks(text)
+        assert len(blocks) == 1
+        assert "line1\n\nline2" in blocks[0]
+
+    def test_empty_text(self) -> None:
+        assert _split_blocks("") == []
+        assert _split_blocks("\n\n\n") == []
+
+    def test_list_block(self) -> None:
+        text = "# Title\n\n1. First\n2. Second\n   * Sub-item"
+        blocks = _split_blocks(text)
+        assert len(blocks) == 2
+        assert blocks[0] == "# Title"
+        assert "1. First" in blocks[1]
+        assert "Sub-item" in blocks[1]
+
+
 # ── get_segments ──────────────────────────────────────────────
 
 
 class TestGetSegments:
-    def test_single_page(self, tmp_path: Path) -> None:
-        _write_pages(tmp_path, {"page0001.md": "Hello world"})
+    def test_single_page_multiple_blocks(self, tmp_path: Path) -> None:
+        _write_pages(tmp_path, {"page0001.md": "# Title\n\nParagraph one.\n\nParagraph two."})
         adapter = MarkdownSourceAdapter(tmp_path)
         segments = adapter.get_segments()
 
-        assert len(segments) == 1
-        assert segments[0].id == "page0001"
-        assert segments[0].text == "Hello world"
+        assert len(segments) == 3
+        assert segments[0].id == "page0001::0"
+        assert segments[0].text == "# Title"
+        assert segments[1].id == "page0001::1"
+        assert segments[1].text == "Paragraph one."
+        assert segments[2].id == "page0001::2"
+        assert segments[2].text == "Paragraph two."
         assert segments[0].metadata["filename"] == "page0001.md"
-        assert segments[0].metadata["path"] == str(tmp_path / "page0001.md")
+        assert segments[0].metadata["block_index"] == 0
 
     def test_multiple_pages_sorted_naturally(self, tmp_path: Path) -> None:
         _write_pages(
             tmp_path,
             {
                 "page0010.md": "Page ten",
-                "page0001.md": "Page one",
+                "page0001.md": "# One\n\nBody one",
                 "page0002.md": "Page two",
             },
         )
         adapter = MarkdownSourceAdapter(tmp_path)
         segments = adapter.get_segments()
 
-        assert len(segments) == 3
-        assert [s.id for s in segments] == ["page0001", "page0002", "page0010"]
-        assert [s.text for s in segments] == ["Page one", "Page two", "Page ten"]
+        # page0001 has 2 blocks, page0002 has 1, page0010 has 1
+        assert len(segments) == 4
+        assert segments[0].id == "page0001::0"
+        assert segments[0].text == "# One"
+        assert segments[1].id == "page0001::1"
+        assert segments[1].text == "Body one"
+        assert segments[2].id == "page0002::0"
+        assert segments[3].id == "page0010::0"
 
     def test_filters_non_page_files(self, tmp_path: Path) -> None:
         _write_pages(
@@ -68,7 +121,9 @@ class TestGetSegments:
         segments = adapter.get_segments()
 
         assert len(segments) == 2
-        assert [s.id for s in segments] == ["page0001", "page0002"]
+        ids = [s.id for s in segments]
+        assert "page0001::0" in ids
+        assert "page0002::0" in ids
 
     def test_empty_directory(self, tmp_path: Path) -> None:
         adapter = MarkdownSourceAdapter(tmp_path)
@@ -92,13 +147,13 @@ class TestApplyTranslations:
         adapter.get_segments()
         adapter.apply_translations(
             [
-                TranslatedSegment(id="page0001", original="Hello", translated="你好"),
-                TranslatedSegment(id="page0002", original="World", translated="世界"),
+                TranslatedSegment(id="page0001::0", original="Hello", translated="你好"),
+                TranslatedSegment(id="page0002::0", original="World", translated="世界"),
             ]
         )
 
-        assert adapter._translations["page0001"] == "你好"
-        assert adapter._translations["page0002"] == "世界"
+        assert adapter._translations["page0001::0"] == "你好"
+        assert adapter._translations["page0002::0"] == "世界"
 
     def test_out_of_order_translations(self, tmp_path: Path) -> None:
         _write_pages(
@@ -111,33 +166,29 @@ class TestApplyTranslations:
         )
         adapter = MarkdownSourceAdapter(tmp_path)
         adapter.get_segments()
-        # Apply in reverse order
         adapter.apply_translations(
             [
-                TranslatedSegment(id="page0003", original="Third", translated="第三"),
-                TranslatedSegment(id="page0001", original="First", translated="第一"),
-                TranslatedSegment(id="page0002", original="Second", translated="第二"),
+                TranslatedSegment(id="page0003::0", original="Third", translated="第三"),
+                TranslatedSegment(id="page0001::0", original="First", translated="第一"),
+                TranslatedSegment(id="page0002::0", original="Second", translated="第二"),
             ]
         )
 
-        assert adapter._translations["page0001"] == "第一"
-        assert adapter._translations["page0002"] == "第二"
-        assert adapter._translations["page0003"] == "第三"
+        assert adapter._translations["page0001::0"] == "第一"
+        assert adapter._translations["page0002::0"] == "第二"
+        assert adapter._translations["page0003::0"] == "第三"
 
 
 # ── save ──────────────────────────────────────────────────────
 
 
 class TestSave:
-    def test_produces_bilingual_markdown(self, tmp_path: Path) -> None:
+    def test_produces_alternating_bilingual_markdown(self, tmp_path: Path) -> None:
         src_dir = tmp_path / "src"
         src_dir.mkdir()
         _write_pages(
             src_dir,
-            {
-                "page0001.md": "Hello",
-                "page0002.md": "World",
-            },
+            {"page0001.md": "# Title\n\nHello world"},
         )
 
         merge_calls: list[tuple[list[str], list[str]]] = []
@@ -153,8 +204,8 @@ class TestSave:
         adapter.get_segments()
         adapter.apply_translations(
             [
-                TranslatedSegment(id="page0001", original="Hello", translated="你好"),
-                TranslatedSegment(id="page0002", original="World", translated="世界"),
+                TranslatedSegment(id="page0001::0", original="# Title", translated="# 标题"),
+                TranslatedSegment(id="page0001::1", original="Hello world", translated="你好世界"),
             ]
         )
 
@@ -165,13 +216,14 @@ class TestSave:
         assert "## Segment 1" in content
         assert "## Segment 2" in content
         assert "**中文译文**" in content
-        assert "你好" in content
-        assert "世界" in content
+        assert "# Title" in content
+        assert "# 标题" in content
+        assert "你好世界" in content
 
-        # Verify merge was called with correct args
+        # Verify block-level segments passed to merge
         assert len(merge_calls) == 1
-        assert merge_calls[0][0] == ["Hello", "World"]
-        assert merge_calls[0][1] == ["你好", "世界"]
+        assert merge_calls[0][0] == ["# Title", "Hello world"]
+        assert merge_calls[0][1] == ["# 标题", "你好世界"]
 
     def test_save_preserves_page_ordering(self, tmp_path: Path) -> None:
         src_dir = tmp_path / "src"
@@ -180,7 +232,7 @@ class TestSave:
             src_dir,
             {
                 "page0010.md": "Tenth",
-                "page0001.md": "First",
+                "page0001.md": "# First\n\nBody",
             },
         )
 
@@ -194,13 +246,14 @@ class TestSave:
         adapter.get_segments()
         adapter.apply_translations(
             [
-                TranslatedSegment(id="page0001", original="First", translated="第一"),
-                TranslatedSegment(id="page0010", original="Tenth", translated="第十"),
+                TranslatedSegment(id="page0001::0", original="# First", translated="# 第一"),
+                TranslatedSegment(id="page0001::1", original="Body", translated="正文"),
+                TranslatedSegment(id="page0010::0", original="Tenth", translated="第十"),
             ]
         )
 
         output_file = tmp_path / "output.md"
         adapter.save(str(output_file))
 
-        # page0001 content must come before page0010
-        assert captured_originals[0] == ["First", "Tenth"]
+        # page0001 blocks before page0010
+        assert captured_originals[0] == ["# First", "Body", "Tenth"]

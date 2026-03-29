@@ -1,0 +1,47 @@
+## Segment 1
+
+# Main Title: Hexagonal Architecture
+
+Here is a paragraph about system design. We need to ensure that the inline HTML tags like <b>bold text</b> and <i>italic text</i> are not destroyed by the Markdown adapter.
+
+## Subtitle: Code and Lists
+
+When parsing Markdown, the AST (Abstract Syntax Tree) must preserve code blocks:
+
+` ` `python
+def example_function():
+    # This is an English comment that should ideally be translated or preserved
+    print("Hello, World!")
+    return True
+` ` `
+
+Finally, we have a nested list to test boundary conditions:
+1. First item with some **strong** emphasis.
+2. Second item.
+   * A sub-item that tests indentation.
+   * Another sub-item.
+
+**中文译文**
+
+# 主要标题：六边形架构
+
+这是一个关于系统设计的段落。我们需要确保内联 HTML 标签，如 <b>粗体文本</b> 和 <i>斜体文本</i> 不会被 Markdown 适配器破坏。
+
+## 副标题：代码和列表
+
+解析 Markdown 时，AST（抽象语法树）必须保留代码块：
+
+```python
+def example_function():
+    # This is an English comment that should ideally be translated or preserved
+    print("Hello, World!")
+    return True
+```
+
+最后，我们有一个嵌套列表来测试边界条件：
+1. 第一个带有 **强调** 的项目。
+2. 第二个项目。
+   * 一个测试缩进的子项。
+   * 另一个子项。
+
+---
