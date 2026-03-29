@@ -30,3 +30,7 @@ config/config.json
 
 # E2E test output EPUBs (generated, not committed)
 tmp/e2e/
+
+# Throwaway E2E test dirs
+md_test_input/
+md_test_output
