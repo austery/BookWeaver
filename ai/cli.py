@@ -17,6 +17,7 @@ from ai.adapters.providers._delimiter import SEPARATOR_OVERHEAD
 from ai.adapters.providers.gemini_api_adapter import GeminiAPIAdapter
 from ai.adapters.providers.gemini_cli_adapter import GeminiCLIAdapter
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
+from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider
 
@@ -55,6 +56,25 @@ should be placed in the translation while maintaining fluency
 nouns, code, URLs), keep the original text"""
 
 
+# ── Format detection ──────────────────────────────────────────
+
+
+_FORMAT_MAP: dict[str, str] = {
+    ".epub": "epub",
+    ".md": "markdown",
+}
+
+
+def detect_input_format(input_path: str) -> str:
+    """Detect input format from file extension.
+
+    Returns ``"epub"`` for ``.epub``, ``"markdown"`` for ``.md``,
+    and ``"epub"`` as default (PDF/DOCX go through Calibre first).
+    """
+    suffix = Path(input_path).suffix.lower()
+    return _FORMAT_MAP.get(suffix, "epub")
+
+
 # ── Argument parsing ──────────────────────────────────────────
 
 
@@ -66,24 +86,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("input_epub", help="Source EPUB file path")
     p.add_argument("--output", required=True, help="Output EPUB path")
-    p.add_argument(
-        "--output-lang", default="zh", help="Target language code (default: zh)"
-    )
-    p.add_argument(
-        "--model", default="gemini-2.5-flash", help="Gemini model name or alias"
-    )
+    p.add_argument("--output-lang", default="zh", help="Target language code (default: zh)")
+    p.add_argument("--model", default="gemini-2.5-flash", help="Gemini model name or alias")
     p.add_argument(
         "--provider",
         choices=["cli", "api"],
         default="cli",
         help="Translation backend (default: cli)",
     )
-    p.add_argument(
-        "-p", "--prompt", default=None, help="Additional translation instructions"
-    )
-    p.add_argument(
-        "--glossary", default=None, help="Path to extracted glossary JSON"
-    )
+    p.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
+    p.add_argument("--glossary", default=None, help="Path to extracted glossary JSON")
     p.add_argument(
         "--glossary-min-priority",
         default=None,
@@ -100,6 +112,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Max chars per batch (default: 60000 for pro, 10000 otherwise)",
+    )
+    p.add_argument(
+        "--input-format",
+        choices=["auto", "epub", "markdown"],
+        default="auto",
+        help="Input format (default: auto-detect from extension)",
+    )
+    p.add_argument(
+        "--markdown-dir",
+        default=None,
+        help="Directory with page*.md files (markdown format only)",
     )
     return p
 
@@ -137,12 +160,7 @@ def load_glossary_block(
         return None
     from ai.glossary_injector import GlossaryInjector
 
-    return (
-        GlossaryInjector(Path(glossary_path)).format_block(
-            min_priority=min_priority
-        )
-        or None
-    )
+    return GlossaryInjector(Path(glossary_path)).format_block(min_priority=min_priority) or None
 
 
 def resolve_model(
@@ -233,7 +251,7 @@ def load_config() -> dict[str, object]:
 
 def run(
     *,
-    input_epub: str,
+    input_path: str,
     output: str,
     output_lang: str = "zh",
     model: str = "gemini-2.5-flash",
@@ -243,9 +261,11 @@ def run(
     glossary_min_priority: str | None = None,
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
+    input_format: str = "auto",
+    markdown_dir: str | None = None,
     config: dict[str, object] | None = None,
 ) -> None:
-    """Execute the EPUB translation pipeline.
+    """Execute the translation pipeline.
 
     This is the programmatic entry point — ``main()`` parses CLI args
     and delegates here.
@@ -267,9 +287,7 @@ def run(
 
     # 3. Build system prompt
     language_name = _get_language_name(output_lang)
-    glossary_block = load_glossary_block(
-        glossary, min_priority=glossary_min_priority
-    )
+    glossary_block = load_glossary_block(glossary, min_priority=glossary_min_priority)
     system_prompt = build_system_prompt(
         language_name, glossary_block=glossary_block, custom_prompt=prompt
     )
@@ -283,22 +301,22 @@ def run(
     )
     engine = TranslationEngine(provider_adapter, engine_config)
 
-    # 5. Create source adapter
-    source = EpubSourceAdapter(input_epub)
+    # 5. Create source adapter (format routing)
+    fmt = input_format if input_format != "auto" else detect_input_format(input_path)
+    if fmt == "markdown":
+        md_dir = markdown_dir or str(Path(input_path).parent)
+        source = MarkdownSourceAdapter(md_dir)
+    else:
+        source = EpubSourceAdapter(input_path)
 
     # 6. Execute
-    print(f"Translating {input_epub} → {output} ({output_lang})")
+    print(f"Translating {input_path} → {output} ({output_lang})")
     result = engine.translate(
         source,
         output,
-        on_batch_translated=lambda i, total: print(
-            f"  Batch {i + 1}/{total} done"
-        ),
+        on_batch_translated=lambda i, total: print(f"  Batch {i + 1}/{total} done"),
     )
-    print(
-        f"Done: {result.translated_segments} segments"
-        f" in {result.total_batches} batches"
-    )
+    print(f"Done: {result.translated_segments} segments in {result.total_batches} batches")
 
 
 def main() -> None:
@@ -307,7 +325,7 @@ def main() -> None:
     args = parser.parse_args()
 
     run(
-        input_epub=args.input_epub,
+        input_path=args.input_epub,
         output=args.output,
         output_lang=args.output_lang,
         model=args.model,
@@ -317,6 +335,8 @@ def main() -> None:
         glossary_min_priority=args.glossary_min_priority,
         cli_api_fallback=args.cli_api_fallback,
         max_batch_chars=args.max_batch_chars,
+        input_format=args.input_format,
+        markdown_dir=args.markdown_dir,
     )
 
 
