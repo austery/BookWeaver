@@ -1,7 +1,7 @@
 BookWeaver
 ==========
 
-BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `.docx`) using Gemini CLI or Gemini API, with EPUB-first output and bilingual merge support.
+BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `.docx`) using Gemini CLI or Gemini API, with EPUB-first output and bilingual merge support. The codebase has been refactored into a hexagonal architecture: ai.core (domain), ai.ports (interfaces), and ai.adapters (providers/sources). The main runtime entrypoint is ai.cli (python -m ai.cli); translatebook.sh delegates to ai.cli and provides convenient wrappers.
 
 ## What it does
 
@@ -70,6 +70,8 @@ which pandoc
 ```
 
 ### 3) Real run
+
+Note: The primary composition root is `ai.cli` (run with `python -m ai.cli`). `translatebook.sh` delegates to `ai.cli` for most workflows; examples below include both the wrapper and direct `ai.cli` usage.
 
 ```bash
 # EPUB package-preserving workflow (default for .epub input)
@@ -197,6 +199,7 @@ Run the same checks locally before pushing:
 ```bash
 uv run ruff check .
 uv run ruff format --check .
+uv run tach check
 uv run pytest -q
 ```
 
@@ -295,6 +298,8 @@ BookWeaver can automatically extract terminology from EPUB index/TOC and inject 
 ```bash
 ./translatebook.sh --workflow epub --extract-glossary --output-format epub /path/to/book.epub
 ```
+
+Note: `--extract-glossary` is supported for EPUB workflows and is available when invoking `ai.cli` directly (run `python -m ai.cli <book.epub> --extract-glossary --output <out_dir>`). The extractor writes the glossary to `<input_basename>_temp/extracted_glossary.json` and the CLI injects it into the translation prompt. Use `--glossary <file>` to supply a pre-generated glossary JSON file if preferred.
 
 **Manual extraction (pre-run glossary preparation):**
 ```bash
