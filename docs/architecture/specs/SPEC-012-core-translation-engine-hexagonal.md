@@ -1,10 +1,10 @@
 ---
 specId: SPEC-012
 title: Core Translation Engine Refactor (Hexagonal Architecture)
-status: 📝 待实施 (Draft)
+status: 🟢 已完成 (Completed)
 priority: P0 - Architectural Foundation
 creationDate: 2026-03-28
-lastUpdateDate: 2026-03-28
+lastUpdateDate: 2026-03-29
 owner: Lei Peng (AI-Assisted)
 relatedSpecs:
   - SPEC-010
@@ -24,6 +24,16 @@ tags:
 ## 1. Goal
 
 > Re-architect the BookWeaver translation logic into a **Hexagonal (Ports & Adapters)** structure to eliminate code duplication, unify the "Immersive Translate" style batching/retry logic, and provide a stable foundation for multiple document formats (EPUB, Markdown, DOCX, HTMLz, PDF, etc.) and translation providers.
+
+## 1.1 Implementation Status Snapshot (2026-03-29)
+
+- ✅ Hexagonal vertical slices are running for **EPUB + Markdown + PDF** through `ai/cli.py`.
+- ✅ Core pieces exist and are production-used: `ai/core/batcher.py`, `ai/core/engine.py`, `ai/ports/*`, `ai/adapters/*`.
+- ✅ Glossary constraints (SPEC-010) are wired in new CLI flow, including EPUB-only auto extraction (`--extract-glossary`).
+- ✅ Architecture boundary checks are defined in `tach.toml` and pass locally via `uv run tach check`.
+- ✅ `tach check` is enforced in CI (`.github/workflows/lint.yml`).
+- ✅ Legacy translation scripts (`03_translate_md.py`, `09_epub_translate_roundtrip.py`) have been strangled and removed; `translatebook.sh` routes to `python -m ai.cli`.
+- ⚠️ Optional hardening backlog remains (strict/tag Tach policy and extra source adapters like DOCX/HTML).
 
 ## 2. Problem Statement
 
@@ -129,17 +139,29 @@ class IBookSource(ABC):
 ### 4.1 Automated Enforcement with `Tach`
 Following our discussions, we will use **Tach** (a Rust-based, modern modularity and strict interface enforcer) instead of traditional linters. Tach provides zero-runtime overhead and enforces strict boundaries for our hexagonal architecture.
 
-Key features we will utilize:
-1.  **Incremental Adoption**: We will use `tach init` and `tach sync` to establish a baseline of current dependencies, preventing further architectural decay while allowing gradual refactoring.
-2.  **Strict Interfaces**: We will enable `strict: true` for the `ai/core` package. This ensures that adapters can only access explicitly exposed public interfaces (via `__all__`), preventing deep imports (e.g., blocking `from ai.core.internal import ...`).
-3.  **Tag-based Mapping**: We will tag modules (e.g., `core`, `adapters`, `ports`) to define global access control rules, ensuring Adapters depend on Ports, and Core depends on nothing but itself.
+Current governance features in use:
+1.  **Incremental Adoption**: boundaries are enforced for `ai.ports`, `ai.core`, `ai.adapters`, and `ai.shared`, while legacy files are excluded during migration.
+2.  **Dependency Direction Rules**: Core depends only on Ports; Adapters depend only on Ports; circular dependencies are forbidden.
+3.  **CI Enforcement**: `uv run tach check` runs in the `lint-and-test` GitHub Actions workflow before lint/test jobs continue.
+4.  **Future Hardening (Optional)**: `strict: true` and tag-based rules are tracked as a follow-up tightening step, not a blocker for this SPEC closeout.
 
 ### 4.2 Configuration (`tach.toml`)
 ```toml
-[modules]
-core = { path = "ai/core", strict = true, depends_on = ["ports"] }
-ports = { path = "ai/ports", strict = true, depends_on = [] }
-adapters = { path = "ai/adapters", strict = true, depends_on = ["ports"] }
+exclude = ["tests/", "docs/", "venv/", ".venv/", "tmp/"]
+source_roots = ["."]
+forbid_circular_dependencies = true
+
+[[modules]]
+path = "ai.ports"
+depends_on = []
+
+[[modules]]
+path = "ai.core"
+depends_on = ["ai.ports"]
+
+[[modules]]
+path = "ai.adapters"
+depends_on = ["ai.ports"]
 ```
 
 ## 5. Unit Testing Strategy
@@ -170,27 +192,35 @@ Given the project already has 120+ unit tests providing a strong safety net, we 
 ## 6. Implementation Phases
 
 ### Phase 1: Foundation (Config & Ports)
-- [ ] Implement `ai/core/config.py` (Unified ConfigRegistry).
-- [ ] Define `ai/ports/provider.py` and `ai/ports/source.py`.
-- [ ] Refactor existing `GeminiProvider` into `ai/adapters/providers/`.
+- [x] Implement `ai/core/config.py` (Unified ConfigRegistry).
+- [x] Define `ai/ports/provider.py` and `ai/ports/source.py`.
+- [x] Refactor provider access into `ai/adapters/providers/` (adapter wrappers in place; legacy raw providers retained under `ai/` for compatibility).
 
 ### Phase 2: Core Engine Refactor
-- [ ] Move `%%` batching logic from `epub_translate_roundtrip.py` to `ai/core/batcher.py`.
-- [ ] Implement `ai/core/engine.py` using the Batcher and Provider Port.
-- [ ] Move Glossary logic to `ai/core/glossary.py`.
+- [x] Move batching responsibilities from legacy script into new architecture. *(delimiter protocol now in `ai/adapters/providers/_delimiter.py`; size batch planning in `ai/core/batcher.py`)*
+- [x] Implement `ai/core/engine.py` using the Batcher and Provider Port.
+- [x] Move Glossary logic to `ai/core/glossary.py` (legacy modules now act as compatibility facades).
 
 ### Phase 3: Adapter Migration
-- [ ] Implement `ai/adapters/sources/epub_adapter.py` (wrapping `epub_package.py`).
-- [ ] Implement `ai/adapters/sources/markdown_adapter.py`.
-- [ ] Implement stubs or basic adapters for other formats (DOCX, HTML, PDF).
-- [ ] Update `03_translate_md.py` and `09_epub_translate_roundtrip.py` to use the new Engine.
+- [x] Implement `ai/adapters/sources/epub_adapter.py` (wrapping `epub_package.py`).
+- [x] Implement `ai/adapters/sources/markdown_adapter.py`.
+- [x] Implement first non-EPUB adapter (`ai/adapters/sources/pdf_adapter.py`) and route `.pdf` in `ai/cli.py`. *(DOCX/HTML deferred to follow-up)*
+- [x] Complete strangler migration by deleting legacy translation scripts and routing shell orchestration to `python -m ai.cli`.
 
 ### Phase 4: Arch-Test & Cleanup
-- [ ] Install `tach` framework.
-- [ ] Run `tach init` and `tach sync` to create the baseline `tach.toml`.
-- [ ] Configure `strict: true` and tag-based rules in `tach.toml` to enforce Hexagonal boundaries.
-- [ ] Run `tach check` in CI.
-- [ ] Remove redundant code in legacy scripts.
+- [x] Install `tach` framework.
+- [x] Create and maintain baseline `tach.toml`.
+- [ ] Configure `strict: true` and tag-based rules in `tach.toml` to enforce Hexagonal boundaries. *(optional hardening backlog)*
+- [x] Run `tach check` in CI. *(added to `.github/workflows/lint.yml`)*
+- [x] Remove redundant code in legacy scripts.
+
+### Phase 4.1: Architecture Test Definition (Current)
+- **Where defined**: `tach.toml` at repository root (module dependency boundaries).
+- **How to run locally**: `uv run tach check`.
+- **Current state**: passes locally and in CI workflow (`lint-and-test`).
+- **Optional follow-up only**:
+  - Add a pytest wrapper (e.g. `tests/integration/test_architecture.py`) if we want architecture checks surfaced under pytest output as well.
+  - Tighten Tach with strict/tag policies after remaining legacy compatibility concerns are retired.
 
 ## 6. Success Metrics
 - **Zero Redundancy**: Retry/Batching logic exists only in `ai/core/`.
@@ -203,6 +233,18 @@ Given the project already has 120+ unit tests providing a strong safety net, we 
   - *Mitigation*: Keep implementations simple. Focus on "isolation" over "abstraction for the sake of abstraction."
 - **Performance**: Double-wrapping segments might add overhead.
   - *Mitigation*: Ensure adapters use lazy loading/iterators where possible.
+
+## 9. Closeout Decision (2026-03-29)
+
+- ✅ SPEC-012 is considered **completed for the targeted migration scope**:
+  - Hexagonal core + ports/adapters are live and tested.
+  - Translation orchestration is unified in `ai/cli.py`.
+  - Legacy translation scripts were removed after test migration.
+  - Architecture boundaries are enforced in CI via Tach.
+- 📝 Remaining items are classified as **post-SPEC hardening/backlog**, not release blockers:
+  - stricter Tach/tag policy,
+  - optional architecture pytest wrapper,
+  - additional source adapters (DOCX/HTML).
 
 ---
 **End of SPEC-012**

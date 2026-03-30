@@ -213,6 +213,10 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
             job_id
             for job_id, job in workflow.jobs.items()
             if any(
+                _command_contains_tokens(command, ("uv", "run", "tach", "check"))
+                for command in job.run_commands
+            )
+            and any(
                 _command_contains_tokens(command, ("ruff", "check")) for command in job.run_commands
             )
             and any(
@@ -223,7 +227,22 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
         None,
     )
     assert lint_job_id is not None, (
-        "Expected a lint job with run steps for 'ruff check' and 'ruff format --check'"
+        "Expected a lint job with run steps for 'uv run tach check', "
+        "'ruff check', and 'ruff format --check'"
+    )
+
+    has_tach_step = any(
+        _command_contains_tokens(command, ("uv", "run", "tach", "check"))
+        for command in workflow.jobs[lint_job_id].run_commands
+    )
+    assert has_tach_step, "Expected lint job to run 'uv run tach check'"
+
+    has_ruff_steps = all(
+        any(_command_contains_tokens(command, tokens) for command in workflow.jobs[lint_job_id].run_commands)
+        for tokens in (("ruff", "check"), ("ruff", "format", "--check"))
+    )
+    assert has_ruff_steps, (
+        "Expected lint job with run steps for 'ruff check' and 'ruff format --check'"
     )
 
     has_downstream_pytest_job = any(

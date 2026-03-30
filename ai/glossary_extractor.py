@@ -14,6 +14,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from ai.core.glossary import validate_model_output
 from ai.epub_package import load_epub_package, resolve_opf_href
 
 
@@ -238,7 +239,7 @@ def _build_extraction_prompt(
     )
 
 
-def _validate_and_parse_glossary(raw_output: str) -> dict:
+def _validate_and_parse_glossary(raw_output: str) -> dict[str, object]:
     """Parse and validate model output as glossary JSON.
 
     Strips markdown code fences if present, then validates schema.
@@ -246,24 +247,7 @@ def _validate_and_parse_glossary(raw_output: str) -> dict:
     Raises:
         ValueError: If JSON is invalid or missing 'critical_terminology' key.
     """
-    cleaned = raw_output.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-    cleaned = cleaned.strip()
-
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Model output is not valid JSON: {exc}\nRaw output:\n{raw_output[:200]}"
-        ) from exc
-
-    if "critical_terminology" not in data:
-        raise ValueError(
-            f"Model output missing 'critical_terminology' key. Got keys: {list(data.keys())}"
-        )
-
-    return data
+    return validate_model_output(raw_output)
 
 
 def extract_glossary_from_epub(
@@ -272,7 +256,7 @@ def extract_glossary_from_epub(
     translate_fn: Callable[[str], str],
     max_terms: int = 20,
     full_index: bool = False,
-) -> dict:
+) -> dict[str, object]:
     """Extract terminology from EPUB and write glossary JSON to output_path.
 
     Args:

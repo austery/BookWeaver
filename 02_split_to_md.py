@@ -737,7 +737,7 @@ def main() -> None:
             print("✓ Splitting existing input.md into pages...")
             split_md_by_separator_with_merge(input_md, temp_dir)
         print("\n=== Step 2 Complete ===")
-        print("Next step: Run 03_translate_md.py")
+        print("Next step: Run translatebook.sh step 3 (ai.cli markdown translation)")
         return
 
     # Split based on file type
@@ -752,7 +752,7 @@ def main() -> None:
         sys.exit(1)
 
     print("\n=== Step 2 Complete ===")
-    print("Next step: Run 03_translate_md.py")
+    print("Next step: Run translatebook.sh step 3 (ai.cli markdown translation)")
 
 
 if __name__ == "__main__":

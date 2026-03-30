@@ -138,3 +138,242 @@ def test_fallback_flag_is_accepted_in_dry_run() -> None:
         )
         assert completed.returncode == 0
         assert "Fallback provider: api" in completed.stdout
+
+
+def test_epub_dry_run_uses_ai_cli_module_not_legacy_roundtrip_script() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "python3 -u -m ai.cli" in combined_output
+        assert "--input-format epub" in combined_output
+        assert "translated_roundtrip.epub" in combined_output
+        assert "09_epub_translate_roundtrip.py" not in combined_output
+        assert "--checkpoint-dir" not in combined_output
+
+
+def test_epub_dry_run_propagates_optional_ai_cli_flags() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        glossary_path = Path(temp_dir) / "glossary.json"
+        _build_min_epub(input_epub)
+        glossary_path.write_text("{}", encoding="utf-8")
+
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                "--model",
+                "flash",
+                "--prompt",
+                "keep_style",
+                "--glossary",
+                str(glossary_path),
+                "--glossary-min-priority",
+                "high",
+                "--fallback-provider",
+                "api",
+                "--extract-glossary",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "--model flash" in combined_output
+        assert "-p keep_style" in combined_output
+        assert "--glossary" in combined_output
+        assert "--glossary-min-priority high" in combined_output
+        assert "--cli-api-fallback" in combined_output
+        assert "--extract-glossary" in combined_output
+
+
+def test_epub_dry_run_force_resume_is_warned_as_ignored() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                "--force-resume",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}".lower()
+        assert completed.returncode == 0
+        assert "force-resume" in combined_output
+        assert "ignored" in combined_output
+
+
+def test_markdown_dry_run_step3_uses_ai_cli_and_step4_is_skipped() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "python3 -u -m ai.cli" in combined_output
+        assert "--input-format markdown" in combined_output
+        assert "output.md" in combined_output
+        assert "03_translate_md.py" not in combined_output
+        assert "Step 4" in combined_output
+        assert "skip" in combined_output.lower()
+
+
+def test_markdown_dry_run_propagates_optional_ai_cli_flags() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        glossary_path = Path(temp_dir) / "glossary.json"
+        _build_min_epub(input_epub)
+        glossary_path.write_text("{}", encoding="utf-8")
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--model",
+                "pro",
+                "--prompt",
+                "preserve_terms",
+                "--glossary",
+                str(glossary_path),
+                "--glossary-min-priority",
+                "critical",
+                "--fallback-provider",
+                "api",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "--input-format markdown" in combined_output
+        assert "--model pro" in combined_output
+        assert "-p preserve_terms" in combined_output
+        assert "--glossary" in combined_output
+        assert "--glossary-min-priority critical" in combined_output
+        assert "--cli-api-fallback" in combined_output
+
+
+def test_markdown_dry_run_propagates_glossary_max_terms() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--extract-glossary",
+                "--glossary-max-terms",
+                "18",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "--glossary-max-terms 18" in combined_output
+
+
+def test_no_skip_flag_warns_as_ignored() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--no-skip",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}".lower()
+        assert completed.returncode == 0
+        assert "--no-skip" in combined_output
+        assert "ignored" in combined_output
+
+
+def test_markdown_api_provider_dry_run_no_gemini_dependency_error() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--provider",
+                "api",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            env={"PATH": "/usr/bin:/bin"},
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "Gemini CLI not found" not in combined_output

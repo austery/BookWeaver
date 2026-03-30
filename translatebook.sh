@@ -95,7 +95,7 @@ OPTIONS:
     --extract-glossary     Extract terminology glossary before translation (EPUB input only)
     --glossary PATH        Path to pre-extracted glossary JSON (skip extraction step)
     --clean                Clean temp directory before starting
-    --no-skip              Don't skip existing intermediate files
+    --no-skip              Deprecated compatibility flag (ignored in ai.cli translation paths)
     --reinstall-packages   Reinstall Python packages in virtual environment
     --start-step NUM       Start from step NUM (1-7, default: 1)
     --end-step NUM         End at step NUM (1-7, default: 7)
@@ -110,7 +110,7 @@ OPTIONS:
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --provider MODE        Translation provider: cli|api (default: cli)
     --fallback-provider MODE Optional fallback provider when primary fails (currently: api)
-    --force-resume         Allow resuming translation with different model (may cause quality inconsistency)
+    --force-resume         Compatibility flag (ignored in ai.cli-based workflows)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -118,8 +118,8 @@ OPTIONS:
 STEPS:
     1. Environment preparation and parameter parsing
     2. Split file to markdown and extract images
-    3. Translate markdown files using Gemini API
-    4. Merge translated markdown files
+    3. Translate markdown files via ai.cli
+    4. Merge translated markdown files (no-op; ai.cli already outputs merged content)
     5. Convert markdown to HTML with template
     6. Generate and insert table of contents
     7. Generate DOCX and EPUB files in temp directory
@@ -243,7 +243,7 @@ check_dependencies() {
     fi
     
     # Check required Python scripts
-    local scripts=("01_prepare_env.py" "02_split_to_md.py" "03_translate_md.py" "04_merge_md.py" "05_md_to_html.py" "06_add_toc.py")
+    local scripts=("01_prepare_env.py" "02_split_to_md.py" "04_merge_md.py" "05_md_to_html.py" "06_add_toc.py")
     for script in "${scripts[@]}"; do
         if [[ ! -f "${SCRIPT_DIR}/${script}" ]]; then
             log_error "Required script not found: ${script}"
@@ -279,13 +279,6 @@ check_dependencies() {
             log_error "Please install Calibre: https://calibre-ebook.com/"
             exit 3
         fi
-    fi
-    
-    # Check Gemini CLI availability
-    if ! command -v gemini &> /dev/null; then
-        log_error "Gemini CLI not found"
-        log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
-        exit 4
     fi
     
     log_success "Dependencies check passed"
@@ -648,6 +641,12 @@ main() {
     if [[ "$USED_LEGACY_ROUNDTRIP_FLAG" == true ]]; then
         log_warning "Deprecated option: --epub-translate-roundtrip is kept for compatibility; use --workflow epub"
     fi
+    if [[ "$SKIP_EXISTING" == false ]]; then
+        log_warning "--no-skip is ignored in ai.cli translation paths"
+    fi
+    if [[ "$FORCE_RESUME" == true ]] && [[ "$RESOLVED_WORKFLOW" != "epub" ]]; then
+        log_warning "--force-resume is ignored outside epub workflow"
+    fi
     
     if [[ "$QUOTA_STATUS_MODE" == true ]]; then
         show_quota_status
@@ -700,13 +699,6 @@ main() {
         fi
 
         local translate_output="${base_temp_dir}/translated_roundtrip.epub"
-        local checkpoint_dir="${base_temp_dir}/roundtrip_checkpoint"
-        local translate_script="${SCRIPT_DIR}/09_epub_translate_roundtrip.py"
-
-        if [[ ! -f "$translate_script" ]]; then
-            log_error "Translate roundtrip script not found: $translate_script"
-            exit 3
-        fi
 
         if ! command -v python3 &> /dev/null; then
             log_error "Python 3 is required but not installed"
@@ -714,11 +706,10 @@ main() {
         fi
 
         local cmd=(
-            python3 -u "$translate_script" "$INPUT_FILE"
+            python3 -u -m ai.cli "$INPUT_FILE"
             --output "$translate_output"
+            --input-format epub
             --output-lang "$OUTPUT_LANG"
-            --bilingual-style "$BILINGUAL_STYLE"
-            --checkpoint-dir "$checkpoint_dir"
             --provider "$PROVIDER"
         )
         if [[ -n "$MODEL_OVERRIDE" ]]; then
@@ -729,77 +720,36 @@ main() {
         fi
         if [[ -n "$GLOSSARY_PATH" ]]; then
             cmd+=(--glossary "$GLOSSARY_PATH")
-            if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
-                cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
-            fi
         fi
-        if [[ "$FORCE_RESUME" == true ]]; then
-            cmd+=(--force-resume)
+        if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
+            cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
         fi
         if [[ "$FALLBACK_PROVIDER" == "api" ]]; then
             cmd+=(--cli-api-fallback)
+        fi
+        if [[ "$EXTRACT_GLOSSARY" == true ]]; then
+            cmd+=(--extract-glossary)
         fi
 
         local translate_cmd_display
         translate_cmd_display="$(printf '%q ' "${cmd[@]}")"
 
         log_step "workflow-epub" "EPUB package-preserving translation workflow"
+        if [[ "$FORCE_RESUME" == true ]]; then
+            log_warning "--force-resume is ignored in ai.cli workflow (no checkpoint resume support)"
+        fi
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY RUN] Would execute: $translate_cmd_display"
             exit 0
         fi
 
         setup_venv
-        
-        # Ensure google-genai is available if extract-glossary is enabled or provider is api
-        if [[ "$EXTRACT_GLOSSARY" == true ]] || [[ "$PROVIDER" == "api" ]]; then
-            if ! python3 -c "from google import genai" >/dev/null 2>&1; then
-                log_info "Installing Gemini API SDK into venv..."
-                if ! uv pip install google-genai; then
-                    log_error "Failed to install google-genai"
-                    exit 3
-                fi
-            fi
-        fi
-        
-        # Optional: glossary extraction (after venv setup)
-        local _glossary_output=""
-        if [[ "$EXTRACT_GLOSSARY" == true ]]; then
-            _glossary_output="${base_temp_dir}/extracted_glossary.json"
-            log_step "workflow-epub" "Extracting terminology glossary"
-            
-            # Glossary extraction always uses Pro model (for quality)
-            # regardless of MODEL_OVERRIDE (which applies only to translation)
-            local _extract_cmd=(
-                python3 -u "${SCRIPT_DIR}/00_extract_glossary.py"
-                "$INPUT_FILE"
-                --output "$_glossary_output"
-                --model "pro"
-                --provider "$PROVIDER"
-            )
-            if [[ -n "$GLOSSARY_MAX_TERMS" ]]; then
-                _extract_cmd+=(--max-terms "$GLOSSARY_MAX_TERMS")
-            fi
-            if [[ "$DRY_RUN" == true ]]; then
-                log_info "[DRY RUN] Would execute: ${_extract_cmd[*]}"
-                _glossary_output=""
-            else
-                "${_extract_cmd[@]}" || { log_error "Glossary extraction failed"; exit 1; }
-                # Update cmd with extracted glossary
-                cmd+=(--glossary "$_glossary_output")
-                if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
-                    cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
-                fi
-            fi
-        fi
-        
+
         log_info "Starting translate roundtrip (progress logs will show per spine document)..."
-        if [[ "$PROVIDER" == "cli" ]]; then
-            if ! command -v gemini &> /dev/null; then
-                log_error "Gemini CLI not found"
-                log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
-                exit 4
-            fi
+        if [[ "$PROVIDER" == "cli" ]] && ! command -v gemini &> /dev/null; then
+            log_error "Gemini CLI not found"
+            log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
+            exit 4
         fi
 
         if [[ "$VERBOSE" == true ]]; then
@@ -889,8 +839,8 @@ main() {
     local step_descriptions=(
         "Environment preparation and parameter parsing"
         "Split file to markdown and extract images"
-        "Translate markdown files using Gemini CLI"
-        "Merge translated markdown files"
+        "Translate markdown files via ai.cli"
+        "Merge translated markdown files (skipped; ai.cli already outputs output.md)"
         "Convert markdown to HTML with template"
         "Generate and insert table of contents"
         "Generate final format files in temp directory"
@@ -899,8 +849,6 @@ main() {
     local step_scripts=(
         "01_prepare_env.py"
         "02_split_to_md.py"
-        "03_translate_md.py"
-        "04_merge_md.py"
         "05_md_to_html.py"
         "06_add_toc.py"
         "07_generate_formats.py"
@@ -937,160 +885,76 @@ main() {
     # Execute remaining steps
     for i in $(seq 2 7); do
         if [[ $STEP_START -le $i && $STEP_END -ge $i ]]; then
-            # Special handling for step 3 (translation) with custom prompt
-            if [[ $i -eq 3 && -n "$CUSTOM_PROMPT" ]]; then
-                log_step "3" "${step_descriptions[2]}"
-                
-                if [[ "$DRY_RUN" == true ]]; then
-                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" -p \"$CUSTOM_PROMPT\""
-                    if [[ "$SKIP_EXISTING" == false ]]; then
-                        cmd="$cmd --no-resume"
-                    fi
-                    if [[ -n "$MODEL_OVERRIDE" ]]; then
-                        cmd="$cmd --model \"$MODEL_OVERRIDE\""
-                    fi
-                    log_info "[DRY RUN] Would execute: $cmd"
-                    local preview_cmd="$cmd --preview-model-selection --skip-probe"
-                    log_info "[DRY RUN] Previewing prompt profile and model selection..."
-                    if ! eval $preview_cmd; then
-                        log_warning "[DRY RUN] Model selection preview failed"
-                    fi
-                else
-                    # Ensure virtual environment is activated before running Python scripts
-                    local venv_dir="${SCRIPT_DIR}/venv"
-                    if [[ -d "$venv_dir" ]]; then
-                        source "$venv_dir/bin/activate"
-                    fi
-                    
-                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" -p \"$CUSTOM_PROMPT\""
-                    if [[ "$SKIP_EXISTING" == false ]]; then
-                        cmd="$cmd --no-resume"
-                    fi
-                    if [[ -n "$MODEL_OVERRIDE" ]]; then
-                        cmd="$cmd --model \"$MODEL_OVERRIDE\""
-                    fi
-                    
-                    if [[ "$VERBOSE" == true ]]; then
-                        log_info "Executing: $cmd"
-                    fi
-                    
-                    if ! eval $cmd; then
-                        log_error "Step 3 failed: ${step_descriptions[2]}"
-                        log_error "Translation is incomplete. Please fix the issues and run again."
-                        exit 1
-                    fi
-                    
-                    log_success "Step 3 completed: ${step_descriptions[2]}"
-                fi
-            elif [[ $i -eq 6 ]]; then
-                # Special handling for step 6 (TOC generation) with base_temp/book.html output
-                log_step "6" "${step_descriptions[5]}"
-                
-                if [[ "$DRY_RUN" == true ]]; then
-                    log_info "[DRY RUN] Would execute: python3 ${step_scripts[5]} with base_temp/book.html output"
-                else
-                    # Ensure virtual environment is activated before running Python scripts
-                    local venv_dir="${SCRIPT_DIR}/venv"
-                    if [[ -d "$venv_dir" ]]; then
-                        source "$venv_dir/bin/activate"
-                    fi
-                    
-                    if [[ ! -d "$base_temp_dir" ]]; then
-                        log_error "Temp directory not found: $base_temp_dir"
-                        exit 1
-                    fi
-                    
-                    # Step 6 will process book.html in the temp directory directly
-                    local cmd="python3 ${SCRIPT_DIR}/${step_scripts[5]}"
-                    
-                    if [[ "$VERBOSE" == true ]]; then
-                        log_info "Executing: $cmd"
-                    fi
-                    
-                    if ! eval $cmd; then
-                        log_error "Step 6 failed: ${step_descriptions[5]}"
-                        exit 1
-                    fi
-                    
-                    log_success "Step 6 completed: ${step_descriptions[5]} -> ${base_temp_dir}/book.html"
-                fi
-            else
-                # Special handling for step 3 (translation) to pass temp directory
-                if [[ $i -eq 3 ]]; then
+            case "$i" in
+                2)
+                    execute_python_script "${step_scripts[1]}" "$i" "${step_descriptions[$((i-1))]}"
+                    ;;
+                3)
                     log_step "3" "${step_descriptions[2]}"
-                    
+
+                    local translate_cmd=(
+                        python3 -u -m ai.cli "$base_temp_dir"
+                        --input-format markdown
+                        --output "$base_temp_dir/output.md"
+                        --output-lang "$OUTPUT_LANG"
+                        --provider "$PROVIDER"
+                    )
+                    if [[ -n "$MODEL_OVERRIDE" ]]; then
+                        translate_cmd+=(--model "$MODEL_OVERRIDE")
+                    fi
+                    if [[ -n "$CUSTOM_PROMPT" ]]; then
+                        translate_cmd+=(-p "$CUSTOM_PROMPT")
+                    fi
+                    if [[ -n "$GLOSSARY_PATH" ]]; then
+                        translate_cmd+=(--glossary "$GLOSSARY_PATH")
+                    fi
+                    if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
+                        translate_cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
+                    fi
+                    if [[ -n "$GLOSSARY_MAX_TERMS" ]]; then
+                        translate_cmd+=(--glossary-max-terms "$GLOSSARY_MAX_TERMS")
+                    fi
+                    if [[ "$FALLBACK_PROVIDER" == "api" ]]; then
+                        translate_cmd+=(--cli-api-fallback)
+                    fi
+
+                    local translate_cmd_display
+                    translate_cmd_display="$(printf '%q ' "${translate_cmd[@]}")"
+
                     if [[ "$DRY_RUN" == true ]]; then
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\""
-                        if [[ "$SKIP_EXISTING" == false ]]; then
-                            cmd="$cmd --no-resume"
-                        fi
-                        if [[ -n "$MODEL_OVERRIDE" ]]; then
-                            cmd="$cmd --model \"$MODEL_OVERRIDE\""
-                        fi
-                        log_info "[DRY RUN] Would execute: $cmd"
-                        local preview_cmd="$cmd --preview-model-selection --skip-probe"
-                        log_info "[DRY RUN] Previewing prompt profile and model selection..."
-                        if ! eval $preview_cmd; then
-                            log_warning "[DRY RUN] Model selection preview failed"
-                        fi
+                        log_info "[DRY RUN] Would execute: $translate_cmd_display"
                     else
-                        # Ensure virtual environment is activated before running Python scripts
                         local venv_dir="${SCRIPT_DIR}/venv"
                         if [[ -d "$venv_dir" ]]; then
                             source "$venv_dir/bin/activate"
                         fi
-                        
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\""
-                        if [[ "$SKIP_EXISTING" == false ]]; then
-                            cmd="$cmd --no-resume"
+                        if [[ "$PROVIDER" == "cli" ]]; then
+                            if ! command -v gemini &> /dev/null; then
+                                log_error "Gemini CLI not found"
+                                log_error "Please install Gemini CLI and ensure 'gemini' is in PATH"
+                                exit 4
+                            fi
                         fi
-                        if [[ -n "$MODEL_OVERRIDE" ]]; then
-                            cmd="$cmd --model \"$MODEL_OVERRIDE\""
-                        fi
-                        
                         if [[ "$VERBOSE" == true ]]; then
-                            log_info "Executing: $cmd"
+                            log_info "Executing: $translate_cmd_display"
                         fi
-                        
-                        if ! eval $cmd; then
+                        if ! "${translate_cmd[@]}"; then
                             log_error "Step 3 failed: ${step_descriptions[2]}"
                             exit 1
                         fi
-                        
                         log_success "Step 3 completed: ${step_descriptions[2]}"
                     fi
-                elif [[ $i -eq 4 ]]; then
-                    # Special handling for step 4 (merge) to pass temp directory
+                    ;;
+                4)
                     log_step "4" "${step_descriptions[3]}"
-                    
-                    if [[ "$DRY_RUN" == true ]]; then
-                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[3]} --temp-dir \"$base_temp_dir\""
-                    else
-                        # Ensure virtual environment is activated before running Python scripts
-                        local venv_dir="${SCRIPT_DIR}/venv"
-                        if [[ -d "$venv_dir" ]]; then
-                            source "$venv_dir/bin/activate"
-                        fi
-                        
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[3]} --temp-dir \"$base_temp_dir\""
-                        
-                        if [[ "$VERBOSE" == true ]]; then
-                            log_info "Executing: $cmd"
-                        fi
-                        
-                        if ! eval $cmd; then
-                            log_error "Step 4 failed: ${step_descriptions[3]}"
-                            exit 1
-                        fi
-                        
-                        log_success "Step 4 completed: ${step_descriptions[3]}"
-                    fi
-                elif [[ $i -eq 5 ]]; then
-                    # Special handling for step 5 (md to html) to pass temp directory
+                    log_info "Skipping Step 4: ai.cli markdown workflow already writes ${base_temp_dir}/output.md"
+                    log_success "Step 4 completed: ${step_descriptions[3]}"
+                    ;;
+                5)
                     log_step "5" "${step_descriptions[4]}"
                     
                     if [[ "$DRY_RUN" == true ]]; then
-                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
+                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[2]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                     else
                         # Ensure virtual environment is activated before running Python scripts
                         local venv_dir="${SCRIPT_DIR}/venv"
@@ -1098,7 +962,7 @@ main() {
                             source "$venv_dir/bin/activate"
                         fi
                         
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[4]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[2]} --temp-dir \"$base_temp_dir\" --bilingual-style \"$BILINGUAL_STYLE\""
                         
                         if [[ "$VERBOSE" == true ]]; then
                             log_info "Executing: $cmd"
@@ -1111,19 +975,53 @@ main() {
                         
                         log_success "Step 5 completed: ${step_descriptions[4]}"
                     fi
-                elif [[ $i -eq 7 ]]; then
+                    ;;
+                6)
+                    # Special handling for step 6 (TOC generation) with base_temp/book.html output
+                    log_step "6" "${step_descriptions[5]}"
+                    
+                    if [[ "$DRY_RUN" == true ]]; then
+                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[3]} with base_temp/book.html output"
+                    else
+                        # Ensure virtual environment is activated before running Python scripts
+                        local venv_dir="${SCRIPT_DIR}/venv"
+                        if [[ -d "$venv_dir" ]]; then
+                            source "$venv_dir/bin/activate"
+                        fi
+                        
+                        if [[ ! -d "$base_temp_dir" ]]; then
+                            log_error "Temp directory not found: $base_temp_dir"
+                            exit 1
+                        fi
+                        
+                        # Step 6 will process book.html in the temp directory directly
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[3]}"
+                        
+                        if [[ "$VERBOSE" == true ]]; then
+                            log_info "Executing: $cmd"
+                        fi
+                        
+                        if ! eval $cmd; then
+                            log_error "Step 6 failed: ${step_descriptions[5]}"
+                            exit 1
+                        fi
+                        
+                        log_success "Step 6 completed: ${step_descriptions[5]} -> ${base_temp_dir}/book.html"
+                    fi
+                    ;;
+                7)
                     # Special handling for step 7 (format generation) to pass temp directory and output format
                     log_step "7" "${step_descriptions[6]}"
 
                     if [[ "$DRY_RUN" == true ]]; then
-                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
+                        log_info "[DRY RUN] Would execute: python3 ${step_scripts[4]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
                     else
                         local venv_dir="${SCRIPT_DIR}/venv"
                         if [[ -d "$venv_dir" ]]; then
                             source "$venv_dir/bin/activate"
                         fi
 
-                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[6]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
+                        local cmd="python3 ${SCRIPT_DIR}/${step_scripts[4]} --temp-dir \"$base_temp_dir\" --output-format \"$OUTPUT_FORMAT\""
 
                         if [[ "$VERBOSE" == true ]]; then
                             log_info "Executing: $cmd"
@@ -1136,10 +1034,8 @@ main() {
 
                         log_success "Step 7 completed: ${step_descriptions[6]}"
                     fi
-                else
-                    execute_python_script "${step_scripts[$((i-1))]}" "$i" "${step_descriptions[$((i-1))]}"
-                fi
-            fi
+                    ;;
+            esac
         fi
     done
     

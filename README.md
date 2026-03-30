@@ -101,35 +101,21 @@ which pandoc
 Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
 EPUB workflow writes output to `<input_basename>_temp/translated_roundtrip.epub`.
 
-### 3.1) Resume after interruption (recommended)
+### 3.1) Workflow behavior notes
 
-**Markdown workflow (Step 3):**
+**Markdown workflow (`--workflow markdown`):**
 
-Step 3 (`03_translate_md.py`) now resumes by default:
+- Step 3 calls `ai.cli` directly:
+  `python3 -u -m ai.cli <temp_dir> --input-format markdown --output <temp_dir>/output.md ...`
+- `ai.cli` writes final bilingual `output.md` directly.
+- Step 4 remains in the legacy step numbering but is now a no-op (informational skip).
 
-- Existing `output_pageXXXX.md` files are skipped automatically
-- Progress is written to `<temp_dir>/translation_progress.log` (JSONL)
-- Step 3 prints total elapsed time at completion
+**EPUB workflow (`--workflow epub`):**
 
-**EPUB workflow (checkpoint-based resume):**
-
-EPUB workflow uses checkpoint-based resume at `<temp_dir>/roundtrip_checkpoint/`:
-
-- Automatically resumes from last completed document
-- **Important**: By default, changing model invalidates checkpoint (ensures quality consistency)
-- Use `--force-resume` to resume after model switch (accepts potential quality inconsistency)
-
-Example use case for `--force-resume`:
-
-```bash
-# Start with flash model
-./translatebook.sh --workflow epub --model flash book.epub
-
-# If flash hits rate limit/capacity errors, switch to pro with force-resume
-./translatebook.sh --workflow epub --model pro --force-resume book.epub
-```
-
-**Warning**: `--force-resume` allows mixing translations from different models in the same book, which may cause inconsistent translation style and quality. Only use this when necessary (e.g., to work around Gemini CLI capacity/rate limit errors).
+- Translation is routed through `ai.cli`:
+  `python3 -u -m ai.cli <book.epub> --input-format epub --output <temp_dir>/translated_roundtrip.epub ...`
+- Legacy checkpoint resume is no longer used in this path.
+- `--force-resume` is accepted for compatibility but ignored (the script prints a warning).
 
 ### 3.1a) Alternative: Use Gemini API instead of CLI (experimental)
 
@@ -161,14 +147,14 @@ export GEMINI_API_KEY="your-api-key-here"
 Common commands:
 
 ```bash
-# Continue from translation to the end (skip already translated pages)
+# Continue from translation to render/export
 ./translatebook.sh --start-step 3 --output-format epub /path/to/book.epub
 
-# Continue from merge if Step 3 already finished
+# Continue from Step 4 bridge (no-op) to render/export if output.md already exists
 ./translatebook.sh --start-step 4 --output-format epub /path/to/book.epub
 
-# Force re-translation of every page (disable resume)
-./translatebook.sh --start-step 3 --no-skip --output-format epub /path/to/book.epub
+# Re-run translation step with explicit model/prompt overrides
+./translatebook.sh --start-step 3 --output-format epub /path/to/book.epub
 ```
 
 ### 3.2) EPUB preflight check (optional, recommended)
@@ -192,14 +178,14 @@ recommended for better reader compatibility.
 ```bash
 python3 01_convert_to_htmlz.py /path/to/book.epub
 # prepare a sample temp dir with page0001~page0003.md
-python3 03_translate_md.py --temp-dir <sample_temp_dir> --model gemini-2.5-flash --output-lang zh
+python3 -u -m ai.cli <sample_temp_dir> --input-format markdown --output <sample_temp_dir>/output.md --model gemini-2.5-flash --output-lang zh
 ```
 
 ## Pipeline
 
 1. `01_convert_to_htmlz.py` (normalize and split)
-2. `03_translate_md.py` (translation)
-3. `04_merge_md.py` (bilingual merge)
+2. `ai.cli` translation step (invoked by `translatebook.sh` step 3)
+3. Step 4 bridge (no-op; merged `output.md` already produced by `ai.cli`)
 4. `05_md_to_html.py` (HTML rendering)
 5. `06_add_toc.py` (TOC)
 6. `07_generate_formats.py` (EPUB/DOCX/PDF generation)
@@ -230,14 +216,14 @@ If you encounter persistent `AbortError: The user aborted a request` or similar 
 
 **Immediate solutions:**
 1. **Wait and retry** - Gemini CLI has traffic prioritization limits that vary by time of day
-2. **Use `--force-resume`** - Switch models without losing progress:
+2. **Switch model and retry** - current `ai.cli` workflow does not support checkpoint resume:
    ```bash
-   # Initial run with flash
-   ./translatebook.sh --workflow epub --model flash book.epub
-   
-   # If flash fails, resume with pro using force-resume
-   ./translatebook.sh --workflow epub --model pro --force-resume book.epub
-   ```
+    # Initial run with flash
+    ./translatebook.sh --workflow epub --model flash book.epub
+    
+    # If flash fails, retry with pro
+    ./translatebook.sh --workflow epub --model pro book.epub
+    ```
 3. **Use Gemini API (experimental)** - More stable alternative to CLI:
    ```bash
    export GEMINI_API_KEY="your-api-key"
@@ -377,8 +363,8 @@ uv run python3 00_extract_glossary.py book.epub -o glossary.json
 - If batch output segment count mismatches, it automatically falls back to binary split retry for that document.
 - In EPUB workflow, table cells are source-only (no `th/td` bilingual injection) for layout stability.
 - Model fallback chain is intentionally out of scope for this phase.
-- Step 3 output files (`output_pageXXXX.md`) are translation-only.
-- Bilingual content appears after Step 4 merge (`output.md`).
+- In markdown workflow, Step 3 (`ai.cli`) writes final bilingual `output.md` directly.
+- Step 4 in markdown workflow is a no-op bridge for legacy step numbering.
 - Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
 - `--bilingual-style` currently supports only `alternating`.
 - Step 6 can build TOC from markdown-style heading lines in HTML paragraphs, auto-creates a TOC container when missing, and defaults TOC entries to chapter-level (`h1`) headings.

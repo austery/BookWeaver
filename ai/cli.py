@@ -20,6 +20,7 @@ from ai.adapters.providers.gemini_cli_adapter import GeminiCLIAdapter
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
 from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
+from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider
 
@@ -105,12 +106,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Translation backend (default: cli)",
     )
     p.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
+    p.add_argument(
+        "--extract-glossary",
+        action="store_true",
+        help="Auto-extract glossary before translation (EPUB input only)",
+    )
     p.add_argument("--glossary", default=None, help="Path to extracted glossary JSON")
     p.add_argument(
         "--glossary-min-priority",
         default=None,
         choices=["critical", "high", "medium"],
         help="Minimum glossary term priority",
+    )
+    p.add_argument(
+        "--glossary-max-terms",
+        type=int,
+        default=None,
+        help="Max terms when auto-extracting glossary (EPUB input only)",
     )
     p.add_argument(
         "--cli-api-fallback",
@@ -166,6 +178,38 @@ def load_glossary_block(
     from ai.glossary_injector import GlossaryInjector
 
     return GlossaryInjector(Path(glossary_path)).format_block(min_priority=min_priority) or None
+
+
+def _resolve_extraction_temp_dir(input_path: str) -> Path:
+    """Resolve glossary extraction workspace path."""
+    input_name = Path(input_path).name
+    return Path(f"{Path(input_name).stem}_temp")
+
+
+def _extract_glossary_to_path(
+    *,
+    epub_path: Path,
+    output_path: Path,
+    provider_adapter: ITranslationProvider,
+    max_terms: int = 20,
+) -> None:
+    """Extract glossary JSON from EPUB and write to output_path."""
+    from ai.glossary_extractor import extract_glossary_from_epub
+
+    def translate_fn(prompt: str) -> str:
+        translated = provider_adapter.translate_batch([prompt], system_prompt="")
+        if not translated:
+            msg = "Glossary extraction returned empty response"
+            raise RuntimeError(msg)
+        return translated[0]
+
+    extract_glossary_from_epub(
+        epub_path=epub_path,
+        output_path=output_path,
+        translate_fn=translate_fn,
+        max_terms=max_terms,
+        full_index=False,
+    )
 
 
 def resolve_model(
@@ -244,9 +288,13 @@ def _resolve_api_key(config: dict[str, object] | None) -> str | None:
 def load_config() -> dict[str, object]:
     """Load runtime configuration from standard paths."""
     try:
-        from pipeline_utils import load_runtime_config
-
-        return load_runtime_config()
+        project_root = Path(__file__).resolve().parent.parent
+        config_paths = [
+            project_root / "config" / "config.json.example",
+            project_root / "config" / "config.json",
+            Path.home() / ".config" / "translatebook" / "config.json",
+        ]
+        return ConfigRegistry.from_json_files(config_paths).to_dict()
     except Exception:
         return {}
 
@@ -262,8 +310,10 @@ def run(
     model: str = "gemini-2.5-flash",
     provider: str = "cli",
     prompt: str | None = None,
+    extract_glossary: bool = False,
     glossary: str | None = None,
     glossary_min_priority: str | None = None,
+    glossary_max_terms: int | None = None,
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
     input_format: str = "auto",
@@ -289,14 +339,53 @@ def run(
         cli_api_fallback=cli_api_fallback,
     )
 
-    # 3. Build system prompt
+    # 3. Validate input and detect/resolve format
+    input_file = Path(input_path)
+    if not input_file.exists():
+        msg = f"Input path does not exist: {input_path}"
+        raise FileNotFoundError(msg)
+
+    fmt = input_format if input_format != "auto" else detect_input_format(input_path)
+
+    if glossary_max_terms is not None and glossary_max_terms <= 0:
+        msg = f"glossary_max_terms must be > 0, got {glossary_max_terms}"
+        raise ValueError(msg)
+
+    effective_glossary = glossary
+    if extract_glossary:
+        if fmt != "epub":
+            print(
+                "Warning: Glossary extraction is only supported for EPUBs; ignoring --extract-glossary."
+            )
+        else:
+            temp_dir = _resolve_extraction_temp_dir(input_path)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            extracted_glossary = temp_dir / "extracted_glossary.json"
+            print(f"[glossary] Extracting glossary to: {extracted_glossary}")
+            extract_model, extract_is_pro = resolve_model("pro", runtime_config)
+            extract_provider_adapter = create_provider(
+                provider,
+                extract_model,
+                is_pro=extract_is_pro,
+                config=runtime_config,
+                cli_api_fallback=cli_api_fallback,
+            )
+            _extract_glossary_to_path(
+                epub_path=input_file,
+                output_path=extracted_glossary,
+                provider_adapter=extract_provider_adapter,
+                max_terms=glossary_max_terms or 20,
+            )
+            effective_glossary = str(extracted_glossary)
+
+    # 4. Build system prompt
     language_name = _get_language_name(output_lang)
-    glossary_block = load_glossary_block(glossary, min_priority=glossary_min_priority)
+    glossary_block = load_glossary_block(effective_glossary, min_priority=glossary_min_priority)
     system_prompt = build_system_prompt(
         language_name, glossary_block=glossary_block, custom_prompt=prompt
     )
 
-    # 4. Configure engine
+    # 5. Configure engine
     batch_chars = max_batch_chars or (60_000 if is_pro else 10_000)
     engine_config = EngineConfig(
         system_prompt=system_prompt,
@@ -305,13 +394,7 @@ def run(
     )
     engine = TranslationEngine(provider_adapter, engine_config)
 
-    # 5. Create source adapter (format routing)
-    input_file = Path(input_path)
-    if not input_file.exists():
-        msg = f"Input path does not exist: {input_path}"
-        raise FileNotFoundError(msg)
-
-    fmt = input_format if input_format != "auto" else detect_input_format(input_path)
+    # 6. Create source adapter (format routing)
     if fmt == "markdown":
         md_dir = str(input_file) if input_file.is_dir() else str(input_file.parent)
         md_dir_path = Path(md_dir)
@@ -327,7 +410,7 @@ def run(
     else:
         source = EpubSourceAdapter(input_path)
 
-    # 6. Execute
+    # 7. Execute
     print(f"Translating {input_path} → {output} ({output_lang})")
     result = engine.translate(
         source,
@@ -349,8 +432,10 @@ def main() -> None:
         model=args.model,
         provider=args.provider,
         prompt=args.prompt,
+        extract_glossary=args.extract_glossary,
         glossary=args.glossary,
         glossary_min_priority=args.glossary_min_priority,
+        glossary_max_terms=args.glossary_max_terms,
         cli_api_fallback=args.cli_api_fallback,
         max_batch_chars=args.max_batch_chars,
         input_format=args.input_format,
