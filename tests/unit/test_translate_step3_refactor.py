@@ -29,7 +29,10 @@ class _RecordingProvider(ITranslationProvider):
     def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
         self.calls.append(list(segments))
         self.prompts.append(system_prompt)
-        if self._fail_on_batch_size_above is not None and len(segments) > self._fail_on_batch_size_above:
+        if (
+            self._fail_on_batch_size_above is not None
+            and len(segments) > self._fail_on_batch_size_above
+        ):
             raise TranslationError("simulated batch failure")
         return [f"T:{segment}" for segment in segments]
 
@@ -149,7 +152,9 @@ def test_translation_engine_split_retry_preserves_order(tmp_path: Path) -> None:
     source = _MemorySource(["A", "B"])
     engine = TranslationEngine(
         provider,
-        EngineConfig(system_prompt="SYSTEM", max_batch_chars=100, separator_overhead=0, max_split_depth=5),
+        EngineConfig(
+            system_prompt="SYSTEM", max_batch_chars=100, separator_overhead=0, max_split_depth=5
+        ),
     )
 
     result = engine.translate(source, str(tmp_path / "out.md"))

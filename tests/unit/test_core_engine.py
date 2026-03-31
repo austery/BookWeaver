@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import pytest
 
 from ai.core.engine import EngineConfig, TranslationEngine
-from ai.ports.provider import ITranslationProvider, TranslationError
+from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
 
@@ -307,3 +307,84 @@ class TestEngineConfig:
         assert cfg.max_batch_chars == 60_000
         assert cfg.separator_overhead == 6
         assert cfg.max_split_depth == 10
+
+
+# ── B1: RateLimitError must not trigger split-retry ───────────
+
+
+class AlwaysRateLimitProvider(ITranslationProvider):
+    """Always raises RateLimitError regardless of batch size."""
+
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    def translate_batch(
+        self,
+        segments: "Sequence[str]",
+        *,
+        system_prompt: str,
+    ) -> list[str]:
+        self.call_count += 1
+        raise RateLimitError("rate limited")
+
+
+class TestRateLimitPropagation:
+    def test_rate_limit_propagates_without_splitting(self) -> None:
+        """RateLimitError must propagate immediately — not trigger binary split."""
+        provider = AlwaysRateLimitProvider()
+        source = FakeSource(_make_segments(["A", "B", "C", "D"]))
+        engine = TranslationEngine(provider, _default_config(max_split_depth=10))
+
+        with pytest.raises(RateLimitError):
+            engine.translate(source, "/tmp/out.epub")
+
+    def test_rate_limit_calls_provider_exactly_once(self) -> None:
+        """Engine must not recursively split on RateLimitError — one call only."""
+        provider = AlwaysRateLimitProvider()
+        source = FakeSource(_make_segments(["A", "B"]))
+        engine = TranslationEngine(provider, _default_config(max_split_depth=5))
+
+        with pytest.raises(RateLimitError):
+            engine.translate(source, "/tmp/out.epub")
+
+        # Without the fix this would be 2**split_depth = 32 calls.
+        assert provider.call_count == 1
+
+
+# ── B3: Short provider must raise TranslationError, not ValueError ──
+
+
+class ShortProvider(ITranslationProvider):
+    """Returns one fewer translation than requested — simulates buggy adapter."""
+
+    def translate_batch(
+        self,
+        segments: "Sequence[str]",
+        *,
+        system_prompt: str,
+    ) -> list[str]:
+        return [f"ok:{s}" for s in segments][:-1]  # always drops last
+
+
+class TestSegmentCountMismatch:
+    def test_provider_returning_fewer_segments_raises_translation_error(self) -> None:
+        """Count mismatch must raise TranslationError, not a raw ValueError."""
+        provider = ShortProvider()
+        source = FakeSource(_make_segments(["A", "B"]))
+        engine = TranslationEngine(provider, _default_config(max_batch_chars=1000))
+
+        with pytest.raises(TranslationError):
+            engine.translate(source, "/tmp/out.epub")
+
+    def test_provider_returning_fewer_segments_not_value_error(self) -> None:
+        """Specifically must NOT leak ValueError from zip(strict=True)."""
+        provider = ShortProvider()
+        source = FakeSource(_make_segments(["A", "B"]))
+        engine = TranslationEngine(provider, _default_config(max_batch_chars=1000))
+
+        try:
+            engine.translate(source, "/tmp/out.epub")
+        except TranslationError:
+            pass  # expected
+        except ValueError as exc:
+            pytest.fail(f"Engine leaked ValueError instead of TranslationError: {exc}")

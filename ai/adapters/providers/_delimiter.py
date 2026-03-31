@@ -56,6 +56,8 @@ def split_response(output: str, expected_count: int) -> list[str]:
 
     normalized = output.strip()
     if expected_count == 1:
+        if not normalized:
+            raise TranslationError("provider returned empty translation")
         return [normalized]
 
     # Strategy 1: exact separator

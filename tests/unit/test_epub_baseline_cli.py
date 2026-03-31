@@ -86,7 +86,9 @@ def test_create_provider_api_uses_env_key_and_default_timeout(
     captured: dict[str, object] = {}
 
     class FakeGeminiAPIProvider:
-        def __init__(self, api_key: str | None, model: str, config: dict[str, object] | None) -> None:
+        def __init__(
+            self, api_key: str | None, model: str, config: dict[str, object] | None
+        ) -> None:
             captured["api_key"] = api_key
             captured["model"] = model
             captured["config"] = config

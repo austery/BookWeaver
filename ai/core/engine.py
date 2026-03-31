@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ai.core.batcher import TextBatcher
-from ai.ports.provider import ITranslationProvider, TranslationError
+from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import IBookSource, TranslatedSegment
 
 
@@ -106,6 +106,10 @@ class TranslationEngine:
             if on_batch_translated is not None:
                 on_batch_translated(i, len(batches))
 
+        if len(all_translated) != len(segments):
+            raise TranslationError(
+                f"provider returned {len(all_translated)} translations for {len(segments)} segments"
+            )
         translated_segments = [
             TranslatedSegment(id=seg.id, original=seg.text, translated=text)
             for seg, text in zip(segments, all_translated, strict=True)
@@ -138,6 +142,8 @@ class TranslationEngine:
             return self._provider.translate_batch(
                 segments, system_prompt=self._config.system_prompt
             )
+        except RateLimitError:
+            raise
         except TranslationError:
             can_split = len(segments) > 1 and _depth < self._config.max_split_depth
             if not can_split:

@@ -34,3 +34,10 @@ tmp/e2e/
 # Throwaway E2E test dirs
 md_test_input/
 md_test_output
+
+# E2E verification artifacts (root-level, generated during development)
+translated_*.epub
+translated_*.md
+test_book.epub
+*_Manager-Letter*.pdf
+generate_test_epub.py

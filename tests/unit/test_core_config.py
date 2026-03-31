@@ -77,4 +77,3 @@ def test_typed_getters_convert_common_primitives() -> None:
     assert cfg.get_int("limits.from_int") == 300
     assert cfg.get_int("limits.from_str") == 120
     assert cfg.get_int("limits.bad_int", default=42) == 42
-

@@ -724,6 +724,9 @@ main() {
         if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
             cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
         fi
+        if [[ -n "$GLOSSARY_MAX_TERMS" ]]; then
+            cmd+=(--glossary-max-terms "$GLOSSARY_MAX_TERMS")
+        fi
         if [[ "$FALLBACK_PROVIDER" == "api" ]]; then
             cmd+=(--cli-api-fallback)
         fi
@@ -737,6 +740,9 @@ main() {
         log_step "workflow-epub" "EPUB package-preserving translation workflow"
         if [[ "$FORCE_RESUME" == true ]]; then
             log_warning "--force-resume is ignored in ai.cli workflow (no checkpoint resume support)"
+        fi
+        if [[ "$BILINGUAL_STYLE" != "alternating" && -n "$BILINGUAL_STYLE" ]]; then
+            log_warning "--bilingual-style '$BILINGUAL_STYLE' is not supported in ai.cli workflow (only 'alternating' is supported)"
         fi
         if [[ "$DRY_RUN" == true ]]; then
             log_info "[DRY RUN] Would execute: $translate_cmd_display"

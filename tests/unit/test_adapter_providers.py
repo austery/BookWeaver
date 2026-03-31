@@ -57,6 +57,16 @@ class TestSplitResponse:
         text = "一\n\n%%\n\n二\n\n%%\n\n三"
         assert split_response(text, 3) == ["一", "二", "三"]
 
+    def test_empty_output_single_segment_raises(self) -> None:
+        """Empty provider output must raise TranslationError, not return ['']."""
+        with pytest.raises(TranslationError, match="empty"):
+            split_response("", 1)
+
+    def test_whitespace_only_output_single_segment_raises(self) -> None:
+        """Whitespace-only output is also empty — must raise TranslationError."""
+        with pytest.raises(TranslationError, match="empty"):
+            split_response("   \n  ", 1)
+
 
 class TestAugmentPrompt:
     def test_single_segment_unchanged(self) -> None:

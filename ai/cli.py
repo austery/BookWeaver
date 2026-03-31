@@ -229,7 +229,10 @@ def resolve_model(
         return resolved.name, getattr(resolved, "role", None) is not None and str(
             getattr(resolved, "role", "")
         ).endswith("PRO")
-    except Exception:
+    except Exception as exc:
+        import sys
+
+        print(f"Warning: model resolution failed ({exc}), using fallback", file=sys.stderr)
         is_pro = "pro" in model_name.lower()
         return model_name, is_pro
 
@@ -295,7 +298,10 @@ def load_config() -> dict[str, object]:
             Path.home() / ".config" / "translatebook" / "config.json",
         ]
         return ConfigRegistry.from_json_files(config_paths).to_dict()
-    except Exception:
+    except Exception as exc:
+        import sys
+
+        print(f"Warning: config load failed ({exc}), using defaults", file=sys.stderr)
         return {}
 
 

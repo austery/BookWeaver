@@ -238,7 +238,10 @@ def test_lint_workflow_exists_with_required_quality_gate_steps() -> None:
     assert has_tach_step, "Expected lint job to run 'uv run tach check'"
 
     has_ruff_steps = all(
-        any(_command_contains_tokens(command, tokens) for command in workflow.jobs[lint_job_id].run_commands)
+        any(
+            _command_contains_tokens(command, tokens)
+            for command in workflow.jobs[lint_job_id].run_commands
+        )
         for tokens in (("ruff", "check"), ("ruff", "format", "--check"))
     )
     assert has_ruff_steps, (
