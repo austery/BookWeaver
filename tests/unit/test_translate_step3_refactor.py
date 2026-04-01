@@ -1,350 +1,164 @@
 from __future__ import annotations
 
-import importlib.util
-import json
-import sys
-import types
+import warnings
 from pathlib import Path
 
 import pytest
 
-
-def _load_step3_module() -> types.ModuleType:
-    project_root = Path(__file__).resolve().parents[2]
-    file_path = project_root / "03_translate_md.py"
-    spec = importlib.util.spec_from_file_location("step3_module", file_path)
-    if spec is None or spec.loader is None:
-        raise AssertionError("Failed to load 03_translate_md.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from ai import cli
+from ai.core.batcher import TextBatcher
+from ai.core.engine import EngineConfig, TranslationEngine
+from ai.ports.provider import ITranslationProvider, TranslationError
+from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
 
-def test_step3_exposes_gemini_cli_check() -> None:
-    module = _load_step3_module()
-    assert hasattr(module, "check_gemini_cli"), "Expected check_gemini_cli function"
+class _Probe:
+    def __init__(self, availability: dict[str, bool]) -> None:
+        self._availability = availability
+
+    def probe(self, candidates: list[str]) -> dict[str, bool]:
+        return {candidate: self._availability.get(candidate, False) for candidate in candidates}
 
 
-def test_step3_parse_arguments_accepts_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_step3_module()
-    monkeypatch.setattr(
-        sys,
-        "argv",
+class _RecordingProvider(ITranslationProvider):
+    def __init__(self, *, fail_on_batch_size_above: int | None = None) -> None:
+        self.calls: list[list[str]] = []
+        self.prompts: list[str] = []
+        self._fail_on_batch_size_above = fail_on_batch_size_above
+
+    def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+        self.calls.append(list(segments))
+        self.prompts.append(system_prompt)
+        if (
+            self._fail_on_batch_size_above is not None
+            and len(segments) > self._fail_on_batch_size_above
+        ):
+            raise TranslationError("simulated batch failure")
+        return [f"T:{segment}" for segment in segments]
+
+
+class _MemorySource(IBookSource):
+    def __init__(self, segments: list[str]) -> None:
+        self._segments = [Segment(id=f"s{i}", text=text) for i, text in enumerate(segments)]
+        self.applied: list[TranslatedSegment] = []
+        self.saved_to: str | None = None
+
+    def get_segments(self) -> list[Segment]:
+        return self._segments
+
+    def apply_translations(self, translated: list[TranslatedSegment]) -> None:
+        self.applied = translated
+
+    def save(self, output_path: str) -> None:
+        self.saved_to = output_path
+
+
+def test_build_parser_accepts_model_and_probe_related_flags() -> None:
+    parser = cli.build_parser()
+    args = parser.parse_args(
         [
-            "03_translate_md.py",
-            "--temp-dir",
-            "/tmp/demo",
+            "book.epub",
+            "--output",
+            "translated.epub",
             "--model",
             "gemini-2.5-pro",
-        ],
+            "--provider",
+            "api",
+        ]
     )
-    args = module.parse_arguments()
     assert args.model == "gemini-2.5-pro"
+    assert args.provider == "api"
 
 
-def test_step3_parse_arguments_accepts_non_hardcoded_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_step3_module()
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "03_translate_md.py",
-            "--temp-dir",
-            "/tmp/demo",
-            "--model",
-            "gemini-3-pro-preview",
-        ],
-    )
-    args = module.parse_arguments()
-    assert args.model == "gemini-3-pro-preview"
-
-
-def test_step3_load_runtime_config_has_default_model() -> None:
-    module = _load_step3_module()
-    config = module.load_runtime_config()
-    assert isinstance(config, dict)
-    assert config.get("default_model"), "Expected default_model in runtime config"
-
-
-def test_step3_create_translation_prompt_from_external_template(tmp_path: Path) -> None:
-    module = _load_step3_module()
-    template_path = tmp_path / "prompt.txt"
-    template_path.write_text(
-        "Translate to {TARGET_LANGUAGE}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:",
-        encoding="utf-8",
-    )
+def test_resolve_model_alias_with_probe_fallback_prefers_available_candidate() -> None:
     config = {
-        "prompt_profile": "default",
-        "prompt_templates": {"default": str(template_path)},
-    }
-    prompt = module.create_translation_prompt(
-        "zh",
-        "extra-rule",
-        runtime_config=config,
-    )
-    assert "ADDITIONAL INSTRUCTIONS" in prompt
-
-
-def test_step3_resolve_model_name_supports_alias() -> None:
-    module = _load_step3_module()
-    config = {"model_aliases": {"pro": "gemini-2.5-pro"}}
-    assert module.resolve_model_name("pro", config) == "gemini-2.5-pro"
-
-
-def test_step3_fallback_chain_selects_first_available() -> None:
-    module = _load_step3_module()
-
-    class FakeProbe:
-        def __init__(self) -> None:
-            self.last_probe_errors = {"gemini-2.5-pro": "not available"}
-
-        def probe(self, candidates: list[str]) -> dict[str, bool]:
-            assert candidates == ["gemini-2.5-pro", "gemini-2.5-flash"]
-            return {"gemini-2.5-pro": False, "gemini-2.5-flash": True}
-
-    config = {
-        "model_aliases": {
-            "pro": "gemini-2.5-pro",
-            "flash": "gemini-2.5-flash",
-        },
+        "model_aliases": {"pro": "gemini-2.5-pro", "flash": "gemini-2.5-flash"},
         "fallback_chain": ["flash"],
+        "enable_fallback": True,
         "model_probe": {"enabled": True},
     }
 
-    selected_model = module.select_model_with_fallback("pro", config, probe=FakeProbe())
-    assert selected_model == "gemini-2.5-flash"
+    with pytest.MonkeyPatch.context() as mp:
+        from ai import model_probe as probe_module
+
+        mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({"gemini-2.5-flash": True}))
+        resolved_model, is_pro = cli.resolve_model("pro", config)
+
+    assert resolved_model == "gemini-2.5-flash"
+    assert is_pro is False
 
 
-def test_step3_prompt_without_placeholder_still_appends_custom_block(tmp_path: Path) -> None:
-    module = _load_step3_module()
-    template_path = tmp_path / "prompt.txt"
-    template_path.write_text("Translate to {TARGET_LANGUAGE}\nBody:", encoding="utf-8")
+def test_resolve_model_without_probe_falls_back_to_name_heuristics() -> None:
+    with pytest.MonkeyPatch.context() as mp:
+        from ai import model_resolver as resolver_module
+
+        class _ExplodingResolver:
+            def __init__(self, config: dict[str, object]) -> None:
+                raise RuntimeError("resolver unavailable")
+
+        mp.setattr(resolver_module, "ModelResolver", _ExplodingResolver)
+        resolved_model, is_pro = cli.resolve_model("gemini-3-pro-preview", {})
+
+    assert resolved_model == "gemini-3-pro-preview"
+    assert is_pro is True
+
+
+def test_resolve_model_warns_and_returns_primary_when_probe_rejects_all() -> None:
     config = {
-        "prompt_profile": "default",
-        "prompt_templates": {"default": str(template_path)},
+        "model_aliases": {"pro": "gemini-2.5-pro", "flash": "gemini-2.5-flash"},
+        "fallback_chain": ["flash"],
+        "enable_fallback": True,
+        "model_probe": {"enabled": True},
     }
 
-    prompt = module.create_translation_prompt(
-        "zh",
-        custom_prompt="be concise",
-        runtime_config=config,
-    )
-    assert "ADDITIONAL INSTRUCTIONS" in prompt
+    with pytest.MonkeyPatch.context() as mp:
+        from ai import model_probe as probe_module
+
+        mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({}))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            resolved_model, is_pro = cli.resolve_model("pro", config)
+
+    assert resolved_model == "gemini-2.5-pro"
+    assert is_pro is True
+    assert any("All model candidates unavailable" in str(w.message) for w in caught)
 
 
-def test_step3_parse_arguments_supports_skip_probe_preview(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_step3_module()
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "03_translate_md.py",
-            "--temp-dir",
-            "/tmp/demo",
-            "--preview-model-selection",
-            "--skip-probe",
-        ],
-    )
-    args = module.parse_arguments()
-    assert args.preview_model_selection is True
-    assert args.skip_probe is True
+def test_text_batcher_accounts_for_separator_overhead() -> None:
+    batcher = TextBatcher(max_batch_chars=12, separator_overhead=6)
+    assert batcher.plan_batches(["abc", "def"]) == [["abc", "def"]]
+    assert batcher.plan_batches(["abc", "def", "ghi"]) == [["abc", "def"], ["ghi"]]
 
 
-def test_step3_parse_arguments_supports_no_resume(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_step3_module()
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "03_translate_md.py",
-            "--temp-dir",
-            "/tmp/demo",
-            "--no-resume",
-        ],
-    )
-    args = module.parse_arguments()
-    assert args.no_resume is True
-
-
-def test_step3_translate_markdown_files_can_disable_resume(
-    monkeypatch: pytest.MonkeyPatch, temp_dir: Path
-) -> None:
-    module = _load_step3_module()
-
-    page_file = temp_dir / "page0001.md"
-    page_file.write_text("Hello world", encoding="utf-8")
-    output_file = temp_dir / "output_page0001.md"
-    output_file.write_text("old translation", encoding="utf-8")
-
-    monkeypatch.setattr(
-        module, "select_model_with_fallback", lambda *args, **kwargs: "gemini-2.5-flash"
-    )
-    monkeypatch.setattr(
-        module, "translate_with_gemini_cli", lambda *args, **kwargs: "new translation"
-    )
-    monkeypatch.setattr(module.time, "sleep", lambda *_: None)
-
-    module.translate_markdown_files(
-        str(temp_dir),
-        "zh",
-        runtime_config={"default_model": "gemini-2.5-flash"},
-        resume=False,
+def test_translation_engine_respects_batches_and_prompts(tmp_path: Path) -> None:
+    provider = _RecordingProvider()
+    source = _MemorySource(["alpha", "beta", "gamma"])
+    engine = TranslationEngine(
+        provider,
+        EngineConfig(system_prompt="SYSTEM", max_batch_chars=6, separator_overhead=0),
     )
 
-    assert output_file.read_text(encoding="utf-8") == "new translation"
-    progress_log = temp_dir / "translation_progress.log"
-    assert progress_log.exists()
-    assert "page0001.md" in progress_log.read_text(encoding="utf-8")
+    result = engine.translate(source, str(tmp_path / "out.md"))
+
+    assert result.total_segments == 3
+    assert result.total_batches == 3
+    assert [call for call in provider.calls] == [["alpha"], ["beta"], ["gamma"]]
+    assert provider.prompts == ["SYSTEM", "SYSTEM", "SYSTEM"]
+    assert [segment.translated for segment in source.applied] == ["T:alpha", "T:beta", "T:gamma"]
 
 
-def test_load_runtime_config_invalid_json_raises_with_message(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    module = _load_step3_module()
-
-    # Create the user config path that load_runtime_config() looks for:
-    # Path.home() / ".config" / "translatebook" / "config.json"
-    config_dir = tmp_path / ".config" / "translatebook"
-    config_dir.mkdir(parents=True)
-    (config_dir / "config.json").write_text("{not valid json", encoding="utf-8")
-
-    # Patch Path.home so it returns tmp_path instead of the real home directory.
-    # Path.home is a classmethod, so we patch it as a staticmethod returning tmp_path.
-    import pathlib
-
-    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: tmp_path))
-
-    with pytest.raises(json.JSONDecodeError):
-        module.load_runtime_config()
-
-
-def test_translate_files_resume_skips_existing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """resume=True must skip files that already have output_*.md."""
-    module = _load_step3_module()
-
-    # Create input and pre-existing output files
-    input_file = tmp_path / "page0001.md"
-    input_file.write_text("Some content", encoding="utf-8")
-    output_file = tmp_path / "output_page0001.md"
-    output_file.write_text("Already translated", encoding="utf-8")
-
-    translate_calls: list[str] = []
-
-    def fake_translate_with_gemini_cli(
-        text: str, output_lang: str, model: str, custom_prompt: str | None = None, **kwargs: object
-    ) -> str:
-        translate_calls.append(text)
-        return "translated"
-
-    monkeypatch.setattr(module, "translate_with_gemini_cli", fake_translate_with_gemini_cli)
-
-    module.translate_markdown_files(
-        temp_dir=str(tmp_path),
-        output_lang="zh",
-        runtime_config={
-            "default_model": "gemini-2.5-flash",
-            "prompt_profile": "default",
-            "prompt_templates": {"default": "config/prompts/default_prompt.txt"},
-            "model_aliases": {},
-            "fallback_chain": [],
-            "model_probe": {"enabled": False},
-        },
-        resume=True,
-    )
-    assert translate_calls == [], "translation should NOT be attempted for existing output file"
-
-
-def test_deep_merge_dict_nested_merge() -> None:
-    """Nested keys should be merged, not replaced wholesale."""
-    module = _load_step3_module()
-    base = {"model_thresholds": {"small": {"max_chars": 5000, "model": "flash"}}}
-    override = {"model_thresholds": {"small": {"model": "pro"}}}
-    result = module._deep_merge_dict(base, override)
-    assert result["model_thresholds"]["small"]["max_chars"] == 5000
-    assert result["model_thresholds"]["small"]["model"] == "pro"
-
-
-def test_resolve_model_alias_cycle_detection() -> None:
-    """Alias cycles must raise ValueError with helpful message."""
-    module = _load_step3_module()
-    cyclic_config = {"model_aliases": {"pro": "flash", "flash": "pro"}}
-    with pytest.raises(ValueError, match="cycle detected"):
-        module.resolve_model_name("pro", runtime_config=cyclic_config)
-
-
-def test_load_runtime_config_permission_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """PermissionError on user config propagates with path info."""
-    module = _load_step3_module()
-    config_dir = tmp_path / ".config" / "translatebook"
-    config_dir.mkdir(parents=True)
-    config_path = config_dir / "config.json"
-    config_path.write_text('{"default_model": "flash"}', encoding="utf-8")
-    config_path.chmod(0o000)  # no-read
-
-    import pathlib
-
-    monkeypatch.setattr(pathlib.Path, "home", staticmethod(lambda: tmp_path))
-
-    try:
-        with pytest.raises(PermissionError):
-            module.load_runtime_config()
-    finally:
-        config_path.chmod(0o644)  # restore so tmp_path cleanup works
-
-
-def test_create_translation_prompt_injects_glossary_block(tmp_path: Path) -> None:
-    """GLOSSARY_BLOCK placeholder is replaced with glossary content when path given."""
-    module = _load_step3_module()
-
-    glossary_data = {
-        "critical_terminology": [
-            {
-                "term": "Connascence",
-                "suggested_translation": "共生性",
-                "negative_constraint": "NOT 并发性",
-                "reason": "author concept",
-                "priority": "critical",
-            }
-        ]
-    }
-    gpath = tmp_path / "glossary.json"
-    gpath.write_text(json.dumps(glossary_data), encoding="utf-8")
-
-    template_with_glossary = (
-        "Translate to {TARGET_LANGUAGE}\n{GLOSSARY_BLOCK}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:"
+def test_translation_engine_split_retry_preserves_order(tmp_path: Path) -> None:
+    provider = _RecordingProvider(fail_on_batch_size_above=1)
+    source = _MemorySource(["A", "B"])
+    engine = TranslationEngine(
+        provider,
+        EngineConfig(
+            system_prompt="SYSTEM", max_batch_chars=100, separator_overhead=0, max_split_depth=5
+        ),
     )
 
-    from unittest.mock import mock_open, patch
+    result = engine.translate(source, str(tmp_path / "out.md"))
 
-    with patch(
-        "builtins.open",
-        mock_open(read_data=template_with_glossary),
-    ):
-        prompt = module.create_translation_prompt("zh", glossary_path=gpath)
-
-    assert "Connascence" in prompt
-    assert "共生性" in prompt
-    assert "{GLOSSARY_BLOCK}" not in prompt
-
-
-def test_create_translation_prompt_glossary_absent_when_no_path() -> None:
-    """When no glossary_path given, {GLOSSARY_BLOCK} placeholder is stripped."""
-    module = _load_step3_module()
-
-    template_with_glossary = (
-        "Translate to {TARGET_LANGUAGE}\n{GLOSSARY_BLOCK}\n{CUSTOM_INSTRUCTIONS_BLOCK}\nBody:"
-    )
-
-    from unittest.mock import mock_open, patch
-
-    with patch(
-        "builtins.open",
-        mock_open(read_data=template_with_glossary),
-    ):
-        prompt = module.create_translation_prompt("zh")
-
-    assert "{GLOSSARY_BLOCK}" not in prompt
+    assert result.translated_segments == 2
+    assert provider.calls[0] == ["A", "B"]
+    assert [segment.translated for segment in source.applied] == ["T:A", "T:B"]

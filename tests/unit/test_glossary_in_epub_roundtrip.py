@@ -1,150 +1,95 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-from ai.epub_translate_roundtrip import _create_translation_prompt
+import pytest
+
+from ai.cli import build_system_prompt, load_glossary_block
 from ai.glossary_injector import GlossaryInjector
 
 
 def _write_glossary(tmp_path: Path) -> Path:
-    data = {
+    glossary = {
         "critical_terminology": [
             {
                 "term": "Connascence",
                 "suggested_translation": "共生性",
                 "negative_constraint": "NOT 并发性",
-                "reason": "author concept",
                 "priority": "critical",
-            }
+            },
+            {
+                "term": "Shift Left",
+                "suggested_translation": "左移",
+                "negative_constraint": "NOT 左边",
+                "priority": "high",
+            },
+            {
+                "term": "Tech Debt",
+                "suggested_translation": "技术债务",
+                "negative_constraint": "",
+                "priority": "medium",
+            },
         ]
     }
-    p = tmp_path / "glossary.json"
-    p.write_text(json.dumps(data), encoding="utf-8")
-    return p
+    path = tmp_path / "glossary.json"
+    path.write_text(json.dumps(glossary), encoding="utf-8")
+    return path
 
 
-def test_create_translation_prompt_with_glossary(tmp_path: Path) -> None:
-    """_create_translation_prompt includes glossary content when glossary provided."""
+def test_load_glossary_block_filters_priority_for_prompt_budget(tmp_path: Path) -> None:
     gpath = _write_glossary(tmp_path)
-    injector = GlossaryInjector(gpath)
-    glossary_block = injector.format_block()
 
-    prompt = _create_translation_prompt("zh", None, segment_count=1, glossary=glossary_block)
+    filtered = load_glossary_block(str(gpath), min_priority="high")
+
+    assert filtered is not None
+    assert "Connascence" in filtered
+    assert "Shift Left" in filtered
+    assert "Tech Debt" not in filtered
+
+
+def test_build_system_prompt_places_glossary_before_custom_instructions(tmp_path: Path) -> None:
+    gpath = _write_glossary(tmp_path)
+    glossary_block = load_glossary_block(str(gpath))
+    prompt = build_system_prompt(
+        "Chinese",
+        glossary_block=glossary_block,
+        custom_prompt="Preserve code blocks and URLs exactly.",
+    )
+
+    glossary_idx = prompt.find("【关键术语约束】")
+    custom_idx = prompt.find("ADDITIONAL INSTRUCTIONS")
+
+    assert glossary_idx != -1
+    assert custom_idx != -1
+    assert glossary_idx < custom_idx
     assert "Connascence" in prompt
     assert "共生性" in prompt
 
 
-def test_create_translation_prompt_no_glossary() -> None:
-    """_create_translation_prompt works unchanged when no glossary given."""
-    prompt = _create_translation_prompt("zh", None, segment_count=1, glossary=None)
-    assert "Connascence" not in prompt
-    assert isinstance(prompt, str)
-    assert len(prompt) > 0
+def test_build_system_prompt_without_glossary_omits_terminology_block() -> None:
+    prompt = build_system_prompt("Chinese", custom_prompt="No glossary for this run.")
+
+    assert "【关键术语约束】" not in prompt
+    assert "ADDITIONAL INSTRUCTIONS" in prompt
 
 
-# ── TDD: Prompt pollution prevention ────────────────────────────────
-
-
-def test_glossary_block_before_translate_marker(tmp_path: Path) -> None:
-    """Glossary block MUST appear BEFORE 'Translate to' marker in prompt.
-
-    Root cause of prompt pollution: when glossary sits after 'Translate to X:',
-    the CLI provider concatenates prompt + source text, making Gemini see the
-    glossary as content to translate rather than instructions.
-    """
+def test_glossary_injector_and_cli_loader_produce_consistent_glossary_block(
+    tmp_path: Path,
+) -> None:
     gpath = _write_glossary(tmp_path)
-    injector = GlossaryInjector(gpath)
-    glossary_block = injector.format_block()
 
-    prompt = _create_translation_prompt("zh", None, segment_count=5, glossary=glossary_block)
+    via_injector = GlossaryInjector(gpath).format_block(min_priority="critical")
+    via_cli = load_glossary_block(str(gpath), min_priority="critical")
 
-    # Find positions
-    translate_marker = re.search(r"Translate to .+:", prompt)
-    glossary_pos = prompt.find("关键术语约束")
-
-    assert translate_marker is not None, "Prompt must contain 'Translate to X:' marker"
-    assert glossary_pos != -1, "Prompt must contain glossary block"
-    assert glossary_pos < translate_marker.start(), (
-        f"Glossary (pos={glossary_pos}) must appear BEFORE 'Translate to' marker "
-        f"(pos={translate_marker.start()}) to prevent prompt pollution. "
-        f"When glossary is after the marker, CLI provider sends it as content to translate."
-    )
+    assert via_cli == via_injector
+    assert via_cli is not None
+    assert "Connascence" in via_cli
+    assert "Shift Left" not in via_cli
 
 
-def test_glossary_block_before_translate_marker_single_segment(tmp_path: Path) -> None:
-    """Same rule applies for single-segment prompts."""
-    gpath = _write_glossary(tmp_path)
-    injector = GlossaryInjector(gpath)
-    glossary_block = injector.format_block()
+def test_load_glossary_block_with_missing_file_raises(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.json"
 
-    prompt = _create_translation_prompt("zh", None, segment_count=1, glossary=glossary_block)
-
-    translate_marker = re.search(r"Translate to .+:", prompt)
-    glossary_pos = prompt.find("关键术语约束")
-
-    assert translate_marker is not None
-    assert glossary_pos != -1
-    assert glossary_pos < translate_marker.start(), (
-        "Glossary must appear before 'Translate to' marker for single-segment too"
-    )
-
-
-def test_custom_prompt_before_translate_marker() -> None:
-    """Custom prompt (ADDITIONAL INSTRUCTIONS) must also come before 'Translate to' marker."""
-    prompt = _create_translation_prompt(
-        "zh", "Keep all code blocks intact.", segment_count=3, glossary=None
-    )
-
-    translate_marker = re.search(r"Translate to .+:", prompt)
-    custom_pos = prompt.find("ADDITIONAL INSTRUCTIONS")
-
-    assert translate_marker is not None
-    assert custom_pos != -1
-    assert custom_pos < translate_marker.start(), (
-        "Custom prompt must appear before 'Translate to' marker to prevent pollution"
-    )
-
-
-def test_glossary_and_custom_prompt_both_before_translate_marker(tmp_path: Path) -> None:
-    """When both glossary and custom prompt exist, both must precede the translate marker."""
-    gpath = _write_glossary(tmp_path)
-    injector = GlossaryInjector(gpath)
-    glossary_block = injector.format_block()
-
-    prompt = _create_translation_prompt(
-        "zh", "Preserve formatting.", segment_count=10, glossary=glossary_block
-    )
-
-    translate_marker = re.search(r"Translate to .+:", prompt)
-    glossary_pos = prompt.find("关键术语约束")
-    custom_pos = prompt.find("ADDITIONAL INSTRUCTIONS")
-
-    assert translate_marker is not None
-    assert glossary_pos != -1
-    assert custom_pos != -1
-    assert glossary_pos < translate_marker.start()
-    assert custom_pos < translate_marker.start()
-
-
-def test_translate_marker_is_last_instruction_in_prompt(tmp_path: Path) -> None:
-    """'Translate to X:' must be the very last line of the prompt.
-
-    This ensures the CLI provider places it right before the source text,
-    creating a clean boundary between instructions and content.
-    """
-    gpath = _write_glossary(tmp_path)
-    injector = GlossaryInjector(gpath)
-    glossary_block = injector.format_block()
-
-    prompt = _create_translation_prompt(
-        "zh", "Extra instructions.", segment_count=5, glossary=glossary_block
-    )
-
-    # The prompt should end with the "Translate to X:" line (possibly trailing whitespace)
-    lines = [line for line in prompt.strip().split("\n") if line.strip()]
-    last_line = lines[-1].strip()
-    assert re.match(r"Translate to .+:", last_line), (
-        f"Last line of prompt should be 'Translate to X:' but got: '{last_line}'"
-    )
+    with pytest.raises(FileNotFoundError, match="Glossary file not found"):
+        load_glossary_block(str(missing))

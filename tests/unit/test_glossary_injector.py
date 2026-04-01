@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from ai.core.glossary import GlossaryManager
 from ai.glossary_injector import GlossaryInjector
 
 
@@ -105,6 +106,31 @@ def test_load_wrong_schema_raises(tmp_path: Path) -> None:
     p.write_text(json.dumps({"wrong_key": []}), encoding="utf-8")
     with pytest.raises(ValueError, match="missing 'critical_terminology'"):
         GlossaryInjector(p)
+
+
+def test_glossary_injector_shim_matches_core_manager(tmp_path: Path) -> None:
+    path = write_glossary(tmp_path, MEDIUM_GLOSSARY)
+
+    injector = GlossaryInjector(path)
+    manager = GlossaryManager.from_json_file(path)
+
+    assert injector.terms == manager.terms
+    assert injector.format_block(min_priority="high") == manager.format_block(min_priority="high")
+
+
+def test_glossary_injector_propagates_invalid_entry_index(tmp_path: Path) -> None:
+    path = write_glossary(
+        tmp_path,
+        {
+            "critical_terminology": [
+                {"term": "Connascence", "suggested_translation": "共生性", "priority": "critical"},
+                "invalid",
+            ]
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"critical_terminology\[1\]"):
+        GlossaryInjector(path)
 
 
 def test_format_block_prioritizes_critical_terms(tmp_path: Path) -> None:

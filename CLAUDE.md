@@ -11,14 +11,12 @@ This is a concise contributor guide. User-facing usage is in `README.md`.
 ## Key entrypoints
 
 - `translatebook.sh` — main orchestrator
+- `ai/cli.py` — unified translation entry point (EPUB, Markdown, PDF via `python -m ai.cli`)
 - `00_extract_glossary.py` — optional pre-step: extract terminology glossary from EPUB index/toc
-- `01_convert_to_htmlz.py` — convert input to markdown chunks
-- `03_translate_md.py` — translate chunks with model selection
-- `04_merge_md.py` — merge source + translation
-- `05_md_to_html.py` — render bilingual alternating HTML
-- `07_generate_formats.py` — export requested final formats
+- `01_convert_to_htmlz.py` — convert input to markdown chunks (legacy markdown workflow)
+- `05_md_to_html.py` — render bilingual alternating HTML (legacy markdown workflow)
+- `07_generate_formats.py` — export requested final formats (legacy markdown workflow)
 - `08_epub_roundtrip_baseline.py` — EPUB baseline roundtrip (zero text mutation)
-- `09_epub_translate_roundtrip.py` — EPUB package-aware translation roundtrip
 
 ## Prompt source
 
@@ -43,6 +41,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - `--glossary <path>` passes a pre-extracted glossary directly to the EPUB translation step
 - `--glossary-min-priority` (default: all) filters glossary terms: `critical`, `high`, or `all` (excludes lower priorities to reduce prompt bloat)
 - `--only-docs <indices>` limits EPUB translation to specific spine docs (comma-separated, useful for A/B testing); e.g., `--only-docs 3,4`
+  - **⚠️ SPEC-012 note**: `--only-docs` is not implemented in `ai.cli` / `EpubSourceAdapter`. It remains in the legacy `ai/epub_translate_roundtrip.py` only. Use `ai.cli` without this flag; subset testing requires running the legacy script directly.
 - Glossary block injected via `{GLOSSARY_BLOCK}` placeholder in prompt templates (before `{CUSTOM_INSTRUCTIONS_BLOCK}`); empty string when no glossary
 - Glossary extraction uses Pro model by default (reliable terminology selection), supports `--full-index` for comprehensive extraction without AI filtering
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
@@ -83,7 +82,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - `ai/glossary_extractor.py` — Two-pass index detection (Kindle-aware)
 - `00_extract_glossary.py` — CLI entry with CLI→API fallback
 - `config/schemas/glossary_schema.json` — JSON validation schema
-- `ai/epub_translate_roundtrip.py` — Glossary threading through EPUB translation
+- `ai/epub_translate_roundtrip.py` — Legacy EPUB translation (pre-SPEC-012). **Not called by `ai.cli`; retained for reference and `--only-docs` debugging use case. Scheduled for removal after full validation.**
 
 ### SPEC-011: Model Routing & Provider Factory
 

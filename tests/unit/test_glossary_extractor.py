@@ -107,6 +107,17 @@ def test_validate_and_parse_glossary_missing_key_raises() -> None:
         _validate_and_parse_glossary('{"wrong": []}')
 
 
+def test_validate_and_parse_glossary_accepts_non_dict_entries_for_model_compatibility() -> None:
+    raw = '{"critical_terminology": ["raw term string"]}'
+    result = _validate_and_parse_glossary(raw)
+    assert result["critical_terminology"] == ["raw term string"]
+
+
+def test_validate_and_parse_glossary_rejects_non_object_root() -> None:
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        _validate_and_parse_glossary("[]")
+
+
 def test_extract_glossary_from_epub_writes_json(tmp_path: Path) -> None:
     """Integration: extract_glossary_from_epub calls translate_fn and writes JSON."""
     epub = _make_minimal_epub(tmp_path, index_content="Connascence, 42", toc_content="Chapter 1")

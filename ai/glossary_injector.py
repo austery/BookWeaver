@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from ai.core.glossary import GlossaryManager
 
 
 class GlossaryInjector:
@@ -23,22 +24,9 @@ class GlossaryInjector:
         }
     """
 
-    _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
-
     def __init__(self, glossary_path: Path) -> None:
-        if not glossary_path.exists():
-            raise FileNotFoundError(f"Glossary file not found: {glossary_path}")
-        raw = glossary_path.read_text(encoding="utf-8")
-        try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Invalid glossary JSON at {glossary_path}: {exc}") from exc
-        if "critical_terminology" not in data:
-            raise ValueError(f"Glossary at {glossary_path} missing 'critical_terminology' key")
-        self.terms: list[dict] = sorted(
-            data["critical_terminology"],
-            key=lambda t: self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2),
-        )
+        self._manager = GlossaryManager.from_json_file(glossary_path)
+        self.terms: list[dict[str, object]] = list(self._manager.terms)
 
     def format_block(self, min_priority: str | None = None) -> str:
         """Return a prompt block string, or empty string if no terms.
@@ -48,23 +36,4 @@ class GlossaryInjector:
                           Values: "critical" (strictest), "high", "medium" (all).
                           Default None means include all terms.
         """
-        terms = self.terms
-        if min_priority is not None:
-            cutoff = self._PRIORITY_ORDER.get(min_priority, 2)
-            terms = [
-                t
-                for t in terms
-                if self._PRIORITY_ORDER.get(t.get("priority", "medium"), 2) <= cutoff
-            ]
-        if not terms:
-            return ""
-        lines: list[str] = ["【关键术语约束】以下术语必须严格遵守标准译法："]
-        for entry in terms:
-            term = entry.get("term", "")
-            translation = entry.get("suggested_translation", "")
-            negative = entry.get("negative_constraint", "")
-            line = f"  • {term} → {translation}"
-            if negative:
-                line += f"（{negative}）"
-            lines.append(line)
-        return "\n".join(lines)
+        return self._manager.format_block(min_priority=min_priority)

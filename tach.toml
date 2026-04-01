@@ -1,0 +1,37 @@
+# BookWeaver Hexagonal Architecture Boundaries
+# Enforces Ports & Adapters dependency rules for ai/ sub-packages.
+# Legacy ai/*.py files are NOT constrained (incremental adoption).
+
+exclude = [
+  "**/__pycache__",
+  "tests/",
+  "venv/",
+  ".venv/",
+  "tmp/",
+  "docs/",
+]
+
+source_roots = ["."]
+exact = false                       # gradual migration — unused deps OK for now
+ignore_type_checking_imports = true
+forbid_circular_dependencies = true
+
+# ── Ports: no internal dependencies ──────────────────────────
+[[modules]]
+path = "ai.ports"
+depends_on = []
+
+# ── Core domain: depends ONLY on ports ───────────────────────
+[[modules]]
+path = "ai.core"
+depends_on = ["ai.ports"]
+
+# ── Adapters: depend ONLY on ports ───────────────────────────
+[[modules]]
+path = "ai.adapters"
+depends_on = ["ai.ports"]
+
+# ── Shared utilities: importable from anywhere ───────────────
+[[modules]]
+path = "ai.shared"
+utility = true
