@@ -40,8 +40,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - `--extract-glossary` triggers `00_extract_glossary.py` before EPUB translation; writes `{temp_dir}/extracted_glossary.json`
 - `--glossary <path>` passes a pre-extracted glossary directly to the EPUB translation step
 - `--glossary-min-priority` (default: all) filters glossary terms: `critical`, `high`, or `all` (excludes lower priorities to reduce prompt bloat)
-- `--only-docs <indices>` limits EPUB translation to specific spine docs (comma-separated, useful for A/B testing); e.g., `--only-docs 3,4`
-  - **⚠️ SPEC-012 note**: `--only-docs` is not implemented in `ai.cli` / `EpubSourceAdapter`. It remains in the legacy `ai/epub_translate_roundtrip.py` only. Use `ai.cli` without this flag; subset testing requires running the legacy script directly.
+- `--only-docs <indices>` is **not yet implemented** in `ai.cli` / `EpubSourceAdapter`; the flag is accepted by `translatebook.sh` but has no effect
 - Glossary block injected via `{GLOSSARY_BLOCK}` placeholder in prompt templates (before `{CUSTOM_INSTRUCTIONS_BLOCK}`); empty string when no glossary
 - Glossary extraction uses Pro model by default (reliable terminology selection), supports `--full-index` for comprehensive extraction without AI filtering
 - `--model` accepts aliases (`pro|flash|lite`) and full model names
@@ -82,7 +81,7 @@ Extra user constraints are appended by `-p/--prompt`.
 - `ai/glossary_extractor.py` — Two-pass index detection (Kindle-aware)
 - `00_extract_glossary.py` — CLI entry with CLI→API fallback
 - `config/schemas/glossary_schema.json` — JSON validation schema
-- `ai/epub_translate_roundtrip.py` — Legacy EPUB translation (pre-SPEC-012). **Not called by `ai.cli`; retained for reference and `--only-docs` debugging use case. Scheduled for removal after full validation.**
+- `ai/epub_translate_roundtrip.py` — Legacy EPUB translation (pre-SPEC-012). Not called by `ai.cli`; retained for reference only.
 
 ### SPEC-011: Model Routing & Provider Factory
 
@@ -110,7 +109,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
 bash -n translatebook.sh
-uv run python -m py_compile 03_translate_md.py ai/gemini_provider.py ai/model_probe.py 05_md_to_html.py 07_generate_formats.py ai/glossary_injector.py ai/glossary_extractor.py
+uv run python -m py_compile ai/gemini_provider.py ai/model_probe.py 05_md_to_html.py 07_generate_formats.py ai/glossary_injector.py ai/glossary_extractor.py
 ```
 
 ## Acknowledgements

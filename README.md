@@ -349,8 +349,8 @@ To test glossary on specific chapters:
 # Extract glossary
 uv run python3 00_extract_glossary.py book.epub -o glossary.json
 
-# Translate only Chapter 3-4 with glossary (--only-docs accepts EPUB spine doc indices)
-./translatebook.sh --workflow epub --glossary glossary.json --only-docs 3,4 --output-format epub book.epub
+# Translate with glossary
+./translatebook.sh --workflow epub --glossary glossary.json --output-format epub book.epub
 ```
 
 
