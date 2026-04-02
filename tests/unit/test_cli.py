@@ -221,6 +221,30 @@ class TestBuildParser:
         assert args.extract_glossary is True
 
 
+class TestMainModelExplicitness:
+    def test_main_marks_model_as_explicit_when_flag_is_provided(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+
+        cli_module.main(["book.epub", "--output", "translated.epub", "--model", "pro"])
+
+        assert captured["model"] == "pro"
+        assert captured["model_explicit"] is True
+
+    def test_main_marks_model_as_implicit_when_flag_is_omitted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+
+        cli_module.main(["book.epub", "--output", "translated.epub"])
+
+        assert captured["model"] == "gemini-2.5-flash"
+        assert captured["model_explicit"] is False
+
+
 # ── Format routing (parser) ──────────────────────────────────
 
 
@@ -342,11 +366,117 @@ class _NoopEngine:
         return SimpleNamespace(translated_segments=0, total_batches=0)
 
 
+class TestRunModelResolutionSemantics:
+    def test_run_uses_strict_resolution_for_explicit_model(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+
+        resolve_calls: list[tuple[str, bool]] = []
+
+        def fake_resolve_model(
+            model_name: str,
+            config: dict[str, object],
+            *,
+            explicit: bool = False,
+        ) -> tuple[str, bool]:
+            resolve_calls.append((model_name, explicit))
+            if explicit and model_name == "pro":
+                return ("gemini-2.5-pro", True)
+            return ("gemini-2.5-flash", False)
+
+        monkeypatch.setattr(cli_module, "resolve_model", fake_resolve_model)
+
+        create_calls: list[str] = []
+
+        def fake_create_provider(
+            provider_name: str,
+            model: str,
+            *,
+            is_pro: bool = False,
+            config: dict[str, object] | None = None,
+            cli_api_fallback: bool = False,
+        ) -> object:
+            create_calls.append(model)
+            return {"provider": provider_name, "model": model, "is_pro": is_pro}
+
+        monkeypatch.setattr(cli_module, "create_provider", fake_create_provider)
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="pro",
+            model_explicit=True,
+            input_format="epub",
+        )
+
+        assert resolve_calls[0] == ("pro", True)
+        assert create_calls[0] == "gemini-2.5-pro"
+
+    def test_run_prints_auto_fallback_message_when_resolved_model_changes(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+
+        def fake_resolve_model(
+            model_name: str,
+            config: dict[str, object],
+            *,
+            explicit: bool = False,
+        ) -> tuple[str, bool]:
+            if explicit:
+                return ("gemini-2.5-pro", True)
+            return ("gemini-2.5-flash", False)
+
+        monkeypatch.setattr(cli_module, "resolve_model", fake_resolve_model)
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {
+                "provider": args[0],
+                "model": args[1],
+                "is_pro": kwargs.get("is_pro", False),
+            },
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="pro",
+            model_explicit=False,
+            input_format="epub",
+        )
+
+        stdout = capsys.readouterr().out
+        assert "Auto model fallback: primary gemini-2.5-pro unavailable, using gemini-2.5-flash." in stdout
+
+
 class TestRunGlossaryExtractionOrchestration:
     def _patch_base_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(cli_module, "load_config", lambda: {})
         monkeypatch.setattr(
-            cli_module, "resolve_model", lambda model, config: ("gemini-2.5-flash", False)
+            cli_module,
+            "resolve_model",
+            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
         )
         monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: object())
         monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
@@ -494,7 +624,9 @@ class TestRunGlossaryExtractionOrchestration:
     ) -> None:
         monkeypatch.setattr(cli_module, "load_config", lambda: {})
 
-        def fake_resolve_model(model_name: str, config: dict[str, object]) -> tuple[str, bool]:
+        def fake_resolve_model(
+            model_name: str, config: dict[str, object], *, explicit: bool = False
+        ) -> tuple[str, bool]:
             if model_name == "pro":
                 return ("gemini-2.5-pro", True)
             return ("gemini-2.5-flash", False)

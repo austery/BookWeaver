@@ -215,6 +215,8 @@ def _extract_glossary_to_path(
 def resolve_model(
     model_name: str,
     config: dict[str, object] | None = None,
+    *,
+    explicit: bool = False,
 ) -> tuple[str, bool]:
     """Resolve model alias and detect pro tier.
 
@@ -225,7 +227,7 @@ def resolve_model(
         from ai.model_resolver import ModelResolver
 
         resolver = ModelResolver(config or {})
-        resolved = resolver.resolve(model_name)
+        resolved = resolver.resolve_alias(model_name) if explicit else resolver.resolve(model_name)
         return resolved.name, getattr(resolved, "role", None) is not None and str(
             getattr(resolved, "role", "")
         ).endswith("PRO")
@@ -323,6 +325,7 @@ def run(
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
     input_format: str = "auto",
+    model_explicit: bool = False,
     config: dict[str, object] | None = None,
 ) -> None:
     """Execute the translation pipeline.
@@ -333,7 +336,13 @@ def run(
     runtime_config = config if config is not None else load_config()
 
     # 1. Resolve model
-    resolved_model, is_pro = resolve_model(model, runtime_config)
+    resolved_model, is_pro = resolve_model(model, runtime_config, explicit=model_explicit)
+    if not model_explicit:
+        primary_model, _ = resolve_model(model, runtime_config, explicit=True)
+        if primary_model != resolved_model:
+            print(
+                f"Auto model fallback: primary {primary_model} unavailable, using {resolved_model}."
+            )
     print(f"Model: {resolved_model} (pro={is_pro})")
 
     # 2. Create provider adapter
@@ -426,16 +435,25 @@ def run(
     print(f"Done: {result.translated_segments} segments in {result.total_batches} batches")
 
 
-def main() -> None:
+def _is_model_flag_explicit(argv: list[str] | None) -> bool:
+    import sys
+
+    args = argv if argv is not None else sys.argv[1:]
+    return any(token == "--model" or token.startswith("--model=") for token in args)
+
+
+def main(argv: list[str] | None = None) -> None:
     """CLI entry point."""
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    model_explicit = _is_model_flag_explicit(argv)
 
     run(
         input_path=args.input_path,
         output=args.output,
         output_lang=args.output_lang,
         model=args.model,
+        model_explicit=model_explicit,
         provider=args.provider,
         prompt=args.prompt,
         extract_glossary=args.extract_glossary,

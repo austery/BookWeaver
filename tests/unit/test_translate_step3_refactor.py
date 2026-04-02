@@ -88,6 +88,24 @@ def test_resolve_model_alias_with_probe_fallback_prefers_available_candidate() -
     assert is_pro is False
 
 
+def test_resolve_model_explicit_mode_uses_alias_without_probe_fallback() -> None:
+    config = {
+        "model_aliases": {"pro": "gemini-2.5-pro", "flash": "gemini-2.5-flash"},
+        "fallback_chain": ["flash"],
+        "enable_fallback": True,
+        "model_probe": {"enabled": True},
+    }
+
+    with pytest.MonkeyPatch.context() as mp:
+        from ai import model_probe as probe_module
+
+        mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({"gemini-2.5-flash": True}))
+        resolved_model, is_pro = cli.resolve_model("pro", config, explicit=True)
+
+    assert resolved_model == "gemini-2.5-pro"
+    assert is_pro is True
+
+
 def test_resolve_model_without_probe_falls_back_to_name_heuristics() -> None:
     with pytest.MonkeyPatch.context() as mp:
         from ai import model_resolver as resolver_module
