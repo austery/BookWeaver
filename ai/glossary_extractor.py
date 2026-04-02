@@ -27,11 +27,80 @@ _INDEX_CONTENT_MARKERS = (
     "[ a ][ b ]",
 )
 
+_INDEX_HEADING_HINTS = ("index", "searchable terms")
+_INDEX_LINE_TAGS = {"h1", "h2", "h3", "p", "li", "dd", "dt"}
+_INDEX_PAGE_TOKEN_RE = re.compile(r"(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶])$")
+_INDEX_LIKE_LINE_RE = re.compile(
+    r"^[A-Za-z0-9].{1,160},\s*(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶])(?:\s*,\s*(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶]))*$"
+)
+
 
 def _looks_like_index_content(text: str) -> bool:
     """Return True if the plain-text content looks like a book index."""
     sample = text[:500].lower()
     return any(marker in sample for marker in _INDEX_CONTENT_MARKERS)
+
+
+def _local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[1]
+    return tag
+
+
+def _extract_candidate_lines(xhtml: str) -> list[str]:
+    """Extract candidate text lines from common index-like block tags."""
+    try:
+        root = ET.fromstring(xhtml)
+    except ET.ParseError:
+        stripped = re.sub(r"<[^>]+>", "\n", xhtml)
+        return [line.strip() for line in stripped.splitlines() if line.strip()]
+
+    lines: list[str] = []
+    for node in root.iter():
+        tag = _local_name(node.tag).lower()
+        if tag not in _INDEX_LINE_TAGS:
+            continue
+        line = " ".join("".join(node.itertext()).split()).strip()
+        if line:
+            lines.append(line)
+
+    return lines
+
+
+def _is_index_like_line(line: str) -> bool:
+    """Return True when line resembles an index entry with page markers."""
+    normalized = " ".join(line.split()).strip()
+    if len(normalized) < 4 or len(normalized) > 180:
+        return False
+    if len(normalized.split()) > 16:
+        return False
+    if not _INDEX_LIKE_LINE_RE.match(normalized):
+        return False
+
+    tail = normalized.rsplit(",", 1)[-1].strip()
+    return _INDEX_PAGE_TOKEN_RE.match(tail) is not None
+
+
+def _looks_like_index_by_line_pattern(xhtml: str) -> bool:
+    """Pass-3 heuristic for non-standard index documents."""
+    lines = _extract_candidate_lines(xhtml)
+    if len(lines) < 3:
+        return False
+
+    normalized_lines = [" ".join(line.split()).strip() for line in lines if line.strip()]
+    if len(normalized_lines) < 3:
+        return False
+
+    heading_hint = any(
+        any(hint in line.lower() for hint in _INDEX_HEADING_HINTS)
+        for line in normalized_lines[:3]
+    )
+    index_like_lines = sum(1 for line in normalized_lines if _is_index_like_line(line))
+    ratio = index_like_lines / len(normalized_lines)
+
+    min_ratio = 0.45 if heading_hint else 0.6
+    min_lines = 3 if heading_hint else 4
+    return index_like_lines >= min_lines and ratio >= min_ratio
 
 
 _EXTRACTION_PROMPT_TEMPLATE = """\
@@ -160,10 +229,12 @@ def _separate_mixed_index(text: str) -> tuple[str, str]:
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     """Extract plain text from Index and TOC documents inside the EPUB.
 
-    Detection is two-stage:
+    Detection is three-stage:
     1. Filename hints ("index", "idx") — fast, works for standard EPUB naming.
     2. Content heuristics — scans the last 10 spine docs in reverse for
        alphabetical nav markers (e.g. Kindle format uses "[ A ][ B ][ C ]").
+    3. Line-pattern heuristics — scans tail spine docs for index-like entry lines
+       with page-marker tokens and heading hints ("Index", "Searchable Terms").
 
     Also handles mixed English+Chinese index content by separating them
     and preferring English for terminology extraction.
@@ -216,6 +287,24 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                         # Separate mixed content here too
                         english_part, chinese_part = _separate_mixed_index(candidate)
                         index_text = english_part if english_part.strip() else candidate
+                        break
+                except (KeyError, UnicodeDecodeError):
+                    pass
+
+        # Pass 3: content-pattern fallback for non-standard index docs
+        if not index_text and model.spine_itemrefs:
+            spine_tail = list(model.spine_itemrefs)[-10:]
+            for idref in reversed(spine_tail):
+                item = model.manifest_items.get(idref)
+                if not item:
+                    continue
+                resolved_path = resolve_opf_href(model.opf_path, item.href)
+                try:
+                    raw = zf.read(resolved_path).decode("utf-8")
+                    if _looks_like_index_by_line_pattern(raw):
+                        extracted = _xhtml_to_text(raw)
+                        english_part, chinese_part = _separate_mixed_index(extracted)
+                        index_text = english_part if english_part.strip() else extracted
                         break
                 except (KeyError, UnicodeDecodeError):
                     pass

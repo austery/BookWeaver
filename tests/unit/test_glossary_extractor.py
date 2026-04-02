@@ -16,6 +16,13 @@ from ai.glossary_extractor import (
 )
 
 
+def _wrap_xhtml(body: str) -> str:
+    return (
+        '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
+        f"<body>{body}</body></html>"
+    )
+
+
 def _make_minimal_epub(tmp_path: Path, index_content: str = "", toc_content: str = "") -> Path:
     """Create a minimal valid EPUB zip for testing."""
     epub = tmp_path / "test.epub"
@@ -37,19 +44,72 @@ def _make_minimal_epub(tmp_path: Path, index_content: str = "", toc_content: str
         '<spine toc="toc"><itemref idref="toc"/><itemref idref="idx"/></spine>'
         "</package>"
     )
-    toc_xhtml = (
-        '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
-        f"<body><nav><ol><li>{toc_content}</li></ol></nav></body></html>"
-    )
-    idx_xhtml = (
-        '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
-        f"<body><p>{index_content}</p></body></html>"
-    )
+    toc_xhtml = _wrap_xhtml(f"<nav><ol><li>{toc_content}</li></ol></nav>")
+    idx_xhtml = _wrap_xhtml(f"<p>{index_content}</p>")
     with zipfile.ZipFile(epub, "w") as z:
         z.writestr("META-INF/container.xml", container_xml)
         z.writestr("OEBPS/content.opf", opf_xml)
         z.writestr("OEBPS/toc.xhtml", toc_xhtml)
         z.writestr("OEBPS/index.xhtml", idx_xhtml)
+    return epub
+
+
+def _make_spine_epub(
+    tmp_path: Path,
+    docs: list[tuple[str, str, str]],
+    *,
+    toc_content: str = "Chapter 1",
+    include_named_index: bool = False,
+    named_index_content: str = "",
+) -> Path:
+    """Create EPUB with arbitrary spine docs for index-detection heuristics."""
+    epub = tmp_path / "spine-test.epub"
+    manifest_entries = ['<item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>']
+    spine_entries = ['<itemref idref="toc"/>']
+
+    for item_id, href, _ in docs:
+        manifest_entries.append(
+            f'<item id="{item_id}" href="{href}" media-type="application/xhtml+xml"/>'
+        )
+        spine_entries.append(f'<itemref idref="{item_id}"/>')
+
+    if include_named_index:
+        manifest_entries.append(
+            '<item id="idx" href="index.xhtml" media-type="application/xhtml+xml"/>'
+        )
+        spine_entries.append('<itemref idref="idx"/>')
+
+    opf_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Test Book</dc:title></metadata>"
+        "<manifest>"
+        + "".join(manifest_entries)
+        + "</manifest>"
+        '<spine toc="toc">'
+        + "".join(spine_entries)
+        + "</spine>"
+        "</package>"
+    )
+
+    with zipfile.ZipFile(epub, "w") as z:
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?>'
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/></rootfiles></container>',
+        )
+        z.writestr("OEBPS/content.opf", opf_xml)
+        z.writestr("OEBPS/toc.xhtml", _wrap_xhtml(f"<nav><ol><li>{toc_content}</li></ol></nav>"))
+
+        for _, href, body in docs:
+            z.writestr(f"OEBPS/{href}", _wrap_xhtml(body))
+
+        if include_named_index:
+            z.writestr("OEBPS/index.xhtml", _wrap_xhtml(f"<p>{named_index_content}</p>"))
+
     return epub
 
 
@@ -66,6 +126,102 @@ def test_extract_epub_index_and_toc_missing_index(tmp_path: Path) -> None:
     index_text, toc_text = extract_epub_index_and_toc(epub)
     assert isinstance(index_text, str)
     assert isinstance(toc_text, str)
+
+
+def test_extract_epub_index_and_toc_pass3_detects_film_club_like_tail_doc(tmp_path: Path) -> None:
+    """Pass-3 should detect index-like content even without index filename/nav markers."""
+    film_club_index = (
+        "<h1>Index</h1>"
+        "<p>Aguirre, Wrath of God, ♣</p>"
+        "<p>All That Jazz, ♣</p>"
+        "<p>Annie Hall, ♣</p>"
+        "<p>Badlands, ♣</p>"
+        "<p>Cries and Whispers, ♣</p>"
+        "<p>Days of Heaven, ♣</p>"
+        "<p>The Conformist, ♣</p>"
+    )
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c24", "c24.xhtml", "<h1>Chapter 24</h1><p>Regular chapter prose.</p>"),
+            ("c25", "c25.xhtml", "<h1>Chapter 25</h1><p>More regular chapter prose.</p>"),
+            ("c27", "c27.xhtml", film_club_index),
+        ],
+        toc_content="Part 1",
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Aguirre, Wrath of God, ♣" in index_text
+    assert "Cries and Whispers, ♣" in index_text
+
+
+def test_extract_epub_index_and_toc_pass3_detects_searchable_terms_heading(
+    tmp_path: Path,
+) -> None:
+    searchable_terms = (
+        "<h2>Searchable Terms</h2>"
+        "<p>Abstract Factory, 33</p>"
+        "<p>Builder Pattern, 49</p>"
+        "<p>Dependency Injection, 77</p>"
+        "<p>Hexagonal Architecture, 112</p>"
+        "<p>Ports and Adapters, 145</p>"
+    )
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c10", "chapter10.xhtml", "<h1>Chapter 10</h1><p>Narrative text only.</p>"),
+            ("c11", "chapter11.xhtml", searchable_terms),
+        ],
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Abstract Factory, 33" in index_text
+    assert "Ports and Adapters, 145" in index_text
+
+
+def test_extract_epub_index_and_toc_pass3_avoids_false_positive_on_chapter_prose(
+    tmp_path: Path,
+) -> None:
+    prose_tail = (
+        "<h1>Index</h1>"
+        "<p>In this chapter, we revisit the father-son dynamic and memory.</p>"
+        "<p>The narrator reflects on the passing of time, grief, and identity.</p>"
+        "<p>These paragraphs are prose, not an index.</p>"
+    )
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c26", "c26.xhtml", "<h1>Chapter 26</h1><p>Regular chapter content.</p>"),
+            ("c27", "c27.xhtml", prose_tail),
+        ],
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert index_text == ""
+
+
+def test_extract_epub_index_and_toc_prefers_pass1_named_index_over_pass3(tmp_path: Path) -> None:
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c27", "c27.xhtml", "<h1>Index</h1><p>Aguirre, Wrath of God, ♣</p>"),
+        ],
+        include_named_index=True,
+        named_index_content="Canonical Index, 101",
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Canonical Index, 101" in index_text
+    assert "Aguirre, Wrath of God, ♣" not in index_text
+
+
+def test_extract_epub_index_and_toc_prefers_pass2_marker_over_pass3(tmp_path: Path) -> None:
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c26", "c26.xhtml", "<p>[ A ][ B ][ C ]</p><p>Adapter, 10</p>"),
+            ("c27", "c27.xhtml", "<h1>Index</h1><p>Aguirre, Wrath of God, ♣</p>"),
+        ],
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Adapter, 10" in index_text
+    assert "Aguirre, Wrath of God, ♣" not in index_text
 
 
 def test_build_extraction_prompt_contains_index_and_toc() -> None:
