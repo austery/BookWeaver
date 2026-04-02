@@ -245,24 +245,32 @@ If you encounter persistent `AbortError: The user aborted a request` or similar 
 
 **Immediate solutions:**
 1. **Wait and retry** - Gemini CLI has traffic prioritization limits that vary by time of day
-2. **Switch model and retry** - current `ai.cli` workflow does not support checkpoint resume:
+2. **Use checkpoint resume for EPUB workflow** - continue interrupted runs safely:
+   ```bash
+    # Resume with compatibility checks (recommended)
+    uv run bookweaver book.epub --output book_translated.epub --resume
+
+    # Force resume when model/config changed
+    uv run bookweaver book.epub --output book_translated.epub --force-resume
+   ```
+3. **Switch model and retry**:
    ```bash
     # Initial run with flash
     ./translatebook.sh --workflow epub --model flash book.epub
-    
+
     # If flash fails, retry with pro
     ./translatebook.sh --workflow epub --model pro book.epub
     ```
-3. **Use Gemini API (experimental)** - More stable alternative to CLI:
+4. **Use Gemini API (experimental)** - More stable alternative to CLI:
    ```bash
    export GEMINI_API_KEY="your-api-key"
    ./translatebook.sh --workflow epub --provider api book.epub
    ```
-4. **Use CLI + API fallback (opt-in)** - Keep CLI first, switch to API on transient CLI failures:
-    ```bash
-    export GEMINI_API_KEY="your-api-key"
-    ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
-    ```
+5. **Use CLI + API fallback (opt-in)** - Keep CLI first, switch to API on transient CLI failures:
+     ```bash
+     export GEMINI_API_KEY="your-api-key"
+     ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
+     ```
 
 **Root cause:**
 Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery logic that aborts requests if they exceed internal timeout thresholds. This is a known limitation documented in [Gemini CLI updates](https://goo.gle/geminicli-updates).
@@ -397,6 +405,8 @@ uv run python3 00_extract_glossary.py book.epub -o glossary.json
 - Model fallback chain is intentionally out of scope for this phase.
 - In markdown workflow, Step 3 (`ai.cli`) writes final bilingual `output.md` directly.
 - Step 4 in markdown workflow is a no-op bridge for legacy step numbering.
+- Legacy markdown pipeline scripts (`01_convert_to_htmlz.py`, `05_md_to_html.py`, `06_add_toc.py`, `07_generate_formats.py`) are still required for PDF/DOCX workflow and are **not** safe to remove yet.
+- Legacy pipeline removal is deferred until SPEC-013 parity is complete (ai.cli-owned output rendering for non-EPUB workflows).
 - Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
 - `--bilingual-style` currently supports only `alternating`.
 - Step 6 can build TOC from markdown-style heading lines in HTML paragraphs, auto-creates a TOC container when missing, and defaults TOC entries to chapter-level (`h1`) headings.
