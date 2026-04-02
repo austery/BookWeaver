@@ -59,41 +59,37 @@ which ebook-convert
 which pandoc
 ```
 
-### 2) Setup venv
+### 2) Setup
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt   # or: uv sync --group dev
+uv sync
 ```
 
 ### 3) Translate an EPUB
 
-**Direct (recommended — `ai.cli` is the primary entrypoint):**
+**Direct with `uv run` (recommended — no venv activation needed):**
 
 ```bash
-# Activate venv first
-source .venv/bin/activate
-
 # Basic EPUB translation → Chinese
-python -m ai.cli book.epub --output book_translated.epub
+uv run bookweaver book.epub --output book_translated.epub
 
 # With automatic glossary extraction (uses Pro model for extraction)
-python -m ai.cli book.epub --output book_translated.epub --extract-glossary --model pro
+uv run bookweaver book.epub --output book_translated.epub --extract-glossary --model pro
 
 # With pre-extracted glossary and priority filtering
-python -m ai.cli book.epub --output book_translated.epub \
+uv run bookweaver book.epub --output book_translated.epub \
   --glossary glossary.json --glossary-min-priority high
 
 # Using flash model (faster, lower quality)
-python -m ai.cli book.epub --output book_translated.epub --model flash
+uv run bookweaver book.epub --output book_translated.epub --model flash
 
 # Using Gemini API instead of CLI
-python -m ai.cli book.epub --output book_translated.epub --provider api
+uv run bookweaver book.epub --output book_translated.epub --provider api
 ```
 
 Output is written to the path you specify with `--output`.
 
-**Via shell wrapper (handles venv automatically):**
+**Via shell wrapper (handles venv, needed for PDF/DOCX):**
 
 ```bash
 # EPUB — wrapper constructs output path as <basename>_temp/translated_roundtrip.epub
@@ -138,10 +134,10 @@ If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you
 export GEMINI_API_KEY="your-api-key-here"
 
 # Use API provider instead of CLI
-python -m ai.cli book.epub --output book_translated.epub --provider api
+uv run bookweaver book.epub --output book_translated.epub --provider api
 
 # Keep CLI as primary but allow fallback to API on CLI failures
-python -m ai.cli book.epub --output book_translated.epub --cli-api-fallback
+uv run bookweaver book.epub --output book_translated.epub --cli-api-fallback
 ```
 
 **Advantages of API provider:**

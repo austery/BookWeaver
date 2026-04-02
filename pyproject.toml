@@ -6,6 +6,15 @@ dependencies = [
     "google-genai>=1.68.0",
 ]
 
+[project.scripts]
+bookweaver = "ai.cli:main"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["ai*"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
