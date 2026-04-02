@@ -114,7 +114,10 @@ class GeminiCLIAdapter(ITranslationProvider):
         *,
         label: str,
     ) -> tuple[int, ...]:
-        if any((not isinstance(value, int)) or value <= 0 for value in values):
+        if any(
+            isinstance(value, bool) or (not isinstance(value, int)) or value <= 0
+            for value in values
+        ):
             raise ValueError(f"{label} values must be positive integers")
         return values
 

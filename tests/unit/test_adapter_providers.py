@@ -291,6 +291,18 @@ class TestGeminiCLIAdapterRetry:
             adapter.translate_batch(["Hi"], system_prompt="T")
 
 
+class TestGeminiCLIAdapterBackoffValidation:
+    def test_rejects_bool_in_rate_limit_backoff(self) -> None:
+        raw = FakeRawProvider()
+        with pytest.raises(ValueError, match="rate_limit_backoff"):
+            GeminiCLIAdapter(raw, rate_limit_backoff=(True, 5))
+
+    def test_rejects_bool_in_transient_backoff(self) -> None:
+        raw = FakeRawProvider()
+        with pytest.raises(ValueError, match="transient_backoff"):
+            GeminiCLIAdapter(raw, transient_backoff=(3, False))
+
+
 class TestGeminiCLIAdapterCountMismatch:
     def test_count_mismatch_raises_translation_error(self) -> None:
         """Provider returns wrong segment count → TranslationError."""
