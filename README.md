@@ -14,16 +14,12 @@ BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `
 
 ### Workflow selection (important)
 
-| Input type | Goal | Recommended workflow | Command |
-|---|---|---|---|
-| EPUB | Preserve package structure/navigation fidelity | `epub` | `./translatebook.sh --workflow epub /path/to/book.epub` |
-| PDF/DOCX | Convert then translate | `markdown` | `./translatebook.sh --workflow markdown /path/to/book.pdf` |
-| EPUB (legacy command) | Backward compatibility only | `epub` | `./translatebook.sh --epub-translate-roundtrip /path/to/book.epub` |
+| Input type | Goal | Command |
+|---|---|---|
+| EPUB | Preserve package structure/navigation | `python -m ai.cli book.epub --output out/translated.epub` |
+| PDF/DOCX | Convert then translate (via shell wrapper) | `./translatebook.sh --workflow markdown /path/to/book.pdf` |
 
-Default behavior:
-
-- EPUB input defaults to `--workflow epub`
-- non-EPUB input defaults to `--workflow markdown`
+Default: EPUB input auto-detects to EPUB workflow; non-EPUB defaults to markdown workflow.
 
 ### 1) Prerequisites
 
@@ -63,61 +59,75 @@ which ebook-convert
 which pandoc
 ```
 
-### 2) Dry-run first
+### 2) Setup venv
 
 ```bash
-./translatebook.sh --dry-run /path/to/book.epub
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt   # or: uv sync --group dev
 ```
 
-### 3) Real run
+### 3) Translate an EPUB
 
-Note: The primary composition root is `ai.cli` (run with `python -m ai.cli`). `translatebook.sh` delegates to `ai.cli` for most workflows; examples below include both the wrapper and direct `ai.cli` usage.
+**Direct (recommended — `ai.cli` is the primary entrypoint):**
 
 ```bash
-# EPUB package-preserving workflow (default for .epub input)
-./translatebook.sh --workflow epub --output-format epub /path/to/book.epub
+# Activate venv first
+source .venv/bin/activate
 
-# EPUB workflow with automatic glossary extraction + injection
-./translatebook.sh --workflow epub --extract-glossary --output-format epub /path/to/book.epub
+# Basic EPUB translation → Chinese
+python -m ai.cli book.epub --output book_translated.epub
 
-# EPUB workflow with pre-extracted glossary and priority filtering
-./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority high --output-format epub /path/to/book.epub
+# With automatic glossary extraction (uses Pro model for extraction)
+python -m ai.cli book.epub --output book_translated.epub --extract-glossary --model pro
 
-# Force model for EPUB workflow
-./translatebook.sh --workflow epub --model flash --output-format epub /path/to/book.epub
-./translatebook.sh --workflow epub --model gemini-3-pro-preview --output-format epub /path/to/book.epub
+# With pre-extracted glossary and priority filtering
+python -m ai.cli book.epub --output book_translated.epub \
+  --glossary glossary.json --glossary-min-priority high
 
-# Markdown workflow (default for non-EPUB)
-./translatebook.sh --workflow markdown --output-format epub /path/to/book.pdf
+# Using flash model (faster, lower quality)
+python -m ai.cli book.epub --output book_translated.epub --model flash
 
-# HTML only output
-./translatebook.sh --workflow markdown --output-format html /path/to/book.docx
+# Using Gemini API instead of CLI
+python -m ai.cli book.epub --output book_translated.epub --provider api
+```
+
+Output is written to the path you specify with `--output`.
+
+**Via shell wrapper (handles venv automatically):**
+
+```bash
+# EPUB — wrapper constructs output path as <basename>_temp/translated_roundtrip.epub
+./translatebook.sh book.epub
+
+# With glossary extraction + Pro model
+./translatebook.sh --extract-glossary --model pro book.epub
+
+# Dry-run: show config without executing
+./translatebook.sh --dry-run book.epub
 
 # EPUB baseline roundtrip (no translation, zero text mutation)
-./translatebook.sh --epub-baseline /path/to/book.epub
-
-# Deprecated alias for EPUB workflow (still supported)
-./translatebook.sh --epub-translate-roundtrip --olang zh /path/to/book.epub
+./translatebook.sh --epub-baseline book.epub
 ```
 
-Baseline mode writes output to `<input_basename>_temp/baseline_roundtrip.epub`.
-EPUB workflow writes output to `<input_basename>_temp/translated_roundtrip.epub`.
+Shell wrapper output: `<input_basename>_temp/translated_roundtrip.epub`.
 
 ### 3.1) Workflow behavior notes
 
-**Markdown workflow (`--workflow markdown`):**
+**EPUB workflow (default for `.epub` input):**
 
-- Step 3 calls `ai.cli` directly:
-  `python3 -u -m ai.cli <temp_dir> --input-format markdown --output <temp_dir>/output.md ...`
-- `ai.cli` writes final bilingual `output.md` directly.
-- Step 4 remains in the legacy step numbering but is now a no-op (informational skip).
+`ai.cli` handles the full pipeline — reads EPUB, translates via engine, writes bilingual EPUB directly:
+```
+python -m ai.cli book.epub --output translated.epub [flags]
+```
 
-**EPUB workflow (`--workflow epub`):**
+**Markdown workflow (PDF/DOCX input, via shell only for now):**
 
-- Translation is routed through `ai.cli`:
-  `python3 -u -m ai.cli <book.epub> --input-format epub --output <temp_dir>/translated_roundtrip.epub ...`
-- Legacy checkpoint resume is no longer used in this path.
-- `--force-resume` is accepted for compatibility but ignored (the script prints a warning).
+The shell orchestrates multiple steps:
+- Steps 1-2: Convert PDF/DOCX → markdown chunks (Calibre)
+- Step 3: `python -m ai.cli` translates chunks
+- Steps 5-7: Render HTML, add TOC, export final format
+
+> **Note (SPEC-013):** Steps 5-7 are not yet absorbed into `ai.cli`. PDF/DOCX-to-EPUB currently requires `translatebook.sh`. See `docs/architecture/specs/SPEC-013-pipeline-completion-shell-replacement.md`.
 
 ### 3.1a) Alternative: Use Gemini API instead of CLI (experimental)
 
@@ -128,10 +138,10 @@ If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you
 export GEMINI_API_KEY="your-api-key-here"
 
 # Use API provider instead of CLI
-./translatebook.sh --workflow epub --provider api --output-format epub /path/to/book.epub
+python -m ai.cli book.epub --output book_translated.epub --provider api
 
 # Keep CLI as primary but allow fallback to API on CLI failures
-./translatebook.sh --workflow epub --provider cli --fallback-provider api --output-format epub /path/to/book.epub
+python -m ai.cli book.epub --output book_translated.epub --cli-api-fallback
 ```
 
 **Advantages of API provider:**
