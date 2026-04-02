@@ -492,7 +492,6 @@ class _CLIAPIFallbackAdapter(ITranslationProvider):
             "network",
             "broken pipe",
             "econnreset",
-            "gemini cli failed",
         )
         return any(marker in normalized for marker in markers)
 

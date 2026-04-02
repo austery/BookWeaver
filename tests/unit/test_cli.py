@@ -361,6 +361,68 @@ class TestCreateProviderCliApiFallback:
 
         assert _FailingCLIAdapter.calls == 1
 
+    def test_cli_api_fallback_does_not_trigger_on_generic_cli_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _RawCLIProvider:
+            pass
+
+        class _RawAPIProvider:
+            pass
+
+        class _FakeProviderFactory:
+            def __init__(self, config: dict[str, object]) -> None:
+                self._config = config
+
+            def create(
+                self,
+                model: str,
+                provider_name: str = "cli",
+                api_key: str | None = None,
+                cli_api_fallback_enabled: bool = False,
+            ) -> SimpleNamespace:
+                fallback = _RawAPIProvider() if cli_api_fallback_enabled else None
+                return SimpleNamespace(primary=_RawCLIProvider(), fallback=fallback)
+
+        class _FailingCLIAdapter:
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                rate_limit_backoff: tuple[int, ...],
+                transient_backoff: tuple[int, ...],
+            ) -> None:
+                self._raw_provider = raw_provider
+
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                raise TranslationError("Gemini CLI failed: model not found")
+
+        class _APIAdapter:
+            calls = 0
+
+            def __init__(self, raw_provider: object, *, timeout_seconds: int) -> None:
+                self._raw_provider = raw_provider
+
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                _APIAdapter.calls += 1
+                return [f"api:{segment}" for segment in segments]
+
+        monkeypatch.setattr("ai.provider_factory.ProviderFactory", _FakeProviderFactory)
+        monkeypatch.setattr(cli_module, "GeminiCLIAdapter", _FailingCLIAdapter)
+        monkeypatch.setattr(cli_module, "GeminiAPIAdapter", _APIAdapter)
+
+        provider = create_provider(
+            "cli",
+            "gemini-2.5-flash",
+            config={"gemini_api": {"api_key": "test-key"}},
+            cli_api_fallback=True,
+        )
+
+        with pytest.raises(TranslationError, match="Gemini CLI failed: model not found"):
+            provider.translate_batch(["hello"], system_prompt="PROMPT")
+        assert _APIAdapter.calls == 0
+
 
 # ── Argument parsing ──────────────────────────────────────────
 

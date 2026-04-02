@@ -154,7 +154,7 @@ export GEMINI_API_KEY="your-api-key-here"
 uv run bookweaver book.epub --output book_translated.epub --provider api
 
 # Keep CLI as primary but allow fallback to API on CLI failures
-uv run bookweaver book.epub --output book_translated.epub --cli-api-fallback
+uv run bookweaver book.epub --output book_translated.epub --provider cli --cli-api-fallback
 ```
 
 **Advantages of API provider:**
@@ -261,7 +261,7 @@ If you encounter persistent `AbortError: The user aborted a request` or similar 
 4. **Use CLI + API fallback (opt-in)** - Keep CLI first, switch to API on transient CLI failures:
     ```bash
     export GEMINI_API_KEY="your-api-key"
-    ./translatebook.sh --workflow epub --provider cli --cli-api-fallback book.epub
+    ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
     ```
 
 **Root cause:**
