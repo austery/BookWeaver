@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 import ai.cli as cli_module
+from ai.ports.provider import TranslationError
 from ai.ports.source import Segment, TranslatedSegment
 from ai.cli import (
     build_parser,
@@ -191,9 +192,20 @@ class TestCreateProviderResilience:
                 captured["rate_limit_backoff"] = rate_limit_backoff
                 captured["transient_backoff"] = transient_backoff
 
-        import ai.gemini_provider as gemini_provider_module
+        class _FakeProviderFactory:
+            def __init__(self, config: dict[str, object]) -> None:
+                self._config = config
 
-        monkeypatch.setattr(gemini_provider_module, "GeminiProvider", _FakeGeminiProvider)
+            def create(
+                self,
+                model: str,
+                provider_name: str = "cli",
+                api_key: str | None = None,
+                cli_api_fallback_enabled: bool = False,
+            ) -> SimpleNamespace:
+                return SimpleNamespace(primary=_FakeGeminiProvider(model), fallback=None)
+
+        monkeypatch.setattr("ai.provider_factory.ProviderFactory", _FakeProviderFactory)
         monkeypatch.setattr(cli_module, "GeminiCLIAdapter", _FakeGeminiCLIAdapter)
 
         provider = create_provider(
@@ -222,6 +234,132 @@ class TestCreateProviderResilience:
                 "gemini-2.5-flash",
                 config={"epub_resilience": {"transient_backoff_seconds": [4, 0]}},
             )
+
+
+class TestCreateProviderCliApiFallback:
+    def test_cli_api_fallback_attempts_api_on_cli_translation_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        class _RawCLIProvider:
+            pass
+
+        class _RawAPIProvider:
+            pass
+
+        class _FakeProviderFactory:
+            def __init__(self, config: dict[str, object]) -> None:
+                self._config = config
+
+            def create(
+                self,
+                model: str,
+                provider_name: str = "cli",
+                api_key: str | None = None,
+                cli_api_fallback_enabled: bool = False,
+            ) -> SimpleNamespace:
+                fallback = _RawAPIProvider() if cli_api_fallback_enabled else None
+                return SimpleNamespace(primary=_RawCLIProvider(), fallback=fallback)
+
+        class _FailingCLIAdapter:
+            calls = 0
+
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                rate_limit_backoff: tuple[int, ...],
+                transient_backoff: tuple[int, ...],
+            ) -> None:
+                self._raw_provider = raw_provider
+
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                _FailingCLIAdapter.calls += 1
+                raise TranslationError("simulated transient transport failure")
+
+        class _APIAdapter:
+            calls = 0
+
+            def __init__(self, raw_provider: object, *, timeout_seconds: int) -> None:
+                self._raw_provider = raw_provider
+
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                _APIAdapter.calls += 1
+                return [f"api:{segment}" for segment in segments]
+
+        monkeypatch.setattr("ai.provider_factory.ProviderFactory", _FakeProviderFactory)
+        monkeypatch.setattr(cli_module, "GeminiCLIAdapter", _FailingCLIAdapter)
+        monkeypatch.setattr(cli_module, "GeminiAPIAdapter", _APIAdapter)
+
+        provider = create_provider(
+            "cli",
+            "gemini-2.5-flash",
+            config={"gemini_api": {"api_key": "test-key"}},
+            cli_api_fallback=True,
+        )
+
+        translated = provider.translate_batch(["hello"], system_prompt="PROMPT")
+        assert translated == ["api:hello"]
+        assert _FailingCLIAdapter.calls == 1
+        assert _APIAdapter.calls == 1
+
+        stdout = capsys.readouterr().out
+        assert "[progress:provider-fallback]" in stdout
+        assert "from_provider=cli" in stdout
+        assert "to_provider=api" in stdout
+
+    def test_without_cli_api_fallback_flag_remains_fail_fast(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _RawCLIProvider:
+            pass
+
+        class _FakeProviderFactory:
+            def __init__(self, config: dict[str, object]) -> None:
+                self._config = config
+
+            def create(
+                self,
+                model: str,
+                provider_name: str = "cli",
+                api_key: str | None = None,
+                cli_api_fallback_enabled: bool = False,
+            ) -> SimpleNamespace:
+                return SimpleNamespace(primary=_RawCLIProvider(), fallback=None)
+
+        class _FailingCLIAdapter:
+            calls = 0
+
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                rate_limit_backoff: tuple[int, ...],
+                transient_backoff: tuple[int, ...],
+            ) -> None:
+                self._raw_provider = raw_provider
+
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                _FailingCLIAdapter.calls += 1
+                raise TranslationError("simulated transient transport failure")
+
+        monkeypatch.setattr("ai.provider_factory.ProviderFactory", _FakeProviderFactory)
+        monkeypatch.setattr(cli_module, "GeminiCLIAdapter", _FailingCLIAdapter)
+
+        provider = create_provider(
+            "cli",
+            "gemini-2.5-flash",
+            config={},
+            cli_api_fallback=False,
+        )
+
+        with pytest.raises(TranslationError, match="simulated transient transport failure"):
+            provider.translate_batch(["hello"], system_prompt="PROMPT")
+
+        assert _FailingCLIAdapter.calls == 1
 
 
 # ── Argument parsing ──────────────────────────────────────────

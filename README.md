@@ -167,7 +167,10 @@ uv run bookweaver book.epub --output book_translated.epub --cli-api-fallback
 - Gemini API provider is now available via `--provider api`
 - CLI provider remains the default (`--provider cli`)
 - API provider requires `GEMINI_API_KEY` or `gemini_api.api_key` in config
-- Optional fallback is available via `--fallback-provider api` (only when `--provider cli`)
+- Optional fallback is available via `--cli-api-fallback` (only when `--provider cli`)
+  - Triggered on transient/transport CLI translation failures (for example AbortError/timeouts)
+  - Not used for rate-limit failures (those stay on CLI retry logic)
+  - Requires `GEMINI_API_KEY` or `gemini_api.api_key` for the API provider
 
 Common commands:
 
@@ -255,11 +258,11 @@ If you encounter persistent `AbortError: The user aborted a request` or similar 
    export GEMINI_API_KEY="your-api-key"
    ./translatebook.sh --workflow epub --provider api book.epub
    ```
-4. **Use CLI + API fallback (opt-in)** - Keep CLI first, auto-fallback to API:
-   ```bash
-   export GEMINI_API_KEY="your-api-key"
-   ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
-   ```
+4. **Use CLI + API fallback (opt-in)** - Keep CLI first, switch to API on transient CLI failures:
+    ```bash
+    export GEMINI_API_KEY="your-api-key"
+    ./translatebook.sh --workflow epub --provider cli --cli-api-fallback book.epub
+    ```
 
 **Root cause:**
 Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery logic that aborts requests if they exceed internal timeout thresholds. This is a known limitation documented in [Gemini CLI updates](https://goo.gle/geminicli-updates).
@@ -294,7 +297,8 @@ Notes:
 - Defaults preserve current behavior.
 - `doc_failure_budget` enables a document-level circuit breaker.
 - `failed_docs_path` writes failed-document diagnostics as JSON.
-- CLI argument `--cli-api-fallback` (used internally by `--fallback-provider api`) can force fallback on for a run.
+- CLI argument `--cli-api-fallback` enables runtime CLI→API transport fallback for that run.
+  Requires API credentials (`GEMINI_API_KEY` or `gemini_api.api_key`).
 
 ## Prompt definition
 

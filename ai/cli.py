@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +26,7 @@ from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
-from ai.ports.provider import ITranslationProvider
+from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import Segment, TranslatedSegment
 
 # ── Language mapping ──────────────────────────────────────────
@@ -312,7 +312,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--cli-api-fallback",
         action="store_true",
-        help="Enable API fallback when CLI provider fails",
+        help=(
+            "When --provider cli: switch to API after transient/transport CLI failures "
+            "(requires GEMINI_API_KEY or gemini_api.api_key)."
+        ),
     )
     p.add_argument(
         "--max-batch-chars",
@@ -439,6 +442,61 @@ def resolve_model(
         return model_name, is_pro
 
 
+class _CLIAPIFallbackAdapter(ITranslationProvider):
+    """Keep CLI primary, switch to API after qualifying transport/transient failures."""
+
+    def __init__(
+        self,
+        primary: ITranslationProvider,
+        fallback: ITranslationProvider,
+    ) -> None:
+        self._primary = primary
+        self._fallback = fallback
+        self._fallback_active = False
+
+    def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+        if self._fallback_active:
+            return self._fallback.translate_batch(list(segments), system_prompt=system_prompt)
+
+        try:
+            return self._primary.translate_batch(list(segments), system_prompt=system_prompt)
+        except Exception as exc:
+            if not self._is_transport_or_transient_failure(exc):
+                raise
+            _log_progress(
+                "provider-fallback",
+                from_provider="cli",
+                to_provider="api",
+                reason=type(exc).__name__,
+                detail=str(exc),
+            )
+            self._fallback_active = True
+            return self._fallback.translate_batch(list(segments), system_prompt=system_prompt)
+
+    @staticmethod
+    def _is_transport_or_transient_failure(exc: Exception) -> bool:
+        if isinstance(exc, RateLimitError):
+            return False
+        if not isinstance(exc, TranslationError):
+            return False
+
+        normalized = str(exc).lower()
+        markers = (
+            "aborterror",
+            "aborted a request",
+            "transient",
+            "transport",
+            "timeout",
+            "timed out",
+            "connection",
+            "network",
+            "broken pipe",
+            "econnreset",
+            "gemini cli failed",
+        )
+        return any(marker in normalized for marker in markers)
+
+
 def create_provider(
     provider_name: str,
     model: str,
@@ -465,23 +523,29 @@ def create_provider(
         default=(45,),
     )
 
+    from ai.provider_factory import ProviderFactory
+
+    api_key = _resolve_api_key(config)
+    provider_pair = ProviderFactory(config or {}).create(
+        model,
+        provider_name=provider_name,
+        api_key=api_key,
+        cli_api_fallback_enabled=cli_api_fallback,
+    )
+
     if provider_name == "api":
-        from ai.gemini_api_provider import GeminiAPIProvider
+        return GeminiAPIAdapter(provider_pair.primary, timeout_seconds=timeout)
 
-        api_key = _resolve_api_key(config)
-        raw = GeminiAPIProvider(api_key=api_key, model=model, config=config)
-        return GeminiAPIAdapter(raw, timeout_seconds=timeout)
-
-    # CLI provider
-    from ai.gemini_provider import GeminiProvider
-
-    raw = GeminiProvider(model=model)
-    return GeminiCLIAdapter(
-        raw,
+    primary_adapter = GeminiCLIAdapter(
+        provider_pair.primary,
         timeout_seconds=timeout,
         rate_limit_backoff=rate_limit_backoff,
         transient_backoff=transient_backoff,
     )
+    if provider_pair.fallback is None:
+        return primary_adapter
+    fallback_adapter = GeminiAPIAdapter(provider_pair.fallback, timeout_seconds=timeout)
+    return _CLIAPIFallbackAdapter(primary_adapter, fallback_adapter)
 
 
 def _resolve_resilience_backoff(
