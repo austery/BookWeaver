@@ -92,8 +92,7 @@ def _looks_like_index_by_line_pattern(xhtml: str) -> bool:
         return False
 
     heading_hint = any(
-        any(hint in line.lower() for hint in _INDEX_HEADING_HINTS)
-        for line in normalized_lines[:3]
+        any(hint in line.lower() for hint in _INDEX_HEADING_HINTS) for line in normalized_lines[:3]
     )
     index_like_lines = sum(1 for line in normalized_lines if _is_index_like_line(line))
     ratio = index_like_lines / len(normalized_lines)

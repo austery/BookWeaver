@@ -84,12 +84,8 @@ def _make_spine_epub(
         '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
         '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
         "<dc:title>Test Book</dc:title></metadata>"
-        "<manifest>"
-        + "".join(manifest_entries)
-        + "</manifest>"
-        '<spine toc="toc">'
-        + "".join(spine_entries)
-        + "</spine>"
+        "<manifest>" + "".join(manifest_entries) + "</manifest>"
+        '<spine toc="toc">' + "".join(spine_entries) + "</spine>"
         "</package>"
     )
 

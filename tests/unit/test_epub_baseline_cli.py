@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,9 +37,26 @@ def test_create_provider_wires_cli_resilience_and_timeout(
 ) -> None:
     captured: dict[str, object] = {}
 
-    class FakeGeminiProvider:
+    class RawCLIProvider:
         def __init__(self, model: str) -> None:
+            self.model = model
+
+    class FakeProviderFactory:
+        def __init__(self, config: dict[str, object]) -> None:
+            self._config = config
+
+        def create(
+            self,
+            model: str,
+            provider_name: str = "cli",
+            api_key: str | None = None,
+            cli_api_fallback_enabled: bool = False,
+        ) -> SimpleNamespace:
             captured["model"] = model
+            captured["provider_name"] = provider_name
+            captured["api_key"] = api_key
+            captured["cli_api_fallback_enabled"] = cli_api_fallback_enabled
+            return SimpleNamespace(primary=RawCLIProvider(model), fallback=None)
 
     class FakeGeminiCLIAdapter:
         def __init__(
@@ -50,13 +68,12 @@ def test_create_provider_wires_cli_resilience_and_timeout(
             transient_backoff: tuple[int, ...],
         ) -> None:
             captured["raw_provider_type"] = type(raw_provider).__name__
+            captured["raw_provider_model"] = getattr(raw_provider, "model", None)
             captured["timeout_seconds"] = timeout_seconds
             captured["rate_limit_backoff"] = rate_limit_backoff
             captured["transient_backoff"] = transient_backoff
 
-    import ai.gemini_provider as gemini_provider_module
-
-    monkeypatch.setattr(gemini_provider_module, "GeminiProvider", FakeGeminiProvider)
+    monkeypatch.setattr("ai.provider_factory.ProviderFactory", FakeProviderFactory)
     monkeypatch.setattr(cli_module, "GeminiCLIAdapter", FakeGeminiCLIAdapter)
 
     config = {
@@ -74,7 +91,9 @@ def test_create_provider_wires_cli_resilience_and_timeout(
 
     assert isinstance(provider, FakeGeminiCLIAdapter)
     assert captured["model"] == "gemini-2.5-pro"
-    assert captured["raw_provider_type"] == "FakeGeminiProvider"
+    assert captured["provider_name"] == "cli"
+    assert captured["raw_provider_type"] == "RawCLIProvider"
+    assert captured["raw_provider_model"] == "gemini-2.5-pro"
     assert captured["timeout_seconds"] == 300
     assert captured["rate_limit_backoff"] == (12, 34)
     assert captured["transient_backoff"] == (7,)
