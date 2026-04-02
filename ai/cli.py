@@ -27,7 +27,7 @@ from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider
-from ai.ports.source import TranslatedSegment
+from ai.ports.source import Segment, TranslatedSegment
 
 # ── Language mapping ──────────────────────────────────────────
 
@@ -251,9 +251,7 @@ def _load_checkpoint_translations(
         )
         return {}
     if soft_mismatches:
-        print(
-            f"[resume] Warning: forcing resume despite mismatched {', '.join(soft_mismatches)}."
-        )
+        print(f"[resume] Warning: forcing resume despite mismatched {', '.join(soft_mismatches)}.")
 
     segments_raw = raw_translations.get("segments")
     if not isinstance(segments_raw, dict):
@@ -536,6 +534,49 @@ def load_config() -> dict[str, object]:
         return {}
 
 
+def _format_progress_value(value: object) -> str:
+    text = str(value)
+    if not text:
+        return '""'
+    if any(ch.isspace() for ch in text) or "=" in text or '"' in text:
+        return json.dumps(text, ensure_ascii=False)
+    return text
+
+
+def _log_progress(event: str, *, stderr: bool = False, **fields: object) -> None:
+    parts = [
+        f"{key}={_format_progress_value(value)}"
+        for key, value in fields.items()
+        if value is not None
+    ]
+    line = f"[progress:{event}]"
+    if parts:
+        line = f"{line} {' '.join(parts)}"
+    if stderr:
+        import sys
+
+        print(line, file=sys.stderr)
+        return
+    print(line)
+
+
+def _batch_doc_identity(segments: list[Segment]) -> str | None:
+    docs: list[str] = []
+    seen: set[str] = set()
+    for segment in segments:
+        doc_path = segment.metadata.get("doc_path")
+        if not isinstance(doc_path, str) or not doc_path or doc_path in seen:
+            continue
+        seen.add(doc_path)
+        docs.append(doc_path)
+
+    if not docs:
+        return None
+    if len(docs) <= 3:
+        return ",".join(docs)
+    return ",".join(docs[:3]) + ",..."
+
+
 # ── Main ──────────────────────────────────────────────────────
 
 
@@ -565,157 +606,215 @@ def run(
     This is the programmatic entry point — ``main()`` parses CLI args
     and delegates here.
     """
-    runtime_config = config if config is not None else load_config()
+    stage = "load-config"
+    try:
+        runtime_config = config if config is not None else load_config()
 
-    # 1. Resolve model
-    resolved_model, is_pro = resolve_model(model, runtime_config, explicit=model_explicit)
-    if not model_explicit:
-        primary_model, _ = resolve_model(model, runtime_config, explicit=True)
-        is_genuine_fallback = primary_model != resolved_model and resolved_model != model
-        if is_genuine_fallback:
-            print(
-                f"Auto model fallback: primary {primary_model} unavailable, using {resolved_model}."
-            )
-    print(f"Model: {resolved_model} (pro={is_pro})")
-
-    # 2. Create provider adapter
-    provider_adapter = create_provider(
-        provider,
-        resolved_model,
-        is_pro=is_pro,
-        config=runtime_config,
-        cli_api_fallback=cli_api_fallback,
-    )
-
-    # 3. Validate input and detect/resolve format
-    input_file = Path(input_path)
-    if not input_file.exists():
-        msg = f"Input path does not exist: {input_path}"
-        raise FileNotFoundError(msg)
-
-    fmt = input_format if input_format != "auto" else detect_input_format(input_path)
-
-    if glossary_max_terms is not None and glossary_max_terms <= 0:
-        msg = f"glossary_max_terms must be > 0, got {glossary_max_terms}"
-        raise ValueError(msg)
-
-    effective_glossary = glossary
-    if extract_glossary:
-        if fmt != "epub":
-            print(
-                "Warning: Glossary extraction is only supported for EPUBs; ignoring --extract-glossary."
-            )
-        else:
-            temp_dir = _resolve_extraction_temp_dir(input_path)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            extracted_glossary = temp_dir / "extracted_glossary.json"
-            print(f"[glossary] Extracting glossary to: {extracted_glossary}")
-            extract_model, extract_is_pro = resolve_model("pro", runtime_config)
-            extract_provider_adapter = create_provider(
-                provider,
-                extract_model,
-                is_pro=extract_is_pro,
-                config=runtime_config,
-                cli_api_fallback=cli_api_fallback,
-            )
-            _extract_glossary_to_path(
-                epub_path=input_file,
-                output_path=extracted_glossary,
-                provider_adapter=extract_provider_adapter,
-                max_terms=glossary_max_terms or 20,
-            )
-            effective_glossary = str(extracted_glossary)
-
-    # 4. Build system prompt
-    language_name = _get_language_name(output_lang)
-    glossary_block = load_glossary_block(effective_glossary, min_priority=glossary_min_priority)
-    system_prompt = build_system_prompt(
-        language_name, glossary_block=glossary_block, custom_prompt=prompt
-    )
-
-    # 5. Configure engine
-    batch_chars = max_batch_chars or (60_000 if is_pro else 10_000)
-    resume_translations: dict[str, str] | None = None
-    checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
-    resume_enabled = resume or force_resume
-    if resume_enabled:
-        if fmt != "epub":
-            print("Warning: Resume is only supported for EPUB input; ignoring resume flags.")
-        else:
-            checkpoint_path = _resolve_checkpoint_dir(
-                checkpoint_dir=checkpoint_dir,
-                input_file=input_file,
-                output_file=Path(output),
-                input_format=fmt,
-            )
-            checkpoint_metadata = _build_checkpoint_metadata(
-                input_file=input_file,
-                input_format=fmt,
-                output_lang=output_lang,
-                model=resolved_model,
-                provider=provider,
-                max_batch_chars=batch_chars,
-                separator_overhead=SEPARATOR_OVERHEAD,
-                system_prompt=system_prompt,
-            )
-            resume_translations = _load_checkpoint_translations(
-                checkpoint_dir=checkpoint_path,
-                metadata=checkpoint_metadata,
-                force_resume=force_resume,
-            )
-            if resume_translations:
+        stage = "model-resolution"
+        resolved_model, is_pro = resolve_model(model, runtime_config, explicit=model_explicit)
+        if not model_explicit:
+            primary_model, _ = resolve_model(model, runtime_config, explicit=True)
+            is_genuine_fallback = primary_model != resolved_model and resolved_model != model
+            if is_genuine_fallback:
                 print(
-                    f"[resume] Loaded {len(resume_translations)} translated segments from {checkpoint_path}"
+                    f"Auto model fallback: primary {primary_model} unavailable, using {resolved_model}."
+                )
+        _log_progress(
+            "model",
+            requested=model,
+            resolved=resolved_model,
+            tier="pro" if is_pro else "standard",
+            explicit=model_explicit,
+        )
+
+        stage = "provider-init"
+        provider_adapter = create_provider(
+            provider,
+            resolved_model,
+            is_pro=is_pro,
+            config=runtime_config,
+            cli_api_fallback=cli_api_fallback,
+        )
+
+        stage = "input-validation"
+        input_file = Path(input_path)
+        if not input_file.exists():
+            msg = f"Input path does not exist: {input_path}"
+            raise FileNotFoundError(msg)
+
+        fmt = input_format if input_format != "auto" else detect_input_format(input_path)
+        _log_progress("input", format=fmt, input=input_path, output=output, output_lang=output_lang)
+
+        if glossary_max_terms is not None and glossary_max_terms <= 0:
+            msg = f"glossary_max_terms must be > 0, got {glossary_max_terms}"
+            raise ValueError(msg)
+
+        effective_glossary = glossary
+        if extract_glossary:
+            stage = "glossary-extraction"
+            if fmt != "epub":
+                print(
+                    "Warning: Glossary extraction is only supported for EPUBs; ignoring --extract-glossary."
                 )
             else:
-                print(f"[resume] No compatible checkpoint found in {checkpoint_path}; starting fresh.")
+                temp_dir = _resolve_extraction_temp_dir(input_path)
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                extracted_glossary = temp_dir / "extracted_glossary.json"
+                _log_progress("glossary", action="extract", output=extracted_glossary)
+                extract_model, extract_is_pro = resolve_model("pro", runtime_config)
+                extract_provider_adapter = create_provider(
+                    provider,
+                    extract_model,
+                    is_pro=extract_is_pro,
+                    config=runtime_config,
+                    cli_api_fallback=cli_api_fallback,
+                )
+                _extract_glossary_to_path(
+                    epub_path=input_file,
+                    output_path=extracted_glossary,
+                    provider_adapter=extract_provider_adapter,
+                    max_terms=glossary_max_terms or 20,
+                )
+                effective_glossary = str(extracted_glossary)
 
-            persisted_translations = dict(resume_translations)
+        stage = "prompt-build"
+        language_name = _get_language_name(output_lang)
+        glossary_block = load_glossary_block(effective_glossary, min_priority=glossary_min_priority)
+        system_prompt = build_system_prompt(
+            language_name, glossary_block=glossary_block, custom_prompt=prompt
+        )
 
-            def _persist_batch(_batch_index: int, translated: list[TranslatedSegment]) -> None:
-                for item in translated:
-                    persisted_translations[item.id] = item.translated
-                _persist_checkpoint(
+        stage = "engine-config"
+        batch_chars = max_batch_chars or (60_000 if is_pro else 10_000)
+        resume_translations: dict[str, str] | None = None
+        checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
+        resume_enabled = resume or force_resume
+        if resume_enabled:
+            if fmt != "epub":
+                print("Warning: Resume is only supported for EPUB input; ignoring resume flags.")
+                _log_progress("resume", enabled=False, reason="non-epub")
+            else:
+                checkpoint_path = _resolve_checkpoint_dir(
+                    checkpoint_dir=checkpoint_dir,
+                    input_file=input_file,
+                    output_file=Path(output),
+                    input_format=fmt,
+                )
+                checkpoint_metadata = _build_checkpoint_metadata(
+                    input_file=input_file,
+                    input_format=fmt,
+                    output_lang=output_lang,
+                    model=resolved_model,
+                    provider=provider,
+                    max_batch_chars=batch_chars,
+                    separator_overhead=SEPARATOR_OVERHEAD,
+                    system_prompt=system_prompt,
+                )
+                resume_translations = _load_checkpoint_translations(
                     checkpoint_dir=checkpoint_path,
                     metadata=checkpoint_metadata,
-                    translations=persisted_translations,
+                    force_resume=force_resume,
+                )
+                _log_progress(
+                    "resume",
+                    checkpoint=checkpoint_path,
+                    restored_segments=len(resume_translations),
+                    force=force_resume,
                 )
 
-            checkpoint_callback = _persist_batch
+                persisted_translations = dict(resume_translations)
 
-    engine_config = EngineConfig(
-        system_prompt=system_prompt,
-        max_batch_chars=batch_chars,
-        separator_overhead=SEPARATOR_OVERHEAD,
-        resume_translations=resume_translations,
-        on_checkpoint_batch=checkpoint_callback,
-    )
-    engine = TranslationEngine(provider_adapter, engine_config)
+                def _persist_batch(_batch_index: int, translated: list[TranslatedSegment]) -> None:
+                    for item in translated:
+                        persisted_translations[item.id] = item.translated
+                    _persist_checkpoint(
+                        checkpoint_dir=checkpoint_path,
+                        metadata=checkpoint_metadata,
+                        translations=persisted_translations,
+                    )
 
-    # 6. Create source adapter (format routing)
-    if fmt == "markdown":
-        md_dir = str(input_file) if input_file.is_dir() else str(input_file.parent)
-        md_dir_path = Path(md_dir)
-        if not md_dir_path.is_dir():
-            msg = f"Markdown directory does not exist: {md_dir}"
-            raise FileNotFoundError(msg)
-        if not list(md_dir_path.glob("page*.md")):
-            msg = f"No page*.md files found in: {md_dir}"
-            raise FileNotFoundError(msg)
-        source = MarkdownSourceAdapter(md_dir)
-    elif fmt == "pdf":
-        source = PdfSourceAdapter(input_path)
-    else:
-        source = EpubSourceAdapter(input_path)
+                checkpoint_callback = _persist_batch
 
-    # 7. Execute
-    print(f"Translating {input_path} → {output} ({output_lang})")
-    result = engine.translate(
-        source,
-        output,
-        on_batch_translated=lambda i, total: print(f"  Batch {i + 1}/{total} done"),
-    )
-    print(f"Done: {result.translated_segments} segments in {result.total_batches} batches")
+        engine_config = EngineConfig(
+            system_prompt=system_prompt,
+            max_batch_chars=batch_chars,
+            separator_overhead=SEPARATOR_OVERHEAD,
+            resume_translations=resume_translations,
+            on_checkpoint_batch=checkpoint_callback,
+        )
+        engine = TranslationEngine(provider_adapter, engine_config)
+
+        stage = "source-init"
+        if fmt == "markdown":
+            md_dir = str(input_file) if input_file.is_dir() else str(input_file.parent)
+            md_dir_path = Path(md_dir)
+            if not md_dir_path.is_dir():
+                msg = f"Markdown directory does not exist: {md_dir}"
+                raise FileNotFoundError(msg)
+            if not list(md_dir_path.glob("page*.md")):
+                msg = f"No page*.md files found in: {md_dir}"
+                raise FileNotFoundError(msg)
+            source = MarkdownSourceAdapter(md_dir)
+        elif fmt == "pdf":
+            source = PdfSourceAdapter(input_path)
+        else:
+            source = EpubSourceAdapter(input_path)
+
+        _log_progress("translate", input=input_path, output=output, output_lang=output_lang)
+
+        def _on_source_loaded(
+            total_segments: int, resumed_segments: int, total_batches: int
+        ) -> None:
+            _log_progress(
+                "source",
+                format=fmt,
+                segments=total_segments,
+                resumed=resumed_segments,
+                pending=max(total_segments - resumed_segments, 0),
+                batches=total_batches,
+            )
+
+        def _on_batch_progress(
+            batch_index: int,
+            total_batches: int,
+            translated_so_far: int,
+            total_segments: int,
+            batch_segments: list[Segment],
+        ) -> None:
+            doc_identity = _batch_doc_identity(batch_segments)
+            payload: dict[str, object] = {
+                "index": f"{batch_index + 1}/{total_batches}",
+                "translated": f"{translated_so_far}/{total_segments}",
+                "batch_segments": len(batch_segments),
+            }
+            if doc_identity is not None:
+                payload["docs"] = doc_identity
+            _log_progress("batch", **payload)
+
+        def _on_before_save(translated_segments: int) -> None:
+            _log_progress("save", output=output, segments=translated_segments)
+
+        stage = "translate"
+        result = engine.translate(
+            source,
+            output,
+            on_source_loaded=_on_source_loaded,
+            on_batch_progress=_on_batch_progress,
+            on_before_save=_on_before_save,
+        )
+        translated_segments = int(getattr(result, "translated_segments", 0))
+        total_batches = int(getattr(result, "total_batches", 0))
+        resumed_segments = int(getattr(result, "resumed_segments", 0))
+        _log_progress(
+            "done",
+            output=output,
+            segments=translated_segments,
+            batches=total_batches,
+            resumed=resumed_segments,
+        )
+    except Exception as exc:
+        _log_progress("error", stderr=True, stage=stage, error=f"{type(exc).__name__}: {exc}")
+        raise
 
 
 def _is_model_flag_explicit(argv: list[str] | None) -> bool:

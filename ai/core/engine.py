@@ -77,6 +77,9 @@ class TranslationEngine:
         output_path: str,
         *,
         on_batch_translated: Callable[[int, int], None] | None = None,
+        on_source_loaded: Callable[[int, int, int], None] | None = None,
+        on_batch_progress: (Callable[[int, int, int, int, list[Segment]], None] | None) = None,
+        on_before_save: Callable[[int], None] | None = None,
     ) -> TranslationResult:
         """Run the full translation pipeline.
 
@@ -86,6 +89,13 @@ class TranslationEngine:
             output_path: Destination file path for the translated document.
             on_batch_translated: Optional callback ``(batch_index, total_batches)``
                 invoked after each batch is translated.
+            on_source_loaded: Optional callback ``(total_segments, resumed_segments,
+                total_batches)`` invoked after source segmentation and batch planning.
+            on_batch_progress: Optional callback ``(batch_index, total_batches,
+                translated_so_far, total_segments, batch_segments)`` invoked before
+                translating each batch.
+            on_before_save: Optional callback ``(translated_segments)`` invoked after
+                applying translations and before saving output.
 
         Returns:
             Summary of the translation run.
@@ -96,6 +106,10 @@ class TranslationEngine:
         """
         segments = source.get_segments()
         if not segments:
+            if on_source_loaded is not None:
+                on_source_loaded(0, 0, 0)
+            if on_before_save is not None:
+                on_before_save(0)
             source.save(output_path)
             return TranslationResult(
                 total_segments=0,
@@ -120,12 +134,29 @@ class TranslationEngine:
         pending_batches: list[list[str]] = []
         if pending_segments:
             pending_batches = self._batcher.plan_batches([seg.text for seg in pending_segments])
+        total_batches = len(pending_batches)
+
+        if on_source_loaded is not None:
+            on_source_loaded(len(segments), resumed_segments, total_batches)
+
+        if pending_segments:
             pending_cursor = 0
+            translated_count = resumed_segments
             for i, batch in enumerate(pending_batches):
-                translated = self._translate_with_resilience(batch)
                 batch_size = len(batch)
                 batch_segments = pending_segments[pending_cursor : pending_cursor + batch_size]
                 pending_cursor += batch_size
+
+                if on_batch_progress is not None:
+                    on_batch_progress(
+                        i,
+                        total_batches,
+                        translated_count,
+                        len(segments),
+                        batch_segments,
+                    )
+
+                translated = self._translate_with_resilience(batch)
                 if len(translated) != len(batch_segments):
                     raise TranslationError(
                         f"provider returned {len(translated)} translations for {len(batch_segments)} segments"
@@ -135,6 +166,7 @@ class TranslationEngine:
                     TranslatedSegment(id=seg.id, original=seg.text, translated=text)
                     for seg, text in zip(batch_segments, translated, strict=True)
                 ]
+                translated_count += len(translated_batch)
                 for item in translated_batch:
                     translated_by_id[item.id] = item.translated
 
@@ -142,7 +174,7 @@ class TranslationEngine:
                     self._config.on_checkpoint_batch(i, translated_batch)
 
                 if on_batch_translated is not None:
-                    on_batch_translated(i, len(pending_batches))
+                    on_batch_translated(i, total_batches)
 
         if len(translated_by_id) != len(segments):
             raise TranslationError(
@@ -155,11 +187,13 @@ class TranslationEngine:
         ]
 
         source.apply_translations(translated_segments)
+        if on_before_save is not None:
+            on_before_save(len(translated_segments))
         source.save(output_path)
 
         return TranslationResult(
             total_segments=len(segments),
-            total_batches=len(pending_batches),
+            total_batches=total_batches,
             translated_segments=len(translated_segments),
             resumed_segments=resumed_segments,
         )

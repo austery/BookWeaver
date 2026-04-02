@@ -7,6 +7,7 @@ Does NOT test actual translation (that's covered by engine + adapter tests).
 from __future__ import annotations
 
 import hashlib
+import re
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -435,6 +436,9 @@ class _NoopEngine:
         output_path: str,
         *,
         on_batch_translated: object | None = None,
+        on_source_loaded: object | None = None,
+        on_batch_progress: object | None = None,
+        on_before_save: object | None = None,
     ) -> object:
         Path(output_path).write_text("", encoding="utf-8")
         return SimpleNamespace(translated_segments=0, total_batches=0)
@@ -1022,3 +1026,123 @@ class TestRunResumeCheckpoint:
             "chapter1.xhtml::1",
             "chapter2.xhtml::0",
         }
+
+
+class TestRunProgressLogging:
+    def _patch_runtime_for_epub_progress(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        source: _ResumeSource,
+        provider: _ResumeProvider,
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
+        )
+        monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: provider)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: source)
+
+    def test_run_logs_progress_contract_for_epub(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_epub_progress(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+        )
+
+        stdout = capsys.readouterr().out
+        assert "[progress:model]" in stdout
+        assert re.search(r"\[progress:source\].*segments=3", stdout)
+        assert re.search(r"\[progress:batch\].*1/1", stdout)
+        assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml,chapter2.xhtml", stdout)
+        assert "[progress:save]" in stdout
+        assert "[progress:done]" in stdout
+
+    def test_run_logs_resumed_context_when_checkpoint_loaded(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_epub_progress(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_logs"
+        TestRunResumeCheckpoint()._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        stdout = capsys.readouterr().out
+        assert re.search(r"\[progress:resume\].*restored_segments=1", stdout)
+        assert re.search(r"\[progress:source\].*resumed=1", stdout)
+
+    def test_run_logs_failure_stage_before_exception(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        class _FailingEngine:
+            def __init__(self, provider: object, config: object) -> None:
+                self.provider = provider
+                self.config = config
+
+            def translate(
+                self,
+                source: object,
+                output_path: str,
+                *,
+                on_batch_translated: object | None = None,
+                on_source_loaded: object | None = None,
+                on_batch_progress: object | None = None,
+                on_before_save: object | None = None,
+            ) -> object:
+                if callable(on_source_loaded):
+                    on_source_loaded(3, 0, 1)
+                raise RuntimeError("simulated engine failure")
+
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_epub_progress(monkeypatch, source, provider)
+        monkeypatch.setattr(cli_module, "TranslationEngine", _FailingEngine)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        with pytest.raises(RuntimeError, match="simulated engine failure"):
+            run(
+                input_path=str(in_epub),
+                output=str(tmp_path / "out.epub"),
+                input_format="epub",
+            )
+
+        captured = capsys.readouterr()
+        assert "[progress:translate]" in captured.out
+        assert "[progress:error] stage=translate" in captured.err

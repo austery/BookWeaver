@@ -125,7 +125,24 @@ The shell orchestrates multiple steps:
 
 > **Note (SPEC-013):** Steps 5-7 are not yet absorbed into `ai.cli`. PDF/DOCX-to-EPUB currently requires `translatebook.sh`. See `docs/architecture/specs/SPEC-013-pipeline-completion-shell-replacement.md`.
 
-### 3.1a) Alternative: Use Gemini API instead of CLI (experimental)
+### 3.1a) Runtime progress logs (`ai.cli`)
+
+`ai.cli` emits concise structured progress lines:
+
+- `[progress:model]` — model resolution result (`requested`, `resolved`, `tier`, `explicit`)
+- `[progress:input]` — resolved format and IO paths
+- `[progress:resume]` — checkpoint context (`restored_segments`, checkpoint path, force mode)
+- `[progress:translate]` — translation stage start
+- `[progress:source]` — source load summary (`segments`, `resumed`, `pending`, `batches`)
+- `[progress:batch]` — per-batch progress (`index`, `translated`, `batch_segments`)
+  - EPUB includes `docs=...` when doc identity is available
+- `[progress:save]` — save stage before writing output
+- `[progress:done]` — completion summary
+- `[progress:error]` — failure localization with `stage` + error type/message (stderr)
+
+These logs are intentionally operational (not verbose) and designed for quick diagnosis.
+
+### 3.1b) Alternative: Use Gemini API instead of CLI (experimental)
 
 If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you can use the direct Gemini API as an alternative:
 
