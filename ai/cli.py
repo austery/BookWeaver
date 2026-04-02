@@ -339,7 +339,8 @@ def run(
     resolved_model, is_pro = resolve_model(model, runtime_config, explicit=model_explicit)
     if not model_explicit:
         primary_model, _ = resolve_model(model, runtime_config, explicit=True)
-        if primary_model != resolved_model:
+        is_genuine_fallback = primary_model != resolved_model and resolved_model != model
+        if is_genuine_fallback:
             print(
                 f"Auto model fallback: primary {primary_model} unavailable, using {resolved_model}."
             )

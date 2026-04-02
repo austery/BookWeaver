@@ -469,6 +469,55 @@ class TestRunModelResolutionSemantics:
         stdout = capsys.readouterr().out
         assert "Auto model fallback: primary gemini-2.5-pro unavailable, using gemini-2.5-flash." in stdout
 
+    def test_run_does_not_print_auto_fallback_message_on_resolver_exception_fallback(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+
+        def fake_resolve_model(
+            model_name: str,
+            config: dict[str, object],
+            *,
+            explicit: bool = False,
+        ) -> tuple[str, bool]:
+            if explicit:
+                return ("gemini-2.5-pro", True)
+            # Simulate resolve_model exception fallback path: returns raw user input.
+            return ("pro", True)
+
+        monkeypatch.setattr(cli_module, "resolve_model", fake_resolve_model)
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {
+                "provider": args[0],
+                "model": args[1],
+                "is_pro": kwargs.get("is_pro", False),
+            },
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="pro",
+            model_explicit=False,
+            input_format="epub",
+        )
+
+        stdout = capsys.readouterr().out
+        assert "Auto model fallback:" not in stdout
+
 
 class TestRunGlossaryExtractionOrchestration:
     def _patch_base_runtime(self, monkeypatch: pytest.MonkeyPatch) -> None:
