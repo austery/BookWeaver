@@ -699,6 +699,44 @@ class TestRunModelResolutionSemantics:
         assert resolve_calls[0] == ("pro", True)
         assert create_calls[0] == "gemini-2.5-pro"
 
+    def test_run_uses_safer_default_batch_size_for_epub_pro(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model_name, config, *, explicit=False: ("gemini-2.5-pro", True),
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {
+                "provider": args[0],
+                "model": args[1],
+                "is_pro": kwargs.get("is_pro", False),
+            },
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="pro",
+            model_explicit=True,
+            input_format="epub",
+        )
+
+        assert _NoopEngine.last_config is not None
+        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 18_000
+
     def test_run_prints_auto_fallback_message_when_resolved_model_changes(
         self,
         tmp_path: Path,

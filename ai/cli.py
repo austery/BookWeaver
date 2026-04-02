@@ -76,6 +76,9 @@ _CHECKPOINT_SCHEMA_VERSION = 1
 _CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _CHECKPOINT_STATE_FILE = "state.json"
 _CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
+_DEFAULT_BATCH_CHARS_PRO_EPUB = 18_000
+_DEFAULT_BATCH_CHARS_PRO = 60_000
+_DEFAULT_BATCH_CHARS_STANDARD = 10_000
 
 
 def detect_input_format(input_path: str) -> str:
@@ -748,7 +751,15 @@ def run(
         )
 
         stage = "engine-config"
-        batch_chars = max_batch_chars or (60_000 if is_pro else 10_000)
+        if max_batch_chars is None:
+            if is_pro and fmt == "epub":
+                batch_chars = _DEFAULT_BATCH_CHARS_PRO_EPUB
+            elif is_pro:
+                batch_chars = _DEFAULT_BATCH_CHARS_PRO
+            else:
+                batch_chars = _DEFAULT_BATCH_CHARS_STANDARD
+        else:
+            batch_chars = max_batch_chars
         resume_translations: dict[str, str] | None = None
         checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
         resume_enabled = resume or force_resume
