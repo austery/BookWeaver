@@ -73,6 +73,9 @@ uv sync
 # Basic EPUB translation → Chinese
 uv run bookweaver book.epub --output book_translated.epub
 
+# Disable default resume for this run
+uv run bookweaver book.epub --output book_translated.epub --no-resume
+
 # With automatic glossary extraction (uses Pro model for extraction)
 uv run bookweaver book.epub --output book_translated.epub --extract-glossary --model pro
 
@@ -106,6 +109,7 @@ Output is written to the path you specify with `--output`.
 ```
 
 Shell wrapper output: `<input_basename>_temp/translated_roundtrip.epub`.
+EPUB workflow now enables checkpoint resume by default; pass `--no-resume` to opt out.
 
 ### 3.1) Workflow behavior notes
 

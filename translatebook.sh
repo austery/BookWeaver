@@ -39,7 +39,7 @@ WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
 FORCE_RESUME=false
-RESUME=false
+RESUME=true
 PROVIDER="cli"
 FALLBACK_PROVIDER=""
 
@@ -111,7 +111,8 @@ OPTIONS:
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --provider MODE        Translation provider: cli|api (default: cli)
     --fallback-provider MODE Optional fallback provider when primary fails (currently: api)
-    --resume              Resume from checkpoint artifacts when available (EPUB workflow)
+    --resume              Resume from checkpoint artifacts when available (EPUB workflow, default)
+    --no-resume           Disable checkpoint resume for this run
     --force-resume         Force checkpoint resume even when model/config changed (EPUB workflow)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
@@ -430,6 +431,10 @@ parse_args() {
                 ;;
             --resume)
                 RESUME=true
+                shift
+                ;;
+            --no-resume)
+                RESUME=false
                 shift
                 ;;
             -v|--verbose)

@@ -335,7 +335,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--resume",
         action="store_true",
-        help="Resume from checkpoint artifacts when available (EPUB workflow)",
+        default=True,
+        help="Resume from checkpoint artifacts when available (EPUB workflow, default: enabled)",
+    )
+    p.add_argument(
+        "--no-resume",
+        action="store_false",
+        dest="resume",
+        help="Disable checkpoint resume for this run",
     )
     p.add_argument(
         "--force-resume",
@@ -661,7 +668,7 @@ def run(
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
     input_format: str = "auto",
-    resume: bool = False,
+    resume: bool = True,
     force_resume: bool = False,
     checkpoint_dir: str | None = None,
     model_explicit: bool = False,

@@ -438,7 +438,7 @@ class TestBuildParser:
         assert args.provider == "cli"
         assert args.prompt is None
         assert args.glossary is None
-        assert args.resume is False
+        assert args.resume is True
         assert args.force_resume is False
         assert args.checkpoint_dir is None
 
@@ -494,6 +494,11 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["in.epub", "--output", "out.epub", "--extract-glossary"])
         assert args.extract_glossary is True
+
+    def test_no_resume_flag_disables_default_resume(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["in.epub", "--output", "out.epub", "--no-resume"])
+        assert args.resume is False
 
 
 class TestMainModelExplicitness:
