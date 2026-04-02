@@ -358,6 +358,11 @@ Rationale:
 - **Mitigation**: Fallback to TOC-only extraction if Index missing
 - **Acceptable failure mode**: Disable glossary extraction for books without Index/TOC
 
+### Risk 1a: Non-standard Index Naming ⚠️ Known Gap
+- **Issue**: Some EPUBs name their index page something other than "index" / "idx" (e.g., *Writing to Learn* by Zinsser calls it "Searchable Terms"). Current two-pass detection (filename hints + Kindle nav bar) misses these, resulting in `Index: 0 chars`.
+- **Proposed fix**: Add a third content-pattern pass — scan the last N spine docs and count lines matching `[text], [page_number]` or `[term], [N]–[N]` format. If >40% of non-empty lines match, classify as index regardless of filename.
+- **Status**: Backlog — tracked in MOC as SPEC-010 follow-up.
+
 ### Risk 2: False Negative Terms
 - **Issue**: Some critical terms may not appear in Index
 - **Mitigation**: Strategy B/C expand scope to Preface/Chapters
