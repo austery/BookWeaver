@@ -1065,12 +1065,17 @@ class TestRunProgressLogging:
         )
 
         stdout = capsys.readouterr().out
-        assert "[progress:model]" in stdout
+        assert re.search(
+            r"\[progress:model\].*requested=.*resolved=.*tier=.*explicit=",
+            stdout,
+        )
         assert re.search(r"\[progress:source\].*segments=3", stdout)
-        assert re.search(r"\[progress:batch\].*1/1", stdout)
+        assert re.search(r"\[progress:batch\].*index=1/1", stdout)
+        assert re.search(r"\[progress:batch\].*translated=0/3", stdout)
+        assert re.search(r"\[progress:batch\].*batch_segments=3", stdout)
         assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml,chapter2.xhtml", stdout)
-        assert "[progress:save]" in stdout
-        assert "[progress:done]" in stdout
+        assert re.search(r"\[progress:save\].*segments=3", stdout)
+        assert re.search(r"\[progress:done\].*segments=3.*batches=1.*resumed=0", stdout)
 
     def test_run_logs_resumed_context_when_checkpoint_loaded(
         self,
