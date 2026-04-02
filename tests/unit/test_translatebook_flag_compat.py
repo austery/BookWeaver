@@ -209,7 +209,7 @@ def test_epub_dry_run_propagates_optional_ai_cli_flags() -> None:
         assert "--extract-glossary" in combined_output
 
 
-def test_epub_dry_run_force_resume_is_warned_as_ignored() -> None:
+def test_epub_dry_run_force_resume_is_forwarded_to_ai_cli() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         input_epub = Path(temp_dir) / "book.epub"
         _build_min_epub(input_epub)
@@ -230,8 +230,8 @@ def test_epub_dry_run_force_resume_is_warned_as_ignored() -> None:
         )
         combined_output = f"{completed.stdout}\n{completed.stderr}".lower()
         assert completed.returncode == 0
-        assert "force-resume" in combined_output
-        assert "ignored" in combined_output
+        assert "--force-resume" in combined_output
+        assert "ignored in ai.cli workflow" not in combined_output
 
 
 def test_markdown_dry_run_step3_uses_ai_cli_and_step4_is_skipped() -> None:

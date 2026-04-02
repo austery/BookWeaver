@@ -6,12 +6,15 @@ Does NOT test actual translation (that's covered by engine + adapter tests).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import ai.cli as cli_module
+from ai.ports.source import Segment, TranslatedSegment
 from ai.cli import (
     build_parser,
     build_system_prompt,
@@ -234,6 +237,9 @@ class TestBuildParser:
         assert args.provider == "cli"
         assert args.prompt is None
         assert args.glossary is None
+        assert args.resume is False
+        assert args.force_resume is False
+        assert args.checkpoint_dir is None
 
     def test_all_args(self) -> None:
         parser = build_parser()
@@ -259,6 +265,10 @@ class TestBuildParser:
                 "--cli-api-fallback",
                 "--max-batch-chars",
                 "30000",
+                "--resume",
+                "--force-resume",
+                "--checkpoint-dir",
+                "checkpoint-dir",
             ]
         )
         assert args.output_lang == "ja"
@@ -270,6 +280,9 @@ class TestBuildParser:
         assert args.glossary_max_terms == 30
         assert args.cli_api_fallback is True
         assert args.max_batch_chars == 30000
+        assert args.resume is True
+        assert args.force_resume is True
+        assert args.checkpoint_dir == "checkpoint-dir"
 
     def test_short_prompt_flag(self) -> None:
         parser = build_parser()
@@ -798,3 +811,214 @@ class TestRunGlossaryExtractionOrchestration:
         assert create_calls == ["gemini-2.5-flash", "gemini-2.5-pro"]
         assert isinstance(_NoopEngine.last_provider, dict)
         assert _NoopEngine.last_provider["model"] == "gemini-2.5-flash"
+
+
+class _ResumeProvider:
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+        batch = list(segments)
+        self.calls.append(batch)
+        return [f"翻译:{item}" for item in batch]
+
+
+class _ResumeSource:
+    def __init__(self) -> None:
+        self.applied: list[TranslatedSegment] | None = None
+        self.saved_to: str | None = None
+        self._segments = [
+            Segment(id="chapter1.xhtml::0", text="A", metadata={"doc_path": "chapter1.xhtml"}),
+            Segment(id="chapter1.xhtml::1", text="B", metadata={"doc_path": "chapter1.xhtml"}),
+            Segment(id="chapter2.xhtml::0", text="C", metadata={"doc_path": "chapter2.xhtml"}),
+        ]
+
+    def get_segments(self) -> list[Segment]:
+        return list(self._segments)
+
+    def apply_translations(self, translated: list[TranslatedSegment]) -> None:
+        self.applied = translated
+
+    def save(self, output_path: str) -> None:
+        self.saved_to = output_path
+        Path(output_path).write_text("", encoding="utf-8")
+
+
+class TestRunResumeCheckpoint:
+    def _patch_runtime_for_resume(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        source: _ResumeSource,
+        provider: _ResumeProvider,
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
+        )
+        monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: provider)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: source)
+
+    def _write_partial_checkpoint(
+        self,
+        *,
+        checkpoint_dir: Path,
+        input_epub: Path,
+        output_lang: str = "zh",
+        model: str = "gemini-2.5-flash",
+    ) -> None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        system_prompt = build_system_prompt("Chinese")
+        state = {
+            "schema_version": 1,
+            "input_signature": cli_module._compute_input_signature(input_epub),
+            "input_format": "epub",
+            "output_lang": output_lang,
+            "model": model,
+            "provider": "cli",
+            "max_batch_chars": 10000,
+            "separator_overhead": cli_module.SEPARATOR_OVERHEAD,
+            "system_prompt_hash": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
+            "translated_segment_count": 1,
+        }
+        (checkpoint_dir / "state.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (checkpoint_dir / "translations.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "segments": {"chapter1.xhtml::0": "缓存:A"},
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def test_run_resume_skips_translated_segments_from_checkpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp"
+        self._write_partial_checkpoint(checkpoint_dir=checkpoint_dir, input_epub=in_epub)
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["B", "C"]]
+        assert source.applied is not None
+        assert [item.translated for item in source.applied] == ["缓存:A", "翻译:B", "翻译:C"]
+
+    def test_run_force_resume_allows_model_mismatch_checkpoint(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_force"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            model="gemini-2.5-pro",
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            force_resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["B", "C"]]
+
+    def test_run_resume_rejects_incompatible_checkpoint_without_force(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_strict"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            model="gemini-2.5-pro",
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["A", "B", "C"]]
+
+    def test_run_resume_uses_stable_default_checkpoint_layout(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_dir = tmp_path / "book_temp"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_file = out_dir / "translated_roundtrip.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+        )
+
+        checkpoint_dir = out_dir / ".bookweaver_checkpoints" / "epub" / "book"
+        state_file = checkpoint_dir / "state.json"
+        translations_file = checkpoint_dir / "translations.json"
+        assert state_file.exists()
+        assert translations_file.exists()
+
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        assert state["schema_version"] == 1
+        assert state["input_format"] == "epub"
+        assert state["translated_segment_count"] == 3
+
+        translations = json.loads(translations_file.read_text(encoding="utf-8"))
+        assert set(translations["segments"]) == {
+            "chapter1.xhtml::0",
+            "chapter1.xhtml::1",
+            "chapter2.xhtml::0",
+        }

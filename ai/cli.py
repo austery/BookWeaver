@@ -12,6 +12,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from ai.adapters.providers._delimiter import SEPARATOR_OVERHEAD
@@ -23,6 +27,7 @@ from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider
+from ai.ports.source import TranslatedSegment
 
 # ── Language mapping ──────────────────────────────────────────
 
@@ -67,6 +72,10 @@ _FORMAT_MAP: dict[str, str] = {
     ".md": "markdown",
     ".pdf": "pdf",
 }
+_CHECKPOINT_SCHEMA_VERSION = 1
+_CHECKPOINT_ROOT = ".bookweaver_checkpoints"
+_CHECKPOINT_STATE_FILE = "state.json"
+_CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
 
 
 def detect_input_format(input_path: str) -> str:
@@ -81,6 +90,184 @@ def detect_input_format(input_path: str) -> str:
         return "markdown"
     suffix = p.suffix.lower()
     return _FORMAT_MAP.get(suffix, "epub")
+
+
+@dataclass(frozen=True)
+class CheckpointMetadata:
+    input_signature: str
+    input_format: str
+    output_lang: str
+    model: str
+    provider: str
+    max_batch_chars: int
+    separator_overhead: int
+    system_prompt_hash: str
+
+
+def _compute_input_signature(input_file: Path) -> str:
+    stat = input_file.stat()
+    payload = f"{input_file.resolve()}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _checkpoint_state_file(checkpoint_dir: Path) -> Path:
+    return checkpoint_dir / _CHECKPOINT_STATE_FILE
+
+
+def _checkpoint_translations_file(checkpoint_dir: Path) -> Path:
+    return checkpoint_dir / _CHECKPOINT_TRANSLATIONS_FILE
+
+
+def _resolve_checkpoint_dir(
+    *,
+    checkpoint_dir: str | None,
+    input_file: Path,
+    output_file: Path,
+    input_format: str,
+) -> Path:
+    if checkpoint_dir is not None:
+        return Path(checkpoint_dir)
+    return output_file.parent / _CHECKPOINT_ROOT / input_format / input_file.stem
+
+
+def _build_checkpoint_metadata(
+    *,
+    input_file: Path,
+    input_format: str,
+    output_lang: str,
+    model: str,
+    provider: str,
+    max_batch_chars: int,
+    separator_overhead: int,
+    system_prompt: str,
+) -> CheckpointMetadata:
+    return CheckpointMetadata(
+        input_signature=_compute_input_signature(input_file),
+        input_format=input_format,
+        output_lang=output_lang,
+        model=model,
+        provider=provider,
+        max_batch_chars=max_batch_chars,
+        separator_overhead=separator_overhead,
+        system_prompt_hash=hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
+    )
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temp_path.replace(path)
+
+
+def _persist_checkpoint(
+    *,
+    checkpoint_dir: Path,
+    metadata: CheckpointMetadata,
+    translations: dict[str, str],
+) -> None:
+    state_payload: dict[str, object] = {
+        "schema_version": _CHECKPOINT_SCHEMA_VERSION,
+        "input_signature": metadata.input_signature,
+        "input_format": metadata.input_format,
+        "output_lang": metadata.output_lang,
+        "model": metadata.model,
+        "provider": metadata.provider,
+        "max_batch_chars": metadata.max_batch_chars,
+        "separator_overhead": metadata.separator_overhead,
+        "system_prompt_hash": metadata.system_prompt_hash,
+        "translated_segment_count": len(translations),
+    }
+    translations_payload: dict[str, object] = {
+        "schema_version": _CHECKPOINT_SCHEMA_VERSION,
+        "segments": translations,
+    }
+    _write_json(_checkpoint_state_file(checkpoint_dir), state_payload)
+    _write_json(_checkpoint_translations_file(checkpoint_dir), translations_payload)
+
+
+def _load_checkpoint_translations(
+    *,
+    checkpoint_dir: Path,
+    metadata: CheckpointMetadata,
+    force_resume: bool,
+) -> dict[str, str]:
+    state_file = _checkpoint_state_file(checkpoint_dir)
+    translations_file = _checkpoint_translations_file(checkpoint_dir)
+    if not state_file.exists() or not translations_file.exists():
+        return {}
+
+    try:
+        raw_state = json.loads(state_file.read_text(encoding="utf-8"))
+        raw_translations = json.loads(translations_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"[resume] Warning: failed to parse checkpoint files ({exc}), starting fresh.")
+        return {}
+
+    if not isinstance(raw_state, dict) or not isinstance(raw_translations, dict):
+        print("[resume] Warning: invalid checkpoint schema, starting fresh.")
+        return {}
+
+    schema_errors = (
+        ("state", raw_state.get("schema_version")),
+        ("translation", raw_translations.get("schema_version")),
+    )
+    for schema_label, version in schema_errors:
+        if version != _CHECKPOINT_SCHEMA_VERSION:
+            print(f"[resume] Warning: checkpoint {schema_label} schema mismatch, starting fresh.")
+            return {}
+
+    hard_mismatches: list[str] = []
+    if raw_state.get("input_signature") != metadata.input_signature:
+        hard_mismatches.append("input signature")
+    if raw_state.get("input_format") != metadata.input_format:
+        hard_mismatches.append("input format")
+    if hard_mismatches:
+        print(
+            f"[resume] Warning: checkpoint invalidated ({', '.join(hard_mismatches)} changed), starting fresh."
+        )
+        return {}
+
+    soft_mismatches: list[str] = []
+    expected_pairs: tuple[tuple[str, str | int], ...] = (
+        ("output_lang", metadata.output_lang),
+        ("model", metadata.model),
+        ("provider", metadata.provider),
+        ("max_batch_chars", metadata.max_batch_chars),
+        ("separator_overhead", metadata.separator_overhead),
+        ("system_prompt_hash", metadata.system_prompt_hash),
+    )
+    for key, expected in expected_pairs:
+        if raw_state.get(key) != expected:
+            soft_mismatches.append(key)
+
+    if soft_mismatches and not force_resume:
+        print(
+            f"[resume] Warning: checkpoint invalidated ({', '.join(soft_mismatches)} mismatch). "
+            "Use --force-resume to override."
+        )
+        return {}
+    if soft_mismatches:
+        print(
+            f"[resume] Warning: forcing resume despite mismatched {', '.join(soft_mismatches)}."
+        )
+
+    segments_raw = raw_translations.get("segments")
+    if not isinstance(segments_raw, dict):
+        print("[resume] Warning: invalid translations payload, starting fresh.")
+        return {}
+
+    translations: dict[str, str] = {}
+    for segment_id, translated_text in segments_raw.items():
+        if not isinstance(segment_id, str) or not isinstance(translated_text, str):
+            print("[resume] Warning: malformed checkpoint segment entry, starting fresh.")
+            return {}
+        translations[segment_id] = translated_text
+
+    return translations
 
 
 # ── Argument parsing ──────────────────────────────────────────
@@ -140,6 +327,21 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["auto", "epub", "markdown", "pdf"],
         default="auto",
         help="Input format (default: auto-detect from path)",
+    )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from checkpoint artifacts when available (EPUB workflow)",
+    )
+    p.add_argument(
+        "--force-resume",
+        action="store_true",
+        help="Resume even when model/config changed (EPUB workflow)",
+    )
+    p.add_argument(
+        "--checkpoint-dir",
+        default=None,
+        help="Checkpoint directory path (default: <output-dir>/.bookweaver_checkpoints/<format>/<input-stem>)",
     )
     return p
 
@@ -352,6 +554,9 @@ def run(
     cli_api_fallback: bool = False,
     max_batch_chars: int | None = None,
     input_format: str = "auto",
+    resume: bool = False,
+    force_resume: bool = False,
+    checkpoint_dir: str | None = None,
     model_explicit: bool = False,
     config: dict[str, object] | None = None,
 ) -> None:
@@ -430,10 +635,60 @@ def run(
 
     # 5. Configure engine
     batch_chars = max_batch_chars or (60_000 if is_pro else 10_000)
+    resume_translations: dict[str, str] | None = None
+    checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
+    resume_enabled = resume or force_resume
+    if resume_enabled:
+        if fmt != "epub":
+            print("Warning: Resume is only supported for EPUB input; ignoring resume flags.")
+        else:
+            checkpoint_path = _resolve_checkpoint_dir(
+                checkpoint_dir=checkpoint_dir,
+                input_file=input_file,
+                output_file=Path(output),
+                input_format=fmt,
+            )
+            checkpoint_metadata = _build_checkpoint_metadata(
+                input_file=input_file,
+                input_format=fmt,
+                output_lang=output_lang,
+                model=resolved_model,
+                provider=provider,
+                max_batch_chars=batch_chars,
+                separator_overhead=SEPARATOR_OVERHEAD,
+                system_prompt=system_prompt,
+            )
+            resume_translations = _load_checkpoint_translations(
+                checkpoint_dir=checkpoint_path,
+                metadata=checkpoint_metadata,
+                force_resume=force_resume,
+            )
+            if resume_translations:
+                print(
+                    f"[resume] Loaded {len(resume_translations)} translated segments from {checkpoint_path}"
+                )
+            else:
+                print(f"[resume] No compatible checkpoint found in {checkpoint_path}; starting fresh.")
+
+            persisted_translations = dict(resume_translations)
+
+            def _persist_batch(_batch_index: int, translated: list[TranslatedSegment]) -> None:
+                for item in translated:
+                    persisted_translations[item.id] = item.translated
+                _persist_checkpoint(
+                    checkpoint_dir=checkpoint_path,
+                    metadata=checkpoint_metadata,
+                    translations=persisted_translations,
+                )
+
+            checkpoint_callback = _persist_batch
+
     engine_config = EngineConfig(
         system_prompt=system_prompt,
         max_batch_chars=batch_chars,
         separator_overhead=SEPARATOR_OVERHEAD,
+        resume_translations=resume_translations,
+        on_checkpoint_batch=checkpoint_callback,
     )
     engine = TranslationEngine(provider_adapter, engine_config)
 
@@ -491,6 +746,9 @@ def main(argv: list[str] | None = None) -> None:
         cli_api_fallback=args.cli_api_fallback,
         max_batch_chars=args.max_batch_chars,
         input_format=args.input_format,
+        resume=args.resume,
+        force_resume=args.force_resume,
+        checkpoint_dir=args.checkpoint_dir,
     )
 
 

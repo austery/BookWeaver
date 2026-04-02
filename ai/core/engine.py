@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from ai.core.batcher import TextBatcher
 from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
-from ai.ports.source import IBookSource, TranslatedSegment
+from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,8 @@ class EngineConfig:
     max_batch_chars: int = 60_000
     separator_overhead: int = 6
     max_split_depth: int = 10
+    resume_translations: dict[str, str] | None = None
+    on_checkpoint_batch: Callable[[int, list[TranslatedSegment]], None] | None = None
 
 
 @dataclass
@@ -44,6 +46,7 @@ class TranslationResult:
     total_segments: int
     total_batches: int
     translated_segments: int
+    resumed_segments: int = 0
 
 
 class TranslationEngine:
@@ -94,25 +97,61 @@ class TranslationEngine:
         segments = source.get_segments()
         if not segments:
             source.save(output_path)
-            return TranslationResult(total_segments=0, total_batches=0, translated_segments=0)
-
-        texts = [s.text for s in segments]
-        batches = self._batcher.plan_batches(texts)
-
-        all_translated: list[str] = []
-        for i, batch in enumerate(batches):
-            translated = self._translate_with_resilience(batch)
-            all_translated.extend(translated)
-            if on_batch_translated is not None:
-                on_batch_translated(i, len(batches))
-
-        if len(all_translated) != len(segments):
-            raise TranslationError(
-                f"provider returned {len(all_translated)} translations for {len(segments)} segments"
+            return TranslationResult(
+                total_segments=0,
+                total_batches=0,
+                translated_segments=0,
+                resumed_segments=0,
             )
+
+        resumed_by_id = self._config.resume_translations or {}
+        translated_by_id: dict[str, str] = {}
+        pending_segments: list[Segment] = []
+        resumed_segments = 0
+
+        for seg in segments:
+            resumed = resumed_by_id.get(seg.id)
+            if resumed is None:
+                pending_segments.append(seg)
+                continue
+            translated_by_id[seg.id] = resumed
+            resumed_segments += 1
+
+        pending_batches: list[list[str]] = []
+        if pending_segments:
+            pending_batches = self._batcher.plan_batches([seg.text for seg in pending_segments])
+            pending_cursor = 0
+            for i, batch in enumerate(pending_batches):
+                translated = self._translate_with_resilience(batch)
+                batch_size = len(batch)
+                batch_segments = pending_segments[pending_cursor : pending_cursor + batch_size]
+                pending_cursor += batch_size
+                if len(translated) != len(batch_segments):
+                    raise TranslationError(
+                        f"provider returned {len(translated)} translations for {len(batch_segments)} segments"
+                    )
+
+                translated_batch = [
+                    TranslatedSegment(id=seg.id, original=seg.text, translated=text)
+                    for seg, text in zip(batch_segments, translated, strict=True)
+                ]
+                for item in translated_batch:
+                    translated_by_id[item.id] = item.translated
+
+                if self._config.on_checkpoint_batch is not None:
+                    self._config.on_checkpoint_batch(i, translated_batch)
+
+                if on_batch_translated is not None:
+                    on_batch_translated(i, len(pending_batches))
+
+        if len(translated_by_id) != len(segments):
+            raise TranslationError(
+                f"provider returned {len(translated_by_id)} translations for {len(segments)} segments"
+            )
+
         translated_segments = [
-            TranslatedSegment(id=seg.id, original=seg.text, translated=text)
-            for seg, text in zip(segments, all_translated, strict=True)
+            TranslatedSegment(id=seg.id, original=seg.text, translated=translated_by_id[seg.id])
+            for seg in segments
         ]
 
         source.apply_translations(translated_segments)
@@ -120,8 +159,9 @@ class TranslationEngine:
 
         return TranslationResult(
             total_segments=len(segments),
-            total_batches=len(batches),
-            translated_segments=len(all_translated),
+            total_batches=len(pending_batches),
+            translated_segments=len(translated_segments),
+            resumed_segments=resumed_segments,
         )
 
     # ── Resilience ────────────────────────────────────────────

@@ -110,7 +110,7 @@ OPTIONS:
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --provider MODE        Translation provider: cli|api (default: cli)
     --fallback-provider MODE Optional fallback provider when primary fails (currently: api)
-    --force-resume         Compatibility flag (ignored in ai.cli-based workflows)
+    --force-resume         Force checkpoint resume even when model/config changed (EPUB workflow)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
     -h, --help             Show this help message
@@ -582,6 +582,7 @@ show_config() {
     echo "  Resolved workflow: $RESOLVED_WORKFLOW"
     echo "  Provider: $PROVIDER"
     echo "  Fallback provider: ${FALLBACK_PROVIDER:-none}"
+    echo "  Force resume: $FORCE_RESUME"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
     echo ""
@@ -733,14 +734,14 @@ main() {
         if [[ "$EXTRACT_GLOSSARY" == true ]]; then
             cmd+=(--extract-glossary)
         fi
+        if [[ "$FORCE_RESUME" == true ]]; then
+            cmd+=(--force-resume)
+        fi
 
         local translate_cmd_display
         translate_cmd_display="$(printf '%q ' "${cmd[@]}")"
 
         log_step "workflow-epub" "EPUB package-preserving translation workflow"
-        if [[ "$FORCE_RESUME" == true ]]; then
-            log_warning "--force-resume is ignored in ai.cli workflow (no checkpoint resume support)"
-        fi
         if [[ "$BILINGUAL_STYLE" != "alternating" && -n "$BILINGUAL_STYLE" ]]; then
             log_warning "--bilingual-style '$BILINGUAL_STYLE' is not supported in ai.cli workflow (only 'alternating' is supported)"
         fi

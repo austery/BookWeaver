@@ -193,6 +193,63 @@ class TestTranslateHappyPath:
         assert ids == ["ch1/p1", "ch2/p5"]
 
 
+class TestResumeBehavior:
+    def test_resume_skips_pretranslated_segments_and_persists_new_batches(self) -> None:
+        provider = FakeProvider()
+        source = FakeSource(_make_segments(["A", "B", "C"]))
+        persisted_batches: list[tuple[int, list[str]]] = []
+
+        def record_checkpoint_batch(batch_index: int, translated: list[TranslatedSegment]) -> None:
+            persisted_batches.append((batch_index, [item.id for item in translated]))
+
+        engine = TranslationEngine(
+            provider,
+            _default_config(
+                max_batch_chars=1000,
+                resume_translations={"seg-0": "cached:A"},
+                on_checkpoint_batch=record_checkpoint_batch,
+            ),
+        )
+
+        result = engine.translate(source, "out.epub")
+
+        assert result.total_segments == 3
+        assert result.total_batches == 1
+        assert result.translated_segments == 3
+        assert result.resumed_segments == 1
+        assert len(provider.calls) == 1
+        assert provider.calls[0][0] == ["B", "C"]
+        assert persisted_batches == [(0, ["seg-1", "seg-2"])]
+        assert source.applied is not None
+        assert [item.translated for item in source.applied] == ["cached:A", "翻译:B", "翻译:C"]
+
+    def test_resume_with_all_segments_skips_provider_calls(self) -> None:
+        provider = FakeProvider()
+        source = FakeSource(_make_segments(["One", "Two"]))
+        persisted_batches: list[tuple[int, list[str]]] = []
+
+        engine = TranslationEngine(
+            provider,
+            _default_config(
+                resume_translations={"seg-0": "缓存:One", "seg-1": "缓存:Two"},
+                on_checkpoint_batch=lambda i, batch: persisted_batches.append(
+                    (i, [item.id for item in batch])
+                ),
+            ),
+        )
+
+        result = engine.translate(source, "out.epub")
+
+        assert result.total_segments == 2
+        assert result.total_batches == 0
+        assert result.translated_segments == 2
+        assert result.resumed_segments == 2
+        assert provider.calls == []
+        assert persisted_batches == []
+        assert source.applied is not None
+        assert [item.translated for item in source.applied] == ["缓存:One", "缓存:Two"]
+
+
 # ── Callback ──────────────────────────────────────────────────
 
 
