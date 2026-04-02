@@ -254,8 +254,16 @@ def create_provider(
     if not isinstance(resilience, dict):
         resilience = {}
 
-    rate_limit_backoff = tuple(resilience.get("rate_limit_backoff_seconds", [60, 120]))
-    transient_backoff = tuple(resilience.get("transient_backoff_seconds", [45]))
+    rate_limit_backoff = _resolve_resilience_backoff(
+        resilience,
+        key="rate_limit_backoff_seconds",
+        default=(60, 120),
+    )
+    transient_backoff = _resolve_resilience_backoff(
+        resilience,
+        key="transient_backoff_seconds",
+        default=(45,),
+    )
 
     if provider_name == "api":
         from ai.gemini_api_provider import GeminiAPIProvider
@@ -274,6 +282,25 @@ def create_provider(
         rate_limit_backoff=rate_limit_backoff,
         transient_backoff=transient_backoff,
     )
+
+
+def _resolve_resilience_backoff(
+    resilience: dict[str, object],
+    *,
+    key: str,
+    default: tuple[int, ...],
+) -> tuple[int, ...]:
+    """Resolve and validate resilience backoff sequences from config."""
+    raw = resilience.get(key, list(default))
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"{key} must be a list of positive integers")
+
+    values: list[int] = []
+    for item in raw:
+        if isinstance(item, bool) or not isinstance(item, int) or item <= 0:
+            raise ValueError(f"{key} values must be positive integers")
+        values.append(item)
+    return tuple(values)
 
 
 def _resolve_api_key(config: dict[str, object] | None) -> str | None:

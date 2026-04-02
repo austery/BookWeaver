@@ -47,8 +47,14 @@ class GeminiCLIAdapter(ITranslationProvider):
     ) -> None:
         self._raw = raw_provider
         self._timeout = timeout_seconds
-        self._rate_limit_backoff = rate_limit_backoff
-        self._transient_backoff = transient_backoff
+        self._rate_limit_backoff = self._validate_backoff(
+            rate_limit_backoff,
+            label="rate_limit_backoff",
+        )
+        self._transient_backoff = self._validate_backoff(
+            transient_backoff,
+            label="transient_backoff",
+        )
         self._sleep = sleep_fn
 
     def translate_batch(
@@ -74,6 +80,7 @@ class GeminiCLIAdapter(ITranslationProvider):
         """Call the raw translator with rate-limit and transient retries."""
         rate_budget = list(self._rate_limit_backoff)
         transient_budget = list(self._transient_backoff)
+        transient_attempts = 0
 
         while True:
             try:
@@ -89,11 +96,27 @@ class GeminiCLIAdapter(ITranslationProvider):
                         raise RateLimitError(str(exc)) from exc
                     self._sleep(rate_budget.pop(0))
                 elif self._is_transient(exc):
+                    transient_attempts += 1
                     if not transient_budget:
-                        raise TranslationError(str(exc)) from exc
+                        configured_retries = len(self._transient_backoff)
+                        raise TranslationError(
+                            "Transient CLI retries exhausted after "
+                            f"{transient_attempts} attempts (configured retries: "
+                            f"{configured_retries}): {exc}"
+                        ) from exc
                     self._sleep(transient_budget.pop(0))
                 else:
                     raise TranslationError(str(exc)) from exc
+
+    @staticmethod
+    def _validate_backoff(
+        values: tuple[int, ...],
+        *,
+        label: str,
+    ) -> tuple[int, ...]:
+        if any((not isinstance(value, int)) or value <= 0 for value in values):
+            raise ValueError(f"{label} values must be positive integers")
+        return values
 
     @staticmethod
     def _is_rate_limit(exc: Exception) -> bool:

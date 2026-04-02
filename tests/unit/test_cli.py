@@ -15,6 +15,7 @@ import ai.cli as cli_module
 from ai.cli import (
     build_parser,
     build_system_prompt,
+    create_provider,
     detect_input_format,
     load_config,
     load_glossary_block,
@@ -157,6 +158,66 @@ class TestLoadConfig:
 
         monkeypatch.setattr(cli_module, "ConfigRegistry", _RaisingRegistry)
         assert load_config() == {}
+
+
+# ── Provider wiring ─────────────────────────────────────────────
+
+
+class TestCreateProviderResilience:
+    def test_create_provider_uses_transient_retry_sequence_from_resilience_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+
+        class _FakeGeminiProvider:
+            def __init__(self, model: str) -> None:
+                captured["model"] = model
+
+        class _FakeGeminiCLIAdapter:
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                rate_limit_backoff: tuple[int, ...],
+                transient_backoff: tuple[int, ...],
+            ) -> None:
+                captured["raw_provider_type"] = type(raw_provider).__name__
+                captured["timeout_seconds"] = timeout_seconds
+                captured["rate_limit_backoff"] = rate_limit_backoff
+                captured["transient_backoff"] = transient_backoff
+
+        import ai.gemini_provider as gemini_provider_module
+
+        monkeypatch.setattr(gemini_provider_module, "GeminiProvider", _FakeGeminiProvider)
+        monkeypatch.setattr(cli_module, "GeminiCLIAdapter", _FakeGeminiCLIAdapter)
+
+        provider = create_provider(
+            "cli",
+            "gemini-2.5-flash",
+            is_pro=False,
+            config={
+                "epub_resilience": {
+                    "rate_limit_backoff_seconds": [9],
+                    "transient_backoff_seconds": [3, 5, 8],
+                }
+            },
+        )
+
+        assert isinstance(provider, _FakeGeminiCLIAdapter)
+        assert captured["model"] == "gemini-2.5-flash"
+        assert captured["raw_provider_type"] == "_FakeGeminiProvider"
+        assert captured["timeout_seconds"] == 180
+        assert captured["rate_limit_backoff"] == (9,)
+        assert captured["transient_backoff"] == (3, 5, 8)
+
+    def test_create_provider_rejects_non_positive_transient_backoff_values(self) -> None:
+        with pytest.raises(ValueError, match="transient_backoff_seconds"):
+            create_provider(
+                "cli",
+                "gemini-2.5-flash",
+                config={"epub_resilience": {"transient_backoff_seconds": [4, 0]}},
+            )
 
 
 # ── Argument parsing ──────────────────────────────────────────
@@ -467,7 +528,10 @@ class TestRunModelResolutionSemantics:
         )
 
         stdout = capsys.readouterr().out
-        assert "Auto model fallback: primary gemini-2.5-pro unavailable, using gemini-2.5-flash." in stdout
+        assert (
+            "Auto model fallback: primary gemini-2.5-pro unavailable, using gemini-2.5-flash."
+            in stdout
+        )
 
     def test_run_does_not_print_auto_fallback_message_on_resolver_exception_fallback(
         self,

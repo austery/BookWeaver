@@ -243,18 +243,45 @@ class TestGeminiCLIAdapterRetry:
         assert result == ["ok"]
         assert sleeps == [30]
 
-    def test_transient_exhausted_raises(self) -> None:
+    def test_transient_multi_retry_succeeds_with_configured_sequence(self) -> None:
+        sleeps: list[float] = []
         raw = FakeRawProvider(
-            errors=[_FakeTransientCLIError(), _FakeTransientCLIError()],
+            errors=[
+                _FakeTransientCLIError("AbortError #1"),
+                _FakeTransientCLIError("AbortError #2"),
+            ],
+            responses=["ok"],
         )
         adapter = GeminiCLIAdapter(
             raw,
-            transient_backoff=(),  # no retries
+            transient_backoff=(7, 11),
+            sleep_fn=sleeps.append,
+        )
+
+        result = adapter.translate_batch(["Hi"], system_prompt="T")
+
+        assert result == ["ok"]
+        assert sleeps == [7, 11]
+        assert len(raw.calls) == 3
+
+    def test_transient_exhausted_raises(self) -> None:
+        first = _FakeTransientCLIError("AbortError #1")
+        second = _FakeTransientCLIError("AbortError #2")
+        raw = FakeRawProvider(
+            errors=[first, second],
+        )
+        adapter = GeminiCLIAdapter(
+            raw,
+            transient_backoff=(5,),  # only 1 retry
             sleep_fn=lambda _: None,
         )
 
-        with pytest.raises(TranslationError):
+        with pytest.raises(
+            TranslationError,
+            match=r"Transient CLI retries exhausted after 2 attempts \(configured retries: 1\)",
+        ) as exc_info:
             adapter.translate_batch(["Hi"], system_prompt="T")
+        assert exc_info.value.__cause__ is second
 
     def test_unknown_error_raises_immediately(self) -> None:
         raw = FakeRawProvider(errors=[ValueError("bad input")])
