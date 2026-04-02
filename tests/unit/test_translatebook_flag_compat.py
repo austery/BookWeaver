@@ -230,8 +230,33 @@ def test_epub_dry_run_force_resume_is_forwarded_to_ai_cli() -> None:
         )
         combined_output = f"{completed.stdout}\n{completed.stderr}".lower()
         assert completed.returncode == 0
-        assert "--force-resume" in combined_output
-        assert "ignored in ai.cli workflow" not in combined_output
+    assert "--force-resume" in combined_output
+    assert "ignored in ai.cli workflow" not in combined_output
+
+
+def test_epub_dry_run_resume_is_forwarded_to_ai_cli() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                "--resume",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}".lower()
+        assert completed.returncode == 0
+        assert "--resume" in combined_output
+        assert "unknown option: --resume" not in combined_output
 
 
 def test_markdown_dry_run_step3_uses_ai_cli_and_step4_is_skipped() -> None:

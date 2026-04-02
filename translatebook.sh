@@ -39,6 +39,7 @@ WORKFLOW_OVERRIDE=""
 RESOLVED_WORKFLOW=""
 USED_LEGACY_ROUNDTRIP_FLAG=false
 FORCE_RESUME=false
+RESUME=false
 PROVIDER="cli"
 FALLBACK_PROVIDER=""
 
@@ -110,6 +111,7 @@ OPTIONS:
     --workflow MODE        Workflow mode: epub|markdown (default: epub for .epub, markdown otherwise)
     --provider MODE        Translation provider: cli|api (default: cli)
     --fallback-provider MODE Optional fallback provider when primary fails (currently: api)
+    --resume              Resume from checkpoint artifacts when available (EPUB workflow)
     --force-resume         Force checkpoint resume even when model/config changed (EPUB workflow)
     --dry-run              Show what would be done without executing
     -v, --verbose          Enable verbose output
@@ -426,6 +428,10 @@ parse_args() {
                 FORCE_RESUME=true
                 shift
                 ;;
+            --resume)
+                RESUME=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -582,6 +588,7 @@ show_config() {
     echo "  Resolved workflow: $RESOLVED_WORKFLOW"
     echo "  Provider: $PROVIDER"
     echo "  Fallback provider: ${FALLBACK_PROVIDER:-none}"
+    echo "  Resume: $RESUME"
     echo "  Force resume: $FORCE_RESUME"
     echo "  Verbose: $VERBOSE"
     echo "  Dry run: $DRY_RUN"
@@ -645,8 +652,13 @@ main() {
     if [[ "$SKIP_EXISTING" == false ]]; then
         log_warning "--no-skip is ignored in ai.cli translation paths"
     fi
-    if [[ "$FORCE_RESUME" == true ]] && [[ "$RESOLVED_WORKFLOW" != "epub" ]]; then
-        log_warning "--force-resume is ignored outside epub workflow"
+    if [[ "$RESOLVED_WORKFLOW" != "epub" ]]; then
+        if [[ "$RESUME" == true ]]; then
+            log_warning "--resume is ignored outside epub workflow"
+        fi
+        if [[ "$FORCE_RESUME" == true ]]; then
+            log_warning "--force-resume is ignored outside epub workflow"
+        fi
     fi
     
     if [[ "$QUOTA_STATUS_MODE" == true ]]; then
@@ -736,6 +748,9 @@ main() {
         fi
         if [[ "$FORCE_RESUME" == true ]]; then
             cmd+=(--force-resume)
+        fi
+        if [[ "$RESUME" == true ]]; then
+            cmd+=(--resume)
         fi
 
         local translate_cmd_display

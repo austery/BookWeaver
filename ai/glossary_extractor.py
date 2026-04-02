@@ -41,6 +41,14 @@ def _looks_like_index_content(text: str) -> bool:
     return any(marker in sample for marker in _INDEX_CONTENT_MARKERS)
 
 
+def _is_placeholder_index_text(text: str) -> bool:
+    """Return True for known placeholder/conversion boilerplate index pages."""
+    normalized = " ".join(text.split()).strip().lower()
+    if not normalized:
+        return True
+    return normalized in {"converted ebook", "converted ebook dead simple python"}
+
+
 def _local_name(tag: str) -> str:
     if "}" in tag:
         return tag.rsplit("}", 1)[1]
@@ -247,6 +255,7 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
 
     with zipfile.ZipFile(epub_path, "r") as zf:
         # Pass 1: filename-based detection + TOC
+        weak_index_candidate = ""
         for item_id, item in model.manifest_items.items():
             resolved_path = resolve_opf_href(model.opf_path, item.href)
 
@@ -254,6 +263,17 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                 try:
                     raw = zf.read(resolved_path).decode("utf-8")
                     extracted = _xhtml_to_text(raw)
+                    if _is_placeholder_index_text(extracted):
+                        continue
+                    if _looks_like_index_content(extracted) or _looks_like_index_by_line_pattern(
+                        raw
+                    ):
+                        english_part, chinese_part = _separate_mixed_index(extracted)
+                        index_text = english_part if english_part.strip() else extracted
+                        continue
+                    if not weak_index_candidate:
+                        weak_index_candidate = extracted
+                        continue
                     # Separate mixed English+Chinese if needed
                     english_part, chinese_part = _separate_mixed_index(extracted)
                     # Use English part if available (more valuable for terminology)
@@ -270,6 +290,9 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                     toc_text = english_part if english_part.strip() else extracted
                 except (KeyError, UnicodeDecodeError):
                     pass
+        if not index_text and weak_index_candidate:
+            english_part, chinese_part = _separate_mixed_index(weak_index_candidate)
+            index_text = english_part if english_part.strip() else weak_index_candidate
 
         # Pass 2: content-based fallback for Kindle/non-standard EPUBs
         if not index_text and model.spine_itemrefs:

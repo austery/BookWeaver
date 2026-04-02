@@ -220,6 +220,31 @@ def test_extract_epub_index_and_toc_prefers_pass2_marker_over_pass3(tmp_path: Pa
     assert "Aguirre, Wrath of God, ♣" not in index_text
 
 
+def test_extract_epub_index_and_toc_skips_placeholder_named_index_and_finds_real_index(
+    tmp_path: Path,
+) -> None:
+    """When many *index* files exist, placeholder pages must not lock index_text early."""
+    real_index = (
+        "<h1>Index</h1>"
+        "<p>AbortError, 101</p>"
+        "<p>Connascence, 202</p>"
+        "<p>Hexagonal Architecture, 303</p>"
+        "<p>Ports and Adapters, 404</p>"
+    )
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("i0", "index_split_000.xhtml", "<p>Converted Ebook</p>"),
+            ("i1", "index_split_001.xhtml", "<p>Front matter only</p>"),
+            ("i2", "index_split_079.xhtml", real_index),
+        ],
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Converted Ebook" not in index_text
+    assert "AbortError, 101" in index_text
+    assert "Ports and Adapters, 404" in index_text
+
+
 def test_build_extraction_prompt_contains_index_and_toc() -> None:
     prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15)
     assert "Connascence" in prompt
