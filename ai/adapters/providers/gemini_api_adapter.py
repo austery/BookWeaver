@@ -36,7 +36,7 @@ class GeminiAPIAdapter(ITranslationProvider):
         self,
         raw_provider: object,
         *,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 600,
     ) -> None:
         self._raw = raw_provider
         self._timeout = timeout_seconds

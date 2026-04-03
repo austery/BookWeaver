@@ -40,7 +40,7 @@ class GeminiCLIAdapter(ITranslationProvider):
         self,
         raw_provider: object,
         *,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 600,
         rate_limit_backoff: tuple[int, ...] = (60, 120),
         transient_backoff: tuple[int, ...] = (45,),
         sleep_fn: Callable[[float], None] = time.sleep,

@@ -49,7 +49,7 @@ class GeminiProvider:
         text: str,
         chunk_size: int,
         system_prompt: str,
-        timeout_seconds: int = 180,
+        timeout_seconds: int = 600,
     ) -> str:
         # chunk_size is reserved for future rate-limiting; it is not used
         # functionally in the current implementation.
