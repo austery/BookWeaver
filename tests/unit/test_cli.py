@@ -772,6 +772,101 @@ class TestRunModelResolutionSemantics:
         assert _NoopEngine.last_config is not None
         assert getattr(_NoopEngine.last_config, "max_batch_chars") == 60_000
 
+    def test_run_uses_60k_default_batch_size_for_epub_flash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model_name, config, *, explicit=False: ("gemini-2.5-flash", False),
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {
+                "provider": args[0],
+                "model": args[1],
+                "is_pro": kwargs.get("is_pro", False),
+            },
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="flash",
+            model_explicit=True,
+            input_format="epub",
+        )
+
+        assert _NoopEngine.last_config is not None
+        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 60_000
+
+    def test_run_uses_configured_epub_batch_defaults_for_pro_and_flash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            cli_module,
+            "load_config",
+            lambda: {
+                "epub_resilience": {
+                    "pro_epub_max_batch_chars": 42000,
+                    "standard_epub_max_batch_chars": 28000,
+                }
+            },
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model_name, config, *, explicit=False: (
+                ("gemini-2.5-pro", True) if model_name == "pro" else ("gemini-2.5-flash", False)
+            ),
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {
+                "provider": args[0],
+                "model": args[1],
+                "is_pro": kwargs.get("is_pro", False),
+            },
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        run(
+            input_path=str(in_epub),
+            output=str(tmp_path / "out-pro.epub"),
+            model="pro",
+            model_explicit=True,
+            input_format="epub",
+        )
+        assert _NoopEngine.last_config is not None
+        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 42000
+
+        run(
+            input_path=str(in_epub),
+            output=str(tmp_path / "out-flash.epub"),
+            model="flash",
+            model_explicit=True,
+            input_format="epub",
+        )
+        assert _NoopEngine.last_config is not None
+        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 28000
+
     def test_run_prints_auto_fallback_message_when_resolved_model_changes(
         self,
         tmp_path: Path,
@@ -1155,7 +1250,7 @@ class TestRunResumeCheckpoint:
             "output_lang": output_lang,
             "model": model,
             "provider": "cli",
-            "max_batch_chars": 10000,
+            "max_batch_chars": 60000,
             "separator_overhead": cli_module.SEPARATOR_OVERHEAD,
             "system_prompt_hash": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
             "translated_segment_count": 1,

@@ -86,6 +86,7 @@ _CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
 _DEFAULT_BATCH_CHARS_PRO_EPUB = 60_000
 _DEFAULT_BATCH_CHARS_PRO = 60_000
 _DEFAULT_BATCH_CHARS_STANDARD = 10_000
+_DEFAULT_BATCH_CHARS_STANDARD_EPUB = 60_000
 
 
 def detect_input_format(input_path: str) -> str:
@@ -598,6 +599,44 @@ def _resolve_resilience_backoff(
     return tuple(values)
 
 
+def _resolve_positive_int_config(
+    scope: dict[str, object],
+    *,
+    key: str,
+    default: int,
+) -> int:
+    raw = scope.get(key, default)
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        raise ValueError(f"{key} must be a positive integer")
+    return raw
+
+
+def _resolve_default_batch_chars(
+    *,
+    fmt: str,
+    is_pro: bool,
+    config: dict[str, object] | None,
+) -> int:
+    if fmt == "epub":
+        resilience = (config or {}).get("epub_resilience", {})
+        if not isinstance(resilience, dict):
+            resilience = {}
+        if is_pro:
+            return _resolve_positive_int_config(
+                resilience,
+                key="pro_epub_max_batch_chars",
+                default=_DEFAULT_BATCH_CHARS_PRO_EPUB,
+            )
+        return _resolve_positive_int_config(
+            resilience,
+            key="standard_epub_max_batch_chars",
+            default=_DEFAULT_BATCH_CHARS_STANDARD_EPUB,
+        )
+    if is_pro:
+        return _DEFAULT_BATCH_CHARS_PRO
+    return _DEFAULT_BATCH_CHARS_STANDARD
+
+
 def _resolve_api_key(config: dict[str, object] | None) -> str | None:
     """Resolve API key from config or environment."""
     import os
@@ -786,12 +825,11 @@ def run(
 
         stage = "engine-config"
         if max_batch_chars is None:
-            if is_pro and fmt == "epub":
-                batch_chars = _DEFAULT_BATCH_CHARS_PRO_EPUB
-            elif is_pro:
-                batch_chars = _DEFAULT_BATCH_CHARS_PRO
-            else:
-                batch_chars = _DEFAULT_BATCH_CHARS_STANDARD
+            batch_chars = _resolve_default_batch_chars(
+                fmt=fmt,
+                is_pro=is_pro,
+                config=runtime_config,
+            )
         else:
             batch_chars = max_batch_chars
         resume_translations: dict[str, str] | None = None

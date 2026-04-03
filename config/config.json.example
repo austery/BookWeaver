@@ -54,6 +54,8 @@
     "doc_failure_budget": null,
     "failed_docs_path": null,
     "cli_api_fallback_enabled": false,
+    "pro_epub_max_batch_chars": 60000,
+    "standard_epub_max_batch_chars": 60000,
     "pro_timeout_seconds": 300,
     "non_pro_timeout_seconds": 180
   },
