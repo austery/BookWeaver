@@ -155,6 +155,26 @@ class TestTranslateHappyPath:
         all_translated = [t.translated for t in source.applied or []]
         assert all_translated == ["翻译:aaa", "翻译:bbb", "翻译:ccc"]
 
+    def test_batches_do_not_cross_doc_path_boundaries(self) -> None:
+        provider = FakeProvider()
+        segments = [
+            Segment(id="ch1::0", text="a" * 4, metadata={"doc_path": "ch1.xhtml"}),
+            Segment(id="ch1::1", text="b" * 4, metadata={"doc_path": "ch1.xhtml"}),
+            Segment(id="ch2::0", text="c" * 4, metadata={"doc_path": "ch2.xhtml"}),
+        ]
+        source = FakeSource(segments)
+        engine = TranslationEngine(
+            provider,
+            _default_config(max_batch_chars=20, separator_overhead=0),
+        )
+
+        result = engine.translate(source, "/tmp/out.epub")
+
+        assert result.total_batches == 2
+        assert len(provider.calls) == 2
+        assert provider.calls[0][0] == ["aaaa", "bbbb"]
+        assert provider.calls[1][0] == ["cccc"]
+
     def test_empty_source(self) -> None:
         provider = FakeProvider()
         source = FakeSource([])

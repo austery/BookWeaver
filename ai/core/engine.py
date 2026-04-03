@@ -71,6 +71,60 @@ class TranslationEngine:
             separator_overhead=config.separator_overhead,
         )
 
+    @staticmethod
+    def _doc_path(segment: Segment) -> str | None:
+        doc_path = segment.metadata.get("doc_path")
+        if isinstance(doc_path, str) and doc_path:
+            return doc_path
+        return None
+
+    def _plan_pending_segment_batches(
+        self,
+        pending_segments: list[Segment],
+    ) -> list[list[Segment]]:
+        """Plan batches while preserving doc_path boundaries when present.
+
+        For EPUB segments (which include ``metadata['doc_path']``), batches
+        never cross document boundaries. Within each document, normal
+        ``TextBatcher`` sizing still applies.
+        """
+        if not pending_segments:
+            return []
+
+        grouped_by_doc_run: list[list[Segment]] = []
+        current_group: list[Segment] = []
+        current_doc: str | None = None
+
+        for seg in pending_segments:
+            seg_doc = self._doc_path(seg)
+            if not current_group:
+                current_group = [seg]
+                current_doc = seg_doc
+                continue
+
+            doc_changed = current_doc is not None and seg_doc is not None and seg_doc != current_doc
+            if doc_changed:
+                grouped_by_doc_run.append(current_group)
+                current_group = [seg]
+                current_doc = seg_doc
+                continue
+
+            current_group.append(seg)
+
+        if current_group:
+            grouped_by_doc_run.append(current_group)
+
+        planned: list[list[Segment]] = []
+        for doc_group in grouped_by_doc_run:
+            text_batches = self._batcher.plan_batches([seg.text for seg in doc_group])
+            cursor = 0
+            for text_batch in text_batches:
+                size = len(text_batch)
+                planned.append(doc_group[cursor : cursor + size])
+                cursor += size
+
+        return planned
+
     def translate(
         self,
         source: IBookSource,
@@ -131,21 +185,16 @@ class TranslationEngine:
             translated_by_id[seg.id] = resumed
             resumed_segments += 1
 
-        pending_batches: list[list[str]] = []
-        if pending_segments:
-            pending_batches = self._batcher.plan_batches([seg.text for seg in pending_segments])
+        pending_batches = self._plan_pending_segment_batches(pending_segments)
         total_batches = len(pending_batches)
 
         if on_source_loaded is not None:
             on_source_loaded(len(segments), resumed_segments, total_batches)
 
         if pending_segments:
-            pending_cursor = 0
             translated_count = resumed_segments
-            for i, batch in enumerate(pending_batches):
-                batch_size = len(batch)
-                batch_segments = pending_segments[pending_cursor : pending_cursor + batch_size]
-                pending_cursor += batch_size
+            for i, batch_segments in enumerate(pending_batches):
+                batch = [seg.text for seg in batch_segments]
 
                 if on_batch_progress is not None:
                     on_batch_progress(

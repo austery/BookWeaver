@@ -734,7 +734,7 @@ class TestRunModelResolutionSemantics:
         assert resolve_calls[0] == ("pro", True)
         assert create_calls[0] == "gemini-2.5-pro"
 
-    def test_run_uses_safer_default_batch_size_for_epub_pro(
+    def test_run_uses_60k_default_batch_size_for_epub_pro(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(cli_module, "load_config", lambda: {})
@@ -770,7 +770,7 @@ class TestRunModelResolutionSemantics:
         )
 
         assert _NoopEngine.last_config is not None
-        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 18_000
+        assert getattr(_NoopEngine.last_config, "max_batch_chars") == 60_000
 
     def test_run_prints_auto_fallback_message_when_resolved_model_changes(
         self,
@@ -1199,7 +1199,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B", "C"]]
+        assert provider.calls == [["B"], ["C"]]
         assert source.applied is not None
         assert [item.translated for item in source.applied] == ["缓存:A", "翻译:B", "翻译:C"]
 
@@ -1230,7 +1230,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B", "C"]]
+        assert provider.calls == [["B"], ["C"]]
 
     def test_run_resume_rejects_incompatible_checkpoint_without_force(
         self,
@@ -1259,7 +1259,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B", "C"]]
+        assert provider.calls == [["A", "B"], ["C"]]
 
     def test_run_resume_uses_stable_default_checkpoint_layout(
         self,
@@ -1344,12 +1344,16 @@ class TestRunProgressLogging:
             stdout,
         )
         assert re.search(r"\[progress:source\].*segments=3", stdout)
-        assert re.search(r"\[progress:batch\].*index=1/1", stdout)
+        assert re.search(r"\[progress:batch\].*index=1/2", stdout)
         assert re.search(r"\[progress:batch\].*translated=0/3", stdout)
-        assert re.search(r"\[progress:batch\].*batch_segments=3", stdout)
-        assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml,chapter2.xhtml", stdout)
+        assert re.search(r"\[progress:batch\].*batch_segments=2", stdout)
+        assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml", stdout)
+        assert re.search(r"\[progress:batch\].*index=2/2", stdout)
+        assert re.search(r"\[progress:batch\].*translated=2/3", stdout)
+        assert re.search(r"\[progress:batch\].*batch_segments=1", stdout)
+        assert re.search(r"\[progress:batch\].*docs=chapter2.xhtml", stdout)
         assert re.search(r"\[progress:save\].*segments=3", stdout)
-        assert re.search(r"\[progress:done\].*segments=3.*batches=1.*resumed=0", stdout)
+        assert re.search(r"\[progress:done\].*segments=3.*batches=2.*resumed=0", stdout)
 
     def test_run_logs_resumed_context_when_checkpoint_loaded(
         self,
