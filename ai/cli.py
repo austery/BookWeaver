@@ -63,6 +63,13 @@ should be placed in the translation while maintaining fluency
 4. For content that should not be translated (such as proper \
 nouns, code, URLs), keep the original text"""
 
+_EPUB_IMMERSIVE_PROMPT_ADDENDUM = """\
+5. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output
+
+## OUTPUT FORMAT:
+- Single paragraph input -> Output translation directly (no separators, no extra text)
+- Multi-paragraph input -> Use %% as paragraph separator between translations"""
+
 
 # ── Format detection ──────────────────────────────────────────
 
@@ -370,13 +377,18 @@ def build_system_prompt(
     *,
     glossary_block: str | None = None,
     custom_prompt: str | None = None,
+    immersive: bool = False,
 ) -> str:
     """Assemble the system prompt from components."""
     prompt = _SYSTEM_PROMPT_TEMPLATE.format(target_language=target_language)
+    if immersive:
+        prompt = f"{prompt}\n\n{_EPUB_IMMERSIVE_PROMPT_ADDENDUM}"
     if glossary_block:
         prompt = f"{prompt}\n\n{glossary_block}"
     if custom_prompt:
         prompt = f"{prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
+    if immersive:
+        prompt = f"{prompt}\n\nTranslate to {target_language}:"
     return prompt
 
 
@@ -511,6 +523,7 @@ def create_provider(
     model: str,
     *,
     is_pro: bool = False,
+    use_segment_tags: bool = False,
     config: dict[str, object] | None = None,
     cli_api_fallback: bool = False,
 ) -> ITranslationProvider:
@@ -543,17 +556,26 @@ def create_provider(
     )
 
     if provider_name == "api":
-        return GeminiAPIAdapter(provider_pair.primary, timeout_seconds=timeout)
+        return GeminiAPIAdapter(
+            provider_pair.primary,
+            timeout_seconds=timeout,
+            use_segment_tags=use_segment_tags,
+        )
 
     primary_adapter = GeminiCLIAdapter(
         provider_pair.primary,
         timeout_seconds=timeout,
         rate_limit_backoff=rate_limit_backoff,
         transient_backoff=transient_backoff,
+        use_segment_tags=use_segment_tags,
     )
     if provider_pair.fallback is None:
         return primary_adapter
-    fallback_adapter = GeminiAPIAdapter(provider_pair.fallback, timeout_seconds=timeout)
+    fallback_adapter = GeminiAPIAdapter(
+        provider_pair.fallback,
+        timeout_seconds=timeout,
+        use_segment_tags=use_segment_tags,
+    )
     return _CLIAPIFallbackAdapter(primary_adapter, fallback_adapter)
 
 
@@ -700,15 +722,6 @@ def run(
             explicit=model_explicit,
         )
 
-        stage = "provider-init"
-        provider_adapter = create_provider(
-            provider,
-            resolved_model,
-            is_pro=is_pro,
-            config=runtime_config,
-            cli_api_fallback=cli_api_fallback,
-        )
-
         stage = "input-validation"
         input_file = Path(input_path)
         if not input_file.exists():
@@ -739,6 +752,7 @@ def run(
                     provider,
                     extract_model,
                     is_pro=extract_is_pro,
+                    use_segment_tags=False,
                     config=runtime_config,
                     cli_api_fallback=cli_api_fallback,
                 )
@@ -754,7 +768,20 @@ def run(
         language_name = _get_language_name(output_lang)
         glossary_block = load_glossary_block(effective_glossary, min_priority=glossary_min_priority)
         system_prompt = build_system_prompt(
-            language_name, glossary_block=glossary_block, custom_prompt=prompt
+            language_name,
+            glossary_block=glossary_block,
+            custom_prompt=prompt,
+            immersive=fmt == "epub",
+        )
+
+        stage = "provider-init"
+        provider_adapter = create_provider(
+            provider,
+            resolved_model,
+            is_pro=is_pro,
+            use_segment_tags=fmt == "epub",
+            config=runtime_config,
+            cli_api_fallback=cli_api_fallback,
         )
 
         stage = "engine-config"

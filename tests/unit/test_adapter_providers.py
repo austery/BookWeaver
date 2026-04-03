@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from ai.adapters.providers._delimiter import (
+    PROTOCOL_SEGMENT_TAGS,
     SEPARATOR_OVERHEAD,
     augment_prompt_for_batch,
     join_segments,
@@ -35,6 +36,15 @@ class TestJoinSegments:
     def test_three(self) -> None:
         assert join_segments(["X", "Y", "Z"]) == "X\n\n%%\n\nY\n\n%%\n\nZ"
 
+    def test_segment_tags_protocol(self) -> None:
+        assert (
+            join_segments(
+                ["A", "B"],
+                protocol=PROTOCOL_SEGMENT_TAGS,
+            )
+            == '<segment id="1">A</segment>\n\n<segment id="2">B</segment>'
+        )
+
 
 class TestSplitResponse:
     def test_single_returns_stripped(self) -> None:
@@ -56,6 +66,33 @@ class TestSplitResponse:
     def test_three_segments(self) -> None:
         text = "一\n\n%%\n\n二\n\n%%\n\n三"
         assert split_response(text, 3) == ["一", "二", "三"]
+
+    def test_segment_tags_exact(self) -> None:
+        text = '<segment id="1">甲</segment>\n<segment id="2">乙</segment>'
+        assert split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS) == ["甲", "乙"]
+
+    def test_segment_tags_with_markdown_fence_wrapper(self) -> None:
+        text = '```xml\n<segment id="1">甲</segment>\n<segment id="2">乙</segment>\n```'
+        assert split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS) == ["甲", "乙"]
+
+    def test_segment_tags_allows_empty_segment_body(self) -> None:
+        text = '<segment id="1">甲</segment>\n<segment id="2">   </segment>'
+        assert split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS) == ["甲", ""]
+
+    def test_segment_tags_duplicate_id_raises(self) -> None:
+        text = '<segment id="1">甲</segment>\n<segment id="1">乙</segment>'
+        with pytest.raises(TranslationError, match="duplicate ids"):
+            split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS)
+
+    def test_segment_tags_missing_id_raises(self) -> None:
+        text = '<segment id="1">甲</segment>\n<segment id="3">乙</segment>'
+        with pytest.raises(TranslationError, match=r"missing=\[2\]"):
+            split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS)
+
+    def test_segment_tags_text_outside_tags_raises(self) -> None:
+        text = '<segment id="1">甲</segment>\nextra\n<segment id="2">乙</segment>'
+        with pytest.raises(TranslationError, match="outside tags"):
+            split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS)
 
     def test_empty_output_single_segment_raises(self) -> None:
         """Empty provider output must raise TranslationError, not return ['']."""
@@ -79,6 +116,11 @@ class TestAugmentPrompt:
 
     def test_zero_segments_unchanged(self) -> None:
         assert augment_prompt_for_batch("prompt", 0) == "prompt"
+
+    def test_segment_tags_adds_strict_contract(self) -> None:
+        result = augment_prompt_for_batch("prompt", 2, protocol=PROTOCOL_SEGMENT_TAGS)
+        assert "STRICT OUTPUT CONTRACT" in result
+        assert '<segment id="1">' in result
 
 
 class TestSeparatorOverhead:
@@ -192,6 +234,18 @@ class TestGeminiCLIAdapterHappyPath:
 
         sent_prompt = raw.calls[0][1]
         assert sent_prompt == "Base prompt."
+
+    def test_multiple_segments_with_segment_tags_protocol(self) -> None:
+        raw = FakeRawProvider(
+            responses=['<segment id="1">甲</segment>\n<segment id="2">乙</segment>']
+        )
+        adapter = GeminiCLIAdapter(raw, use_segment_tags=True)
+
+        result = adapter.translate_batch(["A", "B"], system_prompt="Translate.")
+
+        assert result == ["甲", "乙"]
+        assert '<segment id="1">' in raw.calls[0][0]
+        assert "STRICT OUTPUT CONTRACT" in raw.calls[0][1]
 
 
 class TestGeminiCLIAdapterRetry:
@@ -337,6 +391,16 @@ class TestGeminiAPIAdapterHappyPath:
         raw = FakeRawProvider()
         adapter = GeminiAPIAdapter(raw)
         assert adapter.translate_batch([], system_prompt="T") == []
+
+    def test_multiple_segments_with_segment_tags_protocol(self) -> None:
+        raw = FakeRawProvider(
+            responses=['<segment id="1">甲</segment>\n<segment id="2">乙</segment>']
+        )
+        adapter = GeminiAPIAdapter(raw, use_segment_tags=True)
+
+        result = adapter.translate_batch(["A", "B"], system_prompt="Translate.")
+
+        assert result == ["甲", "乙"]
 
 
 class TestGeminiAPIAdapterErrors:

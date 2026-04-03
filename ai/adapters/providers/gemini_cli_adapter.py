@@ -1,8 +1,8 @@
 """Gemini CLI adapter — wraps the legacy GeminiProvider for the hexagonal port.
 
-Handles ``%%`` joining/splitting and transport-level retries (rate-limit,
-transient errors) internally.  The core engine sees only the clean
-``ITranslationProvider.translate_batch`` interface.
+Handles protocol-aware batch framing/parsing and transport-level retries
+(rate-limit, transient errors) internally. The core engine sees only the
+clean ``ITranslationProvider.translate_batch`` interface.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ from ai.ports.provider import (
 )
 
 from ai.adapters.providers._delimiter import (
+    PROTOCOL_DELIMITER,
+    PROTOCOL_SEGMENT_TAGS,
     augment_prompt_for_batch,
     join_segments,
     split_response,
@@ -43,10 +45,12 @@ class GeminiCLIAdapter(ITranslationProvider):
         timeout_seconds: int = 600,
         rate_limit_backoff: tuple[int, ...] = (60, 120),
         transient_backoff: tuple[int, ...] = (45,),
+        use_segment_tags: bool = False,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self._raw = raw_provider
         self._timeout = timeout_seconds
+        self._use_segment_tags = use_segment_tags
         self._rate_limit_backoff = self._validate_backoff(
             rate_limit_backoff,
             label="rate_limit_backoff",
@@ -67,12 +71,18 @@ class GeminiCLIAdapter(ITranslationProvider):
         if not seg_list:
             return []
 
-        joined = join_segments(seg_list)
-        prompt = augment_prompt_for_batch(system_prompt, len(seg_list))
+        protocol = self._get_protocol()
+        joined = join_segments(seg_list, protocol=protocol)
+        prompt = augment_prompt_for_batch(system_prompt, len(seg_list), protocol=protocol)
 
         raw_result = self._call_with_retry(joined, prompt)
 
-        return split_response(raw_result, len(seg_list))
+        return split_response(raw_result, len(seg_list), protocol=protocol)
+
+    def _get_protocol(self) -> str:
+        if self._use_segment_tags:
+            return PROTOCOL_SEGMENT_TAGS
+        return PROTOCOL_DELIMITER
 
     # ── Internal retry logic ──────────────────────────────────
 

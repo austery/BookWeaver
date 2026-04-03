@@ -63,6 +63,17 @@ class TestBuildSystemPrompt:
         prompt = build_system_prompt("Chinese")
         assert "%%" not in prompt
 
+    def test_epub_immersive_prompt_includes_delimiter_and_output_format_rules(self) -> None:
+        prompt = build_system_prompt("Chinese", immersive=True)
+        assert "If input contains %%" in prompt
+        assert "OUTPUT FORMAT" in prompt
+        assert "Translate to Chinese:" in prompt
+
+    def test_non_epub_prompt_does_not_include_immersive_footer(self) -> None:
+        prompt = build_system_prompt("Chinese", immersive=False)
+        assert "OUTPUT FORMAT" not in prompt
+        assert "Translate to Chinese:" not in prompt
+
 
 class TestGlossaryPromptInjection:
     def test_load_glossary_block_with_min_priority_filter(self, tmp_path: Path) -> None:
@@ -186,11 +197,13 @@ class TestCreateProviderResilience:
                 timeout_seconds: int,
                 rate_limit_backoff: tuple[int, ...],
                 transient_backoff: tuple[int, ...],
+                use_segment_tags: bool = False,
             ) -> None:
                 captured["raw_provider_type"] = type(raw_provider).__name__
                 captured["timeout_seconds"] = timeout_seconds
                 captured["rate_limit_backoff"] = rate_limit_backoff
                 captured["transient_backoff"] = transient_backoff
+                captured["use_segment_tags"] = use_segment_tags
 
         class _FakeProviderFactory:
             def __init__(self, config: dict[str, object]) -> None:
@@ -226,6 +239,7 @@ class TestCreateProviderResilience:
         assert captured["timeout_seconds"] == 180
         assert captured["rate_limit_backoff"] == (9,)
         assert captured["transient_backoff"] == (3, 5, 8)
+        assert captured["use_segment_tags"] is False
 
     def test_create_provider_rejects_non_positive_transient_backoff_values(self) -> None:
         with pytest.raises(ValueError, match="transient_backoff_seconds"):
@@ -272,6 +286,7 @@ class TestCreateProviderCliApiFallback:
                 timeout_seconds: int,
                 rate_limit_backoff: tuple[int, ...],
                 transient_backoff: tuple[int, ...],
+                use_segment_tags: bool = False,
             ) -> None:
                 self._raw_provider = raw_provider
 
@@ -282,7 +297,13 @@ class TestCreateProviderCliApiFallback:
         class _APIAdapter:
             calls = 0
 
-            def __init__(self, raw_provider: object, *, timeout_seconds: int) -> None:
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                use_segment_tags: bool = False,
+            ) -> None:
                 self._raw_provider = raw_provider
 
             def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
@@ -339,6 +360,7 @@ class TestCreateProviderCliApiFallback:
                 timeout_seconds: int,
                 rate_limit_backoff: tuple[int, ...],
                 transient_backoff: tuple[int, ...],
+                use_segment_tags: bool = False,
             ) -> None:
                 self._raw_provider = raw_provider
 
@@ -392,6 +414,7 @@ class TestCreateProviderCliApiFallback:
                 timeout_seconds: int,
                 rate_limit_backoff: tuple[int, ...],
                 transient_backoff: tuple[int, ...],
+                use_segment_tags: bool = False,
             ) -> None:
                 self._raw_provider = raw_provider
 
@@ -401,7 +424,13 @@ class TestCreateProviderCliApiFallback:
         class _APIAdapter:
             calls = 0
 
-            def __init__(self, raw_provider: object, *, timeout_seconds: int) -> None:
+            def __init__(
+                self,
+                raw_provider: object,
+                *,
+                timeout_seconds: int,
+                use_segment_tags: bool = False,
+            ) -> None:
                 self._raw_provider = raw_provider
 
             def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
@@ -677,6 +706,7 @@ class TestRunModelResolutionSemantics:
             model: str,
             *,
             is_pro: bool = False,
+            use_segment_tags: bool = False,
             config: dict[str, object] | None = None,
             cli_api_fallback: bool = False,
         ) -> object:
@@ -1013,6 +1043,7 @@ class TestRunGlossaryExtractionOrchestration:
             model: str,
             *,
             is_pro: bool = False,
+            use_segment_tags: bool = False,
             config: dict[str, object] | None = None,
             cli_api_fallback: bool = False,
         ) -> object:
@@ -1055,7 +1086,7 @@ class TestRunGlossaryExtractionOrchestration:
             extract_glossary=True,
         )
 
-        assert create_calls == ["gemini-2.5-flash", "gemini-2.5-pro"]
+        assert create_calls == ["gemini-2.5-pro", "gemini-2.5-flash"]
         assert isinstance(_NoopEngine.last_provider, dict)
         assert _NoopEngine.last_provider["model"] == "gemini-2.5-flash"
 
@@ -1116,7 +1147,7 @@ class TestRunResumeCheckpoint:
         model: str = "gemini-2.5-flash",
     ) -> None:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        system_prompt = build_system_prompt("Chinese")
+        system_prompt = build_system_prompt("Chinese", immersive=True)
         state = {
             "schema_version": 1,
             "input_signature": cli_module._compute_input_signature(input_epub),

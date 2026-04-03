@@ -66,12 +66,14 @@ def test_create_provider_wires_cli_resilience_and_timeout(
             timeout_seconds: int,
             rate_limit_backoff: tuple[int, ...],
             transient_backoff: tuple[int, ...],
+            use_segment_tags: bool = False,
         ) -> None:
             captured["raw_provider_type"] = type(raw_provider).__name__
             captured["raw_provider_model"] = getattr(raw_provider, "model", None)
             captured["timeout_seconds"] = timeout_seconds
             captured["rate_limit_backoff"] = rate_limit_backoff
             captured["transient_backoff"] = transient_backoff
+            captured["use_segment_tags"] = use_segment_tags
 
     monkeypatch.setattr("ai.provider_factory.ProviderFactory", FakeProviderFactory)
     monkeypatch.setattr(cli_module, "GeminiCLIAdapter", FakeGeminiCLIAdapter)
@@ -97,6 +99,7 @@ def test_create_provider_wires_cli_resilience_and_timeout(
     assert captured["timeout_seconds"] == 300
     assert captured["rate_limit_backoff"] == (12, 34)
     assert captured["transient_backoff"] == (7,)
+    assert captured["use_segment_tags"] is False
 
 
 def test_create_provider_api_uses_env_key_and_default_timeout(
@@ -113,9 +116,16 @@ def test_create_provider_api_uses_env_key_and_default_timeout(
             captured["config"] = config
 
     class FakeGeminiAPIAdapter:
-        def __init__(self, raw_provider: object, *, timeout_seconds: int) -> None:
+        def __init__(
+            self,
+            raw_provider: object,
+            *,
+            timeout_seconds: int,
+            use_segment_tags: bool = False,
+        ) -> None:
             captured["raw_provider_type"] = type(raw_provider).__name__
             captured["timeout_seconds"] = timeout_seconds
+            captured["use_segment_tags"] = use_segment_tags
 
     import ai.gemini_api_provider as gemini_api_provider_module
 
@@ -135,3 +145,4 @@ def test_create_provider_api_uses_env_key_and_default_timeout(
     assert captured["model"] == "gemini-2.5-flash"
     assert captured["raw_provider_type"] == "FakeGeminiAPIProvider"
     assert captured["timeout_seconds"] == 180
+    assert captured["use_segment_tags"] is False
