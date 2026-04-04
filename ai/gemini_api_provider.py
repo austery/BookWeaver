@@ -103,6 +103,8 @@ class GeminiAPIProvider:
                     model=self.model,
                     contents=text,
                     config=types.GenerateContentConfig(
+                        # google-genai expects timeout in milliseconds.
+                        http_options=types.HttpOptions(timeout=timeout_seconds * 1000),
                         temperature=0.3,
                         max_output_tokens=8192,
                         system_instruction=system_prompt or None,

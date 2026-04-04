@@ -60,7 +60,7 @@ class GeminiProvider:
 
         prompt = f"{system_prompt}\n\n{text}"
         result = subprocess.run(
-            ["gemini", "--model", self.model],
+            ["gemini", "--model", self.model, "-p", ""],
             input=prompt,
             capture_output=True,
             text=True,

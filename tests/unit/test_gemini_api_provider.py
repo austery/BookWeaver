@@ -224,6 +224,30 @@ def test_translate_chunk_retries_on_rate_limit() -> None:
             mock_sleep.assert_called_once_with(1)
 
 
+def test_translate_chunk_passes_timeout_to_http_options() -> None:
+    """translate_chunk should pass timeout_seconds to SDK request http options."""
+    from ai.gemini_api_provider import GeminiAPIProvider
+
+    provider = GeminiAPIProvider(api_key="test-key", model="gemini-2.5-flash")
+
+    with patch.object(provider._client.models, "generate_content") as mock_generate:
+        mock_response = MagicMock()
+        mock_response.text = "ok"
+        mock_generate.return_value = mock_response
+
+        provider.translate_chunk(
+            text="This is source text",
+            chunk_size=100,
+            system_prompt="Translate to Chinese",
+            timeout_seconds=10,
+        )
+
+        _, kwargs = mock_generate.call_args
+        cfg = kwargs["config"]
+        assert cfg.http_options is not None
+        assert cfg.http_options.timeout == 10_000
+
+
 def test_translate_chunk_fails_after_max_retries() -> None:
     """Test that translate_chunk fails after all retries are exhausted."""
     from ai.gemini_api_provider import GeminiAPIProvider, RateLimitError

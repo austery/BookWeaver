@@ -50,6 +50,26 @@ def test_translate_chunk_raises_on_nonzero_return_code(monkeypatch: pytest.Monke
     assert "API error" in str(exc_info.value)
 
 
+def test_translate_chunk_invokes_gemini_with_headless_prompt_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai.gemini_provider import GeminiProvider
+
+    provider = GeminiProvider(model="gemini-2.5-flash")
+    captured_cmd: list[str] = []
+
+    def mock_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal captured_cmd
+        captured_cmd = list(args[0]) if args else []
+        return subprocess.CompletedProcess(args=["gemini"], returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    out = provider.translate_chunk(text="hello", chunk_size=5, system_prompt="translate")
+    assert out == "ok"
+    assert captured_cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", ""]
+
+
 def test_rate_limit_error_raised_on_resource_exhausted(monkeypatch: pytest.MonkeyPatch) -> None:
     from ai.gemini_provider import GeminiProvider, RateLimitError
 
