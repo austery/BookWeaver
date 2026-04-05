@@ -162,6 +162,30 @@ def _sanity_check_batch(
                 )
 
 
+def _emit_batch_sample(
+    translated: list[TranslatedSegment],
+    probe_config: _SanityProbeConfig,
+    batch_index: int,
+    total_batches: int,
+) -> None:
+    if not translated:
+        return
+    first = translated[0]
+    doc_path = first.id.split("::")[0] if "::" in first.id else None
+    n = probe_config.heartbeat_chars
+    src = first.original
+    tgt = first.translated
+    src_snippet = src[:n] + ("..." if len(src) > n else "")
+    tgt_snippet = tgt[:n] + ("..." if len(tgt) > n else "")
+    _log_progress(
+        "batch_sample",
+        batch=f"{batch_index + 1}/{total_batches}",
+        doc=doc_path,
+        src=src_snippet,
+        tgt=tgt_snippet,
+    )
+
+
 def detect_input_format(input_path: str) -> str:
     """Detect input format from path.
 

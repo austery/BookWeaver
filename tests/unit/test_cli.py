@@ -185,6 +185,39 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
 
 
+class TestEmitBatchSample:
+    def test_emits_batch_sample_line(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        segs = [
+            TranslatedSegment(
+                id="EPUB/ch04.xhtml::0",
+                original="The key principle is encapsulation of state.",
+                translated="核心原则是状态封装。",
+            )
+        ]
+        _emit_batch_sample(segs, _SanityProbeConfig(), batch_index=2, total_batches=10)
+        out = capsys.readouterr().out
+        assert "[progress:batch_sample]" in out
+        assert "batch=3/10" in out
+        assert "doc=EPUB/ch04.xhtml" in out
+        assert "核心原则" in out
+
+    def test_truncates_long_source(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        long_src = "A" * 200
+        long_tgt = "中" * 200
+        segs = [TranslatedSegment(id="ch::0", original=long_src, translated=long_tgt)]
+        _emit_batch_sample(segs, _SanityProbeConfig(heartbeat_chars=60), batch_index=0, total_batches=1)
+        out = capsys.readouterr().out
+        assert "..." in out
+
+    def test_no_output_for_empty_batch(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        _emit_batch_sample([], _SanityProbeConfig(), batch_index=0, total_batches=1)
+        out = capsys.readouterr().out
+        assert "[progress:batch_sample]" not in out
+
+
 class TestGlossaryPromptInjection:
     def test_load_glossary_block_with_min_priority_filter(self, tmp_path: Path) -> None:
         glossary = tmp_path / "glossary.json"
