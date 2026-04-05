@@ -86,6 +86,7 @@ class TestSanityProbeConfig:
         assert cfg.min_length_ratio == 0.15
         assert cfg.min_source_length == 10
         assert cfg.min_cjk_density == 0.30
+        assert cfg.min_cjk_source_length == 20
         assert cfg.heartbeat_chars == 60
 
     def test_load_probe_config_from_dict(self) -> None:
@@ -99,6 +100,7 @@ class TestSanityProbeConfig:
                     "min_length_ratio": 0.1,
                     "min_source_length": 5,
                     "min_cjk_density": 0.5,
+                    "min_cjk_source_length": 25,
                     "heartbeat_chars": 80,
                 }
             }
@@ -108,6 +110,7 @@ class TestSanityProbeConfig:
         assert cfg.min_length_ratio == 0.1
         assert cfg.min_source_length == 5
         assert cfg.min_cjk_density == 0.5
+        assert cfg.min_cjk_source_length == 25
         assert cfg.heartbeat_chars == 80
 
     def test_load_probe_config_partial_dict_merges_with_defaults(self) -> None:
@@ -205,11 +208,19 @@ class TestSanityCheckBatch:
     def test_cjk_density_uses_stripped_length(self) -> None:
         from ai.cli import _sanity_check_batch
 
-        # Short source (skips ratio check) + translated output with trailing newlines.
-        # Raw density: 2 CJK / 10 chars = 0.20 < threshold — would be false positive.
+        # Source must be >= min_cjk_source_length (20) to trigger the CJK density check.
+        # Raw density: 2 CJK / 12 chars = 0.17 < threshold — would be false positive.
         # Stripped density: 2 CJK / 2 chars = 1.0 > threshold — should pass.
-        segs = [self._make_seg("ch1.xhtml::0", "Hello", "你好\n\n\n\n\n\n\n\n")]
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world, testing", "你好\n\n\n\n\n\n\n\n\n\n")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_cjk_check_skips_equation_length_source(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # Standalone math equation (19 chars, below min_cjk_source_length=20).
+        # Model correctly preserves it as-is (0 CJK) — must not raise.
+        segs = [self._make_seg("ch1.xhtml::19", "Rab − ½ R gab = Tab", "Rab − ½ R gab = Tab")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
 
 
 class TestEmitBatchSample:

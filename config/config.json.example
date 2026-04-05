@@ -72,6 +72,7 @@
     "min_length_ratio": 0.15,
     "min_source_length": 10,
     "min_cjk_density": 0.30,
+    "min_cjk_source_length": 20,
     "heartbeat_chars": 60
   }
 }

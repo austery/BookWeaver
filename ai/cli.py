@@ -99,6 +99,7 @@ class _SanityProbeConfig:
     min_length_ratio: float = 0.15
     min_source_length: int = 10
     min_cjk_density: float = 0.30
+    min_cjk_source_length: int = 20
     heartbeat_chars: int = 60
 
 
@@ -114,6 +115,7 @@ def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
             min_length_ratio=float(raw.get("min_length_ratio", d.min_length_ratio)),
             min_source_length=int(raw.get("min_source_length", d.min_source_length)),
             min_cjk_density=float(raw.get("min_cjk_density", d.min_cjk_density)),
+            min_cjk_source_length=int(raw.get("min_cjk_source_length", d.min_cjk_source_length)),
             heartbeat_chars=int(raw.get("heartbeat_chars", d.heartbeat_chars)),
         )
     except (TypeError, ValueError):
@@ -157,7 +159,7 @@ def _sanity_check_batch(
                     f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]"
                     f" (segment {seg.id})"
                 )
-        if check_cjk:
+        if check_cjk and len(src) >= probe_config.min_cjk_source_length:
             tgt_stripped = tgt.strip()
             cjk_count = _count_cjk(tgt_stripped)
             density = cjk_count / len(tgt_stripped)
