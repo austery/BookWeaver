@@ -75,6 +75,44 @@ class TestBuildSystemPrompt:
         assert "Translate to Chinese:" not in prompt
 
 
+class TestSanityProbeConfig:
+    def test_load_probe_config_defaults(self) -> None:
+        from ai.cli import _load_probe_config
+
+        cfg = _load_probe_config({})
+        assert cfg.enabled is True
+        assert cfg.max_length_ratio == 2.0
+        assert cfg.min_length_ratio == 0.15
+        assert cfg.min_source_length == 10
+        assert cfg.min_cjk_density == 0.30
+        assert cfg.heartbeat_chars == 60
+
+    def test_load_probe_config_from_dict(self) -> None:
+        from ai.cli import _load_probe_config
+
+        cfg = _load_probe_config(
+            {
+                "sanity_probe": {
+                    "enabled": False,
+                    "max_length_ratio": 3.0,
+                    "min_length_ratio": 0.1,
+                    "min_source_length": 5,
+                    "min_cjk_density": 0.5,
+                    "heartbeat_chars": 80,
+                }
+            }
+        )
+        assert cfg.enabled is False
+        assert cfg.max_length_ratio == 3.0
+        assert cfg.min_cjk_density == 0.5
+
+    def test_load_probe_config_ignores_bad_type(self) -> None:
+        from ai.cli import _load_probe_config
+
+        cfg = _load_probe_config({"sanity_probe": "not-a-dict"})
+        assert cfg.enabled is True  # falls back to defaults
+
+
 class TestGlossaryPromptInjection:
     def test_load_glossary_block_with_min_priority_filter(self, tmp_path: Path) -> None:
         glossary = tmp_path / "glossary.json"

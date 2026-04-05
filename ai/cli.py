@@ -89,6 +89,33 @@ _DEFAULT_BATCH_CHARS_STANDARD = 10_000
 _DEFAULT_BATCH_CHARS_STANDARD_EPUB = 60_000
 
 
+# ── Sanity probe ──────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class _SanityProbeConfig:
+    enabled: bool = True
+    max_length_ratio: float = 2.0
+    min_length_ratio: float = 0.15
+    min_source_length: int = 10
+    min_cjk_density: float = 0.30
+    heartbeat_chars: int = 60
+
+
+def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
+    raw = runtime_config.get("sanity_probe", {})
+    if not isinstance(raw, dict):
+        return _SanityProbeConfig()
+    return _SanityProbeConfig(
+        enabled=bool(raw.get("enabled", True)),
+        max_length_ratio=float(raw.get("max_length_ratio", 2.0)),
+        min_length_ratio=float(raw.get("min_length_ratio", 0.15)),
+        min_source_length=int(raw.get("min_source_length", 10)),
+        min_cjk_density=float(raw.get("min_cjk_density", 0.30)),
+        heartbeat_chars=int(raw.get("heartbeat_chars", 60)),
+    )
+
+
 def detect_input_format(input_path: str) -> str:
     """Detect input format from path.
 
