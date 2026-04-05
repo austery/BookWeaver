@@ -100,7 +100,7 @@ class _SanityProbeConfig:
     min_length_ratio: float = 0.15
     min_source_length: int = 10
     min_cjk_density: float = 0.30
-    min_cjk_source_length: int = 20
+    min_cjk_source_length: int = 40
     heartbeat_chars: int = 60
 
 
@@ -135,10 +135,12 @@ def _count_cjk(text: str) -> int:
     return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
 
 
-# Matches URL / e-mail / social-handle patterns that legitimately keep
-# Latin characters in the translation, diluting CJK density.
+# Matches source patterns that legitimately keep Latin characters in the
+# translation, diluting CJK density.  Bypass the CJK density check when
+# any of these are present in the source segment.
 _URL_HINT_RE = re.compile(
-    r"https?://|www\.|\.com\b|\.org\b|\.net\b|\.co\.\w{2}\b|@\w",
+    r"https?://|www\.|\.com\b|\.org\b|\.net\b|\.co\.\w{2}\b|@\w"  # URLs / handles
+    r"|©|ISBN\b|First\s+published\b",                               # copyright metadata
     re.IGNORECASE,
 )
 

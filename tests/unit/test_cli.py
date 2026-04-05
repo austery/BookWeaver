@@ -86,7 +86,7 @@ class TestSanityProbeConfig:
         assert cfg.min_length_ratio == 0.15
         assert cfg.min_source_length == 10
         assert cfg.min_cjk_density == 0.30
-        assert cfg.min_cjk_source_length == 20
+        assert cfg.min_cjk_source_length == 40
         assert cfg.heartbeat_chars == 60
 
     def test_load_probe_config_from_dict(self) -> None:
@@ -149,7 +149,7 @@ class TestSanityCheckBatch:
     def test_passes_normal_en_to_zh(self) -> None:
         from ai.cli import _sanity_check_batch
 
-        segs = [self._make_seg("ch1.xhtml::0", "The key principle is", "核心原则是")]
+        segs = [self._make_seg("ch1.xhtml::0", "The key principle is that space curves.", "核心原则是空间弯曲。")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
 
     def test_raises_on_empty_output(self) -> None:
@@ -181,7 +181,8 @@ class TestSanityCheckBatch:
         from ai.cli import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
-        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hello world example.")]
+        # Source >= min_cjk_source_length (40) so CJK check fires.
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example, this is a longer test.", "Hello world example, this is a longer test.")]
         with pytest.raises(TranslationError, match="cjk_density"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=5)
 
@@ -208,16 +209,16 @@ class TestSanityCheckBatch:
     def test_cjk_density_uses_stripped_length(self) -> None:
         from ai.cli import _sanity_check_batch
 
-        # Source must be >= min_cjk_source_length (20) to trigger the CJK density check.
+        # Source >= min_cjk_source_length (40) to actually trigger the CJK density check.
         # Raw density: 2 CJK / 12 chars = 0.17 < threshold — would be false positive.
         # Stripped density: 2 CJK / 2 chars = 1.0 > threshold — should pass.
-        segs = [self._make_seg("ch1.xhtml::0", "Hello world, testing", "你好\n\n\n\n\n\n\n\n\n\n")]
+        segs = [self._make_seg("ch1.xhtml::0", "A" * 40, "你好\n\n\n\n\n\n\n\n\n\n")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_cjk_check_skips_equation_length_source(self) -> None:
         from ai.cli import _sanity_check_batch
 
-        # Standalone math equation (19 chars, below min_cjk_source_length=20).
+        # Standalone math equation (19 chars, below min_cjk_source_length=40).
         # Model correctly preserves it as-is (0 CJK) — must not raise.
         segs = [self._make_seg("ch1.xhtml::19", "Rab − ½ R gab = Tab", "Rab − ½ R gab = Tab")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
@@ -237,12 +238,35 @@ class TestSanityCheckBatch:
         ]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=7, total_batches=9)
 
-    def test_cjk_check_applies_to_pure_prose_without_url(self) -> None:
+    def test_cjk_check_skips_copyright_markers_in_source(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # © and "First published" are universal copyright-page markers.
+        # Translations keep publisher names / foreign titles in Latin — low CJK density —
+        # but must NOT raise because the bypass fires first.
+        # Translations are long enough to pass the length-ratio check (ratio ≥ 0.15).
+        cases = [
+            (
+                "copyright.xhtml::3",
+                "Copyright © Carlo Rovelli, 2014Translation copyright © Simon Carnell, 2015",
+                # density ≈ 0.11 < 0.30 — would fail without bypass
+                "版权所有 © Carlo Rovelli, 2014. 翻译版权 © Simon Carnell and Erica Segre, 2015.",
+            ),
+            (
+                "copyright.xhtml::2",
+                "First published in Italian under the title Sette brevi lezioni di fisica 2014",
+                # density ≈ 0.15 < 0.30 — would fail without bypass
+                "首次以意大利文发行 by Adelphi Edizioni 2014 and Allen Lane 2015",
+            ),
+        ]
+        for seg_id, src, tgt in cases:
+            segs = [self._make_seg(seg_id, src, tgt)]
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=2)
         from ai.cli import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
-        # Pure prose (no URL) — CJK density check still fires on bad translation.
-        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hello world example.")]
+        # Pure prose (>= 40 chars, no URL, no copyright marker) — check fires.
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example, this is a longer test.", "Hello world example, this is a longer test.")]
         with pytest.raises(TranslationError, match="cjk_density"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
