@@ -222,6 +222,30 @@ class TestSanityCheckBatch:
         segs = [self._make_seg("ch1.xhtml::19", "Rab − ½ R gab = Tab", "Rab − ½ R gab = Tab")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
 
+    def test_cjk_check_skips_source_with_url(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # Source contains a URL — CJK density check is bypassed entirely.
+        # Density of translation would be ≈ 0.125, well below the 0.30 threshold,
+        # but that is correct: the URL keeps Latin chars in the output.
+        segs = [
+            self._make_seg(
+                "endpage.xhtml::1",
+                "Follow the Penguin Twitter.com@penguinukbooks",
+                "关注企鹅 Twitter.com@penguinukbooks",
+            )
+        ]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=7, total_batches=9)
+
+    def test_cjk_check_applies_to_pure_prose_without_url(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+
+        # Pure prose (no URL) — CJK density check still fires on bad translation.
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hello world example.")]
+        with pytest.raises(TranslationError, match="cjk_density"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
 
 class TestEmitBatchSample:
     def test_emits_batch_sample_line(self, capsys: pytest.CaptureFixture[str]) -> None:

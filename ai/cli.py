@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -134,6 +135,14 @@ def _count_cjk(text: str) -> int:
     return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
 
 
+# Matches URL / e-mail / social-handle patterns that legitimately keep
+# Latin characters in the translation, diluting CJK density.
+_URL_HINT_RE = re.compile(
+    r"https?://|www\.|\.com\b|\.org\b|\.net\b|\.co\.\w{2}\b|@\w",
+    re.IGNORECASE,
+)
+
+
 def _sanity_check_batch(
     translated: list[TranslatedSegment],
     output_lang: str,
@@ -159,7 +168,7 @@ def _sanity_check_batch(
                     f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]"
                     f" (segment {seg.id})"
                 )
-        if check_cjk and len(src) >= probe_config.min_cjk_source_length:
+        if check_cjk and len(src) >= probe_config.min_cjk_source_length and not _URL_HINT_RE.search(src):
             tgt_stripped = tgt.strip()
             cjk_count = _count_cjk(tgt_stripped)
             density = cjk_count / len(tgt_stripped)
