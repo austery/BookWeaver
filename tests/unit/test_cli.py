@@ -1384,6 +1384,13 @@ class _ResumeSource:
         Path(output_path).write_text("", encoding="utf-8")
 
 
+class _EmptyTranslationProvider:
+    """Provider that always returns empty translations — used to trigger probe guards."""
+
+    def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+        return [""] * len(segments)
+
+
 class TestRunSanityProbe:
     """Verifies that run() wires the sanity probe into the on_checkpoint_batch callback."""
 
@@ -1426,12 +1433,8 @@ class TestRunSanityProbe:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        class _EmptyProvider:
-            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
-                return [""] * len(segments)
-
         source = _ResumeSource()
-        self._patch_base(monkeypatch, source, _EmptyProvider())
+        self._patch_base(monkeypatch, source, _EmptyTranslationProvider())
 
         in_epub = tmp_path / "book.epub"
         in_epub.write_bytes(b"epub")
@@ -1445,12 +1448,8 @@ class TestRunSanityProbe:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        class _EmptyProvider:
-            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
-                return [""] * len(segments)
-
         source = _ResumeSource()
-        self._patch_base(monkeypatch, source, _EmptyProvider())
+        self._patch_base(monkeypatch, source, _EmptyTranslationProvider())
 
         in_epub = tmp_path / "book.epub"
         in_epub.write_bytes(b"epub")
@@ -1472,22 +1471,12 @@ class TestRunSanityProbe:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        class _EmptyProvider:
-            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
-                return [""] * len(segments)
-
         source = _ResumeSource()
+        self._patch_base(monkeypatch, source, _EmptyTranslationProvider())
         monkeypatch.setattr(
             cli_module, "load_config",
             lambda: {"sanity_probe": {"enabled": False}},
         )
-        monkeypatch.setattr(
-            cli_module,
-            "resolve_model",
-            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
-        )
-        monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: _EmptyProvider())
-        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: source)
 
         in_epub = tmp_path / "book.epub"
         in_epub.write_bytes(b"epub")
