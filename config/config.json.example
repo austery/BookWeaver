@@ -65,5 +65,13 @@
     "extraction_model": "gemini-2.5-pro",
     "max_terms": 20,
     "glossary_output_path": "{temp_dir}/extracted_glossary.json"
+  },
+  "sanity_probe": {
+    "enabled": true,
+    "max_length_ratio": 2.0,
+    "min_length_ratio": 0.15,
+    "min_source_length": 10,
+    "min_cjk_density": 0.30,
+    "heartbeat_chars": 60
   }
 }
