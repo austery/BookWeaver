@@ -106,14 +106,20 @@ def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
     raw = runtime_config.get("sanity_probe", {})
     if not isinstance(raw, dict):
         return _SanityProbeConfig()
-    return _SanityProbeConfig(
-        enabled=bool(raw.get("enabled", True)),
-        max_length_ratio=float(raw.get("max_length_ratio", 2.0)),
-        min_length_ratio=float(raw.get("min_length_ratio", 0.15)),
-        min_source_length=int(raw.get("min_source_length", 10)),
-        min_cjk_density=float(raw.get("min_cjk_density", 0.30)),
-        heartbeat_chars=int(raw.get("heartbeat_chars", 60)),
-    )
+    d = _SanityProbeConfig()
+    try:
+        return _SanityProbeConfig(
+            enabled=bool(raw.get("enabled", d.enabled)),
+            max_length_ratio=float(raw.get("max_length_ratio", d.max_length_ratio)),
+            min_length_ratio=float(raw.get("min_length_ratio", d.min_length_ratio)),
+            min_source_length=int(raw.get("min_source_length", d.min_source_length)),
+            min_cjk_density=float(raw.get("min_cjk_density", d.min_cjk_density)),
+            heartbeat_chars=int(raw.get("heartbeat_chars", d.heartbeat_chars)),
+        )
+    except (TypeError, ValueError):
+        import sys
+        print("Warning: invalid sanity_probe config value; using defaults.", file=sys.stderr)
+        return _SanityProbeConfig()
 
 
 def detect_input_format(input_path: str) -> str:

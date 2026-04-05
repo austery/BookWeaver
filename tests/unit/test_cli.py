@@ -104,13 +104,33 @@ class TestSanityProbeConfig:
         )
         assert cfg.enabled is False
         assert cfg.max_length_ratio == 3.0
+        assert cfg.min_length_ratio == 0.1
+        assert cfg.min_source_length == 5
         assert cfg.min_cjk_density == 0.5
+        assert cfg.heartbeat_chars == 80
+
+    def test_load_probe_config_partial_dict_merges_with_defaults(self) -> None:
+        from ai.cli import _load_probe_config
+
+        cfg = _load_probe_config({"sanity_probe": {"enabled": False}})
+        assert cfg.enabled is False
+        assert cfg.max_length_ratio == 2.0  # default preserved
+        assert cfg.min_cjk_density == 0.30  # default preserved
 
     def test_load_probe_config_ignores_bad_type(self) -> None:
         from ai.cli import _load_probe_config
 
         cfg = _load_probe_config({"sanity_probe": "not-a-dict"})
         assert cfg.enabled is True  # falls back to defaults
+
+    def test_load_probe_config_falls_back_on_bad_field_value(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from ai.cli import _load_probe_config
+
+        cfg = _load_probe_config({"sanity_probe": {"max_length_ratio": "not-a-number"}})
+        assert cfg.enabled is True  # falls back to defaults
+        assert "Warning" in capsys.readouterr().err
 
 
 class TestGlossaryPromptInjection:
