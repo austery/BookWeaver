@@ -123,6 +123,11 @@ def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
 
 
 def _count_cjk(text: str) -> int:
+    """Count characters in the CJK Unified Ideographs block (U+4E00–U+9FFF).
+
+    Covers ~99% of everyday Simplified/Traditional Chinese.
+    Extension A and Compatibility Ideographs are excluded intentionally.
+    """
     return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
 
 
@@ -152,8 +157,9 @@ def _sanity_check_batch(
                     f" (segment {seg.id})"
                 )
         if check_cjk:
-            cjk_count = _count_cjk(tgt)
-            density = cjk_count / len(tgt)
+            tgt_stripped = tgt.strip()
+            cjk_count = _count_cjk(tgt_stripped)
+            density = cjk_count / len(tgt_stripped)
             if density < probe_config.min_cjk_density:
                 raise TranslationError(
                     f"sanity check failed at batch {batch_label} — "

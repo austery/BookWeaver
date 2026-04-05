@@ -137,7 +137,7 @@ class TestSanityCheckBatch:
     def _make_seg(self, seg_id: str, original: str, translated: str) -> TranslatedSegment:
         return TranslatedSegment(id=seg_id, original=original, translated=translated)
 
-    def _default_probe(self):
+    def _default_probe(self) -> "_SanityProbeConfig":
         from ai.cli import _SanityProbeConfig
         return _SanityProbeConfig()
 
@@ -157,6 +157,14 @@ class TestSanityCheckBatch:
         from ai.cli import _sanity_check_batch
         from ai.ports.provider import TranslationError
         segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "你" * 200)]
+        with pytest.raises(TranslationError, match="length_ratio"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_raises_on_length_ratio_too_low(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+        # Source 100 chars, translated 5 chars (ratio=0.05 < min=0.15)
+        segs = [self._make_seg("ch1.xhtml::0", "A" * 100, "你好。")]
         with pytest.raises(TranslationError, match="length_ratio"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
@@ -183,6 +191,14 @@ class TestSanityCheckBatch:
         segs = [self._make_seg("ch1.xhtml::5", "Hello world.", "")]
         with pytest.raises(TranslationError, match=r"batch 3/10"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
+
+    def test_cjk_density_uses_stripped_length(self) -> None:
+        from ai.cli import _sanity_check_batch
+        # Short source (skips ratio check) + translated output with trailing newlines.
+        # Raw density: 2 CJK / 10 chars = 0.20 < threshold — would be false positive.
+        # Stripped density: 2 CJK / 2 chars = 1.0 > threshold — should pass.
+        segs = [self._make_seg("ch1.xhtml::0", "Hello", "你好\n\n\n\n\n\n\n\n")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
 
 class TestEmitBatchSample:
@@ -216,6 +232,14 @@ class TestEmitBatchSample:
         _emit_batch_sample([], _SanityProbeConfig(), batch_index=0, total_batches=1)
         out = capsys.readouterr().out
         assert "[progress:batch_sample]" not in out
+
+    def test_omits_doc_for_non_epub_segment(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        segs = [TranslatedSegment(id="plain-segment-id", original="Hello.", translated="你好。")]
+        _emit_batch_sample(segs, _SanityProbeConfig(), batch_index=0, total_batches=1)
+        out = capsys.readouterr().out
+        assert "[progress:batch_sample]" in out
+        assert "doc=" not in out
 
 
 class TestGlossaryPromptInjection:
