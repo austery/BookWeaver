@@ -140,6 +140,7 @@ The shell orchestrates multiple steps:
 - `[progress:source]` — source load summary (`segments`, `resumed`, `pending`, `batches`)
 - `[progress:batch]` — per-batch progress (`index`, `translated`, `batch_segments`)
   - EPUB includes `docs=...` when doc identity is available
+- `[progress:batch_sample]` — heartbeat sample after each batch (`batch=N/Total`, `doc=`, `src=`, `tgt=`); disabled by `--no-sanity-probe`
 - `[progress:save]` — save stage before writing output
 - `[progress:done]` — completion summary
 - `[progress:error]` — failure localization with `stage` + error type/message (stderr)
@@ -453,6 +454,18 @@ Design reference for future prompt/segmentation optimization:
 - Probe cache config: `model_probe.cache_path` / `model_probe.cache_ttl_seconds`
 - Ordered fallback: `fallback_chain`
 - Quota DB: `~/.config/translatebook/quota.db`
+- **Batch sanity probe** (`sanity_probe`): runs after every batch; halts on empty output, runaway length ratio, or wrong-language (non-CJK) output:
+  ```json
+  "sanity_probe": {
+    "enabled": true,
+    "max_length_ratio": 2.0,
+    "min_length_ratio": 0.15,
+    "min_source_length": 10,
+    "min_cjk_density": 0.30,
+    "heartbeat_chars": 60
+  }
+  ```
+  Disable via CLI: `--no-sanity-probe`
 
 ### Gemini API Configuration (Optional)
 

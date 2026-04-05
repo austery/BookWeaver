@@ -57,6 +57,12 @@ Extra user constraints are appended by `-p/--prompt`.
 - Pro model in EPUB workflow pre-batches large chapter requests with a char-only limit (60K chars per batch) before recursive split-retry
 - SPEC-010 provides terminology extraction & glossary injection (Strategy A MVP) with priority-based filtering
 - SPEC-011 provides ModelResolver + ProviderFactory for model routing and API fallback
+- SPEC-016 provides per-batch sanity probe: halts pipeline on empty output, length ratio violation, or wrong-language (non-CJK) output; configurable via `sanity_probe` in config.json; disable with `--no-sanity-probe`
+- `[progress:batch_sample]` line emitted after every successfully-checked batch — shows first segment source/target snippet (heartbeat for long runs)
+- Sanity probe checks run in order: empty → length ratio (skipped if source < 10 chars) → CJK density (zh only); CJK density uses `tgt.strip()` denominator to avoid false positives on whitespace-padded EPUB headings
+- SPEC-016 provides per-batch sanity probe: halts pipeline on empty output, length ratio violation, or wrong-language (non-CJK) output; configurable via `sanity_probe` in config.json; disable with `--no-sanity-probe`
+- `[progress:batch_sample]` line emitted after every successfully-checked batch — shows first segment source/target snippet (heartbeat for long runs)
+- Sanity probe checks run in order: empty → length ratio (skipped if source < 10 chars) → CJK density (zh only); CJK density uses `tgt.strip()` denominator to avoid false positives on whitespace-padded EPUB headings
 
 ## SPEC-010 & SPEC-011 Architecture
 
