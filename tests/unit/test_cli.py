@@ -210,10 +210,24 @@ class TestSanityCheckBatch:
         from ai.cli import _sanity_check_batch
 
         # Source >= min_cjk_source_length (40) to actually trigger the CJK density check.
-        # Raw density: 2 CJK / 12 chars = 0.17 < threshold — would be false positive.
-        # Stripped density: 2 CJK / 2 chars = 1.0 > threshold — should pass.
+        # After stripping: 2 CJK / 2 effective chars = 1.0 > threshold — should pass.
         segs = [self._make_seg("ch1.xhtml::0", "A" * 40, "你好\n\n\n\n\n\n\n\n\n\n")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_cjk_density_subtracts_ascii_letters_for_proper_nouns(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # Stock ticker "Sheet & Tube" is preserved in Latin in the translation.
+        # Naïve formula: 5 CJK / 24 total = 0.21 < 0.30 → false positive.
+        # Corrected formula: 5 CJK / (24 - 9 ASCII letters) = 5/15 = 0.33 → passes.
+        segs = [
+            self._make_seg(
+                "split_084.html::0",
+                "1. Sheet & Tube, preferred, sells at 40.",  # 40 chars — CJK check fires
+                "1. Sheet & Tube优先股，售价40。",
+            )
+        ]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=26, total_batches=98)
 
     def test_cjk_check_skips_equation_length_source(self) -> None:
         from ai.cli import _sanity_check_batch

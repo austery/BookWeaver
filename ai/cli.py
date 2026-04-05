@@ -173,7 +173,12 @@ def _sanity_check_batch(
         if check_cjk and len(src) >= probe_config.min_cjk_source_length and not _URL_HINT_RE.search(src):
             tgt_stripped = tgt.strip()
             cjk_count = _count_cjk(tgt_stripped)
-            density = cjk_count / len(tgt_stripped)
+            # Subtract ASCII letters (preserved proper nouns / company names) from the
+            # denominator: they are untranslated *intentionally* and must not penalise
+            # the density score.  Zero-CJK targets still yield density = 0.
+            ascii_letters = sum(1 for c in tgt_stripped if c.isascii() and c.isalpha())
+            effective_len = max(len(tgt_stripped) - ascii_letters, 1)
+            density = cjk_count / effective_len
             if density < probe_config.min_cjk_density:
                 raise TranslationError(
                     f"sanity check failed at batch {batch_label} — "
