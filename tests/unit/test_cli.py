@@ -697,6 +697,18 @@ class TestBuildParser:
         assert args.resume is False
 
 
+class TestNoSanityProbeFlag:
+    def test_no_sanity_probe_flag_present_in_parser(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["input.epub", "--output", "out.epub", "--no-sanity-probe"])
+        assert args.no_sanity_probe is True
+
+    def test_no_sanity_probe_defaults_to_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["input.epub", "--output", "out.epub"])
+        assert args.no_sanity_probe is False
+
+
 class TestMainModelExplicitness:
     def test_main_marks_model_as_explicit_when_flag_is_provided(
         self, monkeypatch: pytest.MonkeyPatch

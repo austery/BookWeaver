@@ -465,6 +465,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Checkpoint directory path (default: <output-dir>/.bookweaver_checkpoints/<format>/<input-stem>)",
     )
+    p.add_argument(
+        "--no-sanity-probe",
+        action="store_true",
+        default=False,
+        help="Disable per-batch sanity checks and heartbeat sample output.",
+    )
     return p
 
 
@@ -1122,6 +1128,7 @@ def main(argv: list[str] | None = None) -> None:
         resume=args.resume,
         force_resume=args.force_resume,
         checkpoint_dir=args.checkpoint_dir,
+        no_sanity_probe=args.no_sanity_probe,
     )
 
 
