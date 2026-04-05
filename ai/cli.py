@@ -118,6 +118,7 @@ def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
         )
     except (TypeError, ValueError):
         import sys
+
         print("Warning: invalid sanity_probe config value; using defaults.", file=sys.stderr)
         return _SanityProbeConfig()
 
@@ -980,9 +981,7 @@ def run(
 
                 persisted_translations = dict(resume_translations)
 
-                def _persist(
-                    _batch_index: int, translated: list[TranslatedSegment]
-                ) -> None:
+                def _persist(_batch_index: int, translated: list[TranslatedSegment]) -> None:
                     for item in translated:
                         persisted_translations[item.id] = item.translated
                     _persist_checkpoint(
@@ -1001,9 +1000,7 @@ def run(
         checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
         if probe_config.enabled or _persist_fn is not None:
 
-            def _on_checkpoint_batch(
-                batch_index: int, translated: list[TranslatedSegment]
-            ) -> None:
+            def _on_checkpoint_batch(batch_index: int, translated: list[TranslatedSegment]) -> None:
                 if probe_config.enabled:
                     _sanity_check_batch(
                         translated, output_lang, probe_config, batch_index, _total_batches[0]
