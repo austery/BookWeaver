@@ -122,6 +122,46 @@ def _load_probe_config(runtime_config: dict[str, object]) -> _SanityProbeConfig:
         return _SanityProbeConfig()
 
 
+def _count_cjk(text: str) -> int:
+    return sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+
+
+def _sanity_check_batch(
+    translated: list[TranslatedSegment],
+    output_lang: str,
+    probe_config: _SanityProbeConfig,
+    batch_index: int,
+    total_batches: int,
+) -> None:
+    check_cjk = output_lang.startswith("zh")
+    batch_label = f"{batch_index + 1}/{total_batches}"
+    for seg in translated:
+        tgt = seg.translated
+        src = seg.original
+        if not tgt.strip():
+            raise TranslationError(
+                f"sanity check failed at batch {batch_label} — empty output (segment {seg.id})"
+            )
+        if len(src) >= probe_config.min_source_length:
+            ratio = len(tgt) / len(src)
+            if ratio < probe_config.min_length_ratio or ratio > probe_config.max_length_ratio:
+                raise TranslationError(
+                    f"sanity check failed at batch {batch_label} — "
+                    f"length_ratio={ratio:.2f} not in "
+                    f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]"
+                    f" (segment {seg.id})"
+                )
+        if check_cjk:
+            cjk_count = _count_cjk(tgt)
+            density = cjk_count / len(tgt)
+            if density < probe_config.min_cjk_density:
+                raise TranslationError(
+                    f"sanity check failed at batch {batch_label} — "
+                    f"cjk_density={density:.2f} < {probe_config.min_cjk_density}"
+                    f" (segment {seg.id})"
+                )
+
+
 def detect_input_format(input_path: str) -> str:
     """Detect input format from path.
 

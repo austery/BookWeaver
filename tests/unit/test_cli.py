@@ -133,6 +133,58 @@ class TestSanityProbeConfig:
         assert "Warning" in capsys.readouterr().err
 
 
+class TestSanityCheckBatch:
+    def _make_seg(self, seg_id: str, original: str, translated: str) -> TranslatedSegment:
+        return TranslatedSegment(id=seg_id, original=original, translated=translated)
+
+    def _default_probe(self):
+        from ai.cli import _SanityProbeConfig
+        return _SanityProbeConfig()
+
+    def test_passes_normal_en_to_zh(self) -> None:
+        from ai.cli import _sanity_check_batch
+        segs = [self._make_seg("ch1.xhtml::0", "The key principle is", "核心原则是")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
+
+    def test_raises_on_empty_output(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world", "")]
+        with pytest.raises(TranslationError, match="empty output"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
+
+    def test_raises_on_length_ratio_too_high(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "你" * 200)]
+        with pytest.raises(TranslationError, match="length_ratio"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_raises_on_cjk_density_too_low(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hello world example.")]
+        with pytest.raises(TranslationError, match="cjk_density"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=5)
+
+    def test_skips_length_ratio_for_short_source(self) -> None:
+        from ai.cli import _sanity_check_batch
+        segs = [self._make_seg("ch1.xhtml::0", "A", "翻译一下这个字母A的中文意思是什么")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_skips_cjk_check_for_non_zh_lang(self) -> None:
+        from ai.cli import _sanity_check_batch
+        segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hallo Welt Beispiel.")]
+        _sanity_check_batch(segs, "de", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_error_message_includes_batch_position(self) -> None:
+        from ai.cli import _sanity_check_batch
+        from ai.ports.provider import TranslationError
+        segs = [self._make_seg("ch1.xhtml::5", "Hello world.", "")]
+        with pytest.raises(TranslationError, match=r"batch 3/10"):
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
+
+
 class TestGlossaryPromptInjection:
     def test_load_glossary_block_with_min_priority_filter(self, tmp_path: Path) -> None:
         glossary = tmp_path / "glossary.json"
