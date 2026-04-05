@@ -1384,6 +1384,124 @@ class _ResumeSource:
         Path(output_path).write_text("", encoding="utf-8")
 
 
+class TestRunSanityProbe:
+    """Verifies that run() wires the sanity probe into the on_checkpoint_batch callback."""
+
+    def _patch_base(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        source: _ResumeSource,
+        provider: object,
+    ) -> None:
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
+        )
+        monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: provider)
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: source)
+
+    def test_run_emits_batch_sample_lines(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_base(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
+
+        out = capsys.readouterr().out
+        # _ResumeSource has 3 segments planned into 2 batches
+        assert out.count("[progress:batch_sample]") == 2
+
+    def test_run_halts_on_empty_translation(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class _EmptyProvider:
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                return [""] * len(segments)
+
+        source = _ResumeSource()
+        self._patch_base(monkeypatch, source, _EmptyProvider())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        with pytest.raises(TranslationError, match="empty output"):
+            run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
+
+    def test_no_sanity_probe_flag_suppresses_probe_and_sample(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        class _EmptyProvider:
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                return [""] * len(segments)
+
+        source = _ResumeSource()
+        self._patch_base(monkeypatch, source, _EmptyProvider())
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        # With probe disabled, empty output should NOT raise
+        run(
+            input_path=str(in_epub),
+            output=str(tmp_path / "out.epub"),
+            input_format="epub",
+            no_sanity_probe=True,
+        )
+
+        out = capsys.readouterr().out
+        assert "[progress:batch_sample]" not in out
+
+    def test_probe_disabled_via_config(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        class _EmptyProvider:
+            def translate_batch(self, segments: list[str], *, system_prompt: str) -> list[str]:
+                return [""] * len(segments)
+
+        source = _ResumeSource()
+        monkeypatch.setattr(
+            cli_module, "load_config",
+            lambda: {"sanity_probe": {"enabled": False}},
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "resolve_model",
+            lambda model, config, *, explicit=False: ("gemini-2.5-flash", False),
+        )
+        monkeypatch.setattr(cli_module, "create_provider", lambda *args, **kwargs: _EmptyProvider())
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: source)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+
+        run(
+            input_path=str(in_epub),
+            output=str(tmp_path / "out.epub"),
+            input_format="epub",
+        )
+
+        out = capsys.readouterr().out
+        assert "[progress:batch_sample]" not in out
+
+
 class TestRunResumeCheckpoint:
     def _patch_runtime_for_resume(
         self,

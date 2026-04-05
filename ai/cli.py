@@ -835,6 +835,7 @@ def run(
     resume: bool = True,
     force_resume: bool = False,
     checkpoint_dir: str | None = None,
+    no_sanity_probe: bool = False,
     model_explicit: bool = False,
     config: dict[str, object] | None = None,
 ) -> None:
@@ -936,7 +937,7 @@ def run(
         else:
             batch_chars = max_batch_chars
         resume_translations: dict[str, str] | None = None
-        checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
+        _persist_fn: Callable[[int, list[TranslatedSegment]], None] | None = None
         resume_enabled = resume or force_resume
         if resume_enabled:
             if fmt != "epub":
@@ -973,7 +974,9 @@ def run(
 
                 persisted_translations = dict(resume_translations)
 
-                def _persist_batch(_batch_index: int, translated: list[TranslatedSegment]) -> None:
+                def _persist(
+                    _batch_index: int, translated: list[TranslatedSegment]
+                ) -> None:
                     for item in translated:
                         persisted_translations[item.id] = item.translated
                     _persist_checkpoint(
@@ -982,7 +985,28 @@ def run(
                         translations=persisted_translations,
                     )
 
-                checkpoint_callback = _persist_batch
+                _persist_fn = _persist
+
+        probe_config = _load_probe_config(runtime_config)
+        if no_sanity_probe:
+            probe_config = _SanityProbeConfig(enabled=False)
+
+        _total_batches: list[int] = [0]
+        checkpoint_callback: Callable[[int, list[TranslatedSegment]], None] | None = None
+        if probe_config.enabled or _persist_fn is not None:
+
+            def _on_checkpoint_batch(
+                batch_index: int, translated: list[TranslatedSegment]
+            ) -> None:
+                if probe_config.enabled:
+                    _sanity_check_batch(
+                        translated, output_lang, probe_config, batch_index, _total_batches[0]
+                    )
+                    _emit_batch_sample(translated, probe_config, batch_index, _total_batches[0])
+                if _persist_fn is not None:
+                    _persist_fn(batch_index, translated)
+
+            checkpoint_callback = _on_checkpoint_batch
 
         engine_config = EngineConfig(
             system_prompt=system_prompt,
@@ -1014,6 +1038,7 @@ def run(
         def _on_source_loaded(
             total_segments: int, resumed_segments: int, total_batches: int
         ) -> None:
+            _total_batches[0] = total_batches
             _log_progress(
                 "source",
                 format=fmt,
