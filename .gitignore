@@ -17,6 +17,7 @@ __pycache__/
 # Runtime temp/output (book processing artifacts)
 *_temp/
 tmp/
+.bookweaver_checkpoints/
 *_sample/
 output/
 *.log
@@ -41,3 +42,4 @@ translated_*.md
 test_book.epub
 *_Manager-Letter*.pdf
 generate_test_epub.py
+
