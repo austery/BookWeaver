@@ -26,6 +26,8 @@ class _RawSegment:
 
 
 class _ExtractSegmentsFn(Protocol):
+    """Signature for segment extractors used by :class:`EpubSourceAdapter`."""
+
     def __call__(self, xhtml: str, document_path: str | None = None) -> list[Any]: ...
 
 

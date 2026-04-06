@@ -156,7 +156,8 @@ def _has_structural_container_descendant(node: ET.Element) -> bool:
     )
 
 
-def _has_emphasis_signal(node: ET.Element) -> bool:
+def _node_has_emphasis_signal(node: ET.Element) -> bool:
+    """Return whether this node itself carries an emphasis signal."""
     tag = _local_name(node.tag).lower()
     if tag in _EMPHASIS_TAGS:
         return True
@@ -174,7 +175,7 @@ def _is_emphasized_wrapper_chain(node: ET.Element) -> bool:
     child = children[0]
     if (child.tail or "").strip():
         return False
-    if _has_emphasis_signal(child):
+    if _node_has_emphasis_signal(child):
         return True
 
     child_tag = _local_name(child.tag).lower()

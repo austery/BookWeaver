@@ -8,6 +8,7 @@ grouping by document, and correct delegation to epub_package functions.
 from __future__ import annotations
 
 import io
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,14 +49,12 @@ class FakeRawSegment:
 
 
 def _make_test_epub(doc_contents: dict[str, str], opf_path: str = "OEBPS/content.opf") -> Path:
-    """Create an in-memory EPUB zip and write it to a temp path."""
+    """Create a temporary EPUB zip file for adapter tests."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for path, content in doc_contents.items():
             zf.writestr(path, content)
     buf.seek(0)
-    # Write to a temp file
-    import tempfile
 
     tmp = tempfile.NamedTemporaryFile(suffix=".epub", delete=False)
     tmp.write(buf.getvalue())
@@ -305,11 +304,13 @@ class TestApplyTranslations:
         )
 
         assert len(patch_calls) == 2
-        # Ch1: translations in order
-        assert patch_calls[0][1] == ["甲", "乙"]
-        assert patch_calls[0][2] == "OEBPS/ch1.xhtml"
-        # Ch2
-        assert patch_calls[1][1] == ["丙"]
+        (_, first_translations, first_doc_path), (_, second_translations, second_doc_path) = (
+            patch_calls
+        )
+        assert first_translations == ["甲", "乙"]
+        assert first_doc_path == "OEBPS/ch1.xhtml"
+        assert second_translations == ["丙"]
+        assert second_doc_path == "OEBPS/ch2.xhtml"
         epub_path.unlink()
 
     def test_translations_sorted_by_index(self) -> None:
@@ -386,11 +387,12 @@ class TestSave:
                 TranslatedSegment(id="OEBPS/ch.xhtml::0", original="Hi", translated="你好"),
             ]
         )
-        adapter.save("/tmp/output.epub")
+        output_path = Path("output.epub")
+        adapter.save(str(output_path))
 
         assert len(repack_calls) == 1
         src, out, overrides = repack_calls[0]
         assert src == epub_path
-        assert out == Path("/tmp/output.epub")
+        assert out == output_path
         assert "OEBPS/ch.xhtml" in overrides
         epub_path.unlink()
