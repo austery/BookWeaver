@@ -81,6 +81,49 @@ def test_extract_translatable_segments_returns_block_level_segments() -> None:
     assert segments[1].text == "Second paragraph."
 
 
+def test_extract_translatable_segments_includes_leaf_div_prose() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='intro'>\n  Hello <span>world</span>!\n</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world!"
+
+
+def test_extract_translatable_segments_skips_outer_div_when_inner_paragraph_exists() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='wrapper'><p>Inner paragraph.</p></div>"
+        "<div class='leaf'>\n Leaf div prose. \n</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert [segment.tag_name for segment in segments] == ["p", "div"]
+    assert [segment.text for segment in segments] == ["Inner paragraph.", "Leaf div prose."]
+
+
+def test_extract_translatable_segments_preserves_br_linebreaks() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<p><a href='#1'>AAA pattern</a><br/>\n"
+        "    <a href='#2'>avoiding if statements</a><br/>\n"
+        "    <a href='#3'>avoiding multiple AAA sections</a></p>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].text == "AAA pattern\navoiding if statements\navoiding multiple AAA sections"
+
+
 def test_patch_xhtml_alternating_inserts_one_translation_block_per_source_block() -> None:
     from ai.epub_package import patch_xhtml_alternating
 
@@ -135,6 +178,30 @@ def test_patch_xhtml_alternating_keeps_table_cells_source_only() -> None:
     assert "客户姓名" not in patched
     assert "乔·雷斯" not in patched
     assert "表后文本。" in patched
+
+
+def test_patch_xhtml_alternating_inserts_translation_after_prose_div() -> None:
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='prose'>\n  Leaf div prose. \n</div>"
+        "</body></html>"
+    )
+    translation = "叶子 div 段落。"
+    patched = patch_xhtml_alternating(source, [translation])
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+    body = root.find(".//x:body", ns)
+    assert body is not None
+    children = list(body)
+    assert len(children) == 2
+    assert children[0].tag == "{http://www.w3.org/1999/xhtml}div"
+    assert children[1].attrib["class"] == "bw-translation"
+    assert children[1].text == translation
 
 
 def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:

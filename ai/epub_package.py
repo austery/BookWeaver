@@ -72,7 +72,7 @@ _CAPTION_COMPAT_CSS = (
     "  display: table-caption !important;\n"
     "}"
 )
-_BLOCK_TAGS = {"p", "li", "blockquote", "dd"}
+_BLOCK_TAGS = {"p", "li", "blockquote", "dd", "div"}
 
 ET.register_namespace("", _XHTML_NS)
 
@@ -222,6 +222,38 @@ def _has_skip_ancestor(node: ET.Element, parent_map: dict[ET.Element, ET.Element
     return False
 
 
+def _append_visible_text_parts(node: ET.Element, parts: list[str]) -> None:
+    if node.text:
+        parts.append(node.text)
+
+    for child in node:
+        if _local_name(child.tag).lower() == "br":
+            parts.append("\n")
+            if child.tail:
+                parts.append(child.tail.lstrip())
+        else:
+            _append_visible_text_parts(child, parts)
+            if child.tail:
+                parts.append(child.tail)
+
+
+def _normalize_visible_text(node: ET.Element) -> str:
+    parts: list[str] = []
+    _append_visible_text_parts(node, parts)
+    lines = "".join(parts).split("\n")
+
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    normalized_lines: list[str] = []
+    for line in lines:
+        words = line.split()
+        normalized_lines.append(" ".join(words) if words else "")
+    return "\n".join(normalized_lines)
+
+
 def _has_translatable_block_descendant(node: ET.Element) -> bool:
     for descendant in node.iter():
         if descendant is node:
@@ -229,7 +261,7 @@ def _has_translatable_block_descendant(node: ET.Element) -> bool:
         tag = _local_name(descendant.tag).lower()
         if tag not in _BLOCK_TAGS:
             continue
-        if "".join(descendant.itertext()).strip():
+        if _normalize_visible_text(descendant):
             return True
     return False
 
@@ -276,7 +308,7 @@ def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableS
             continue
         if _has_translatable_block_descendant(node):
             continue
-        text = "".join(node.itertext()).strip()
+        text = _normalize_visible_text(node)
         if not text:
             continue
         segments.append(
