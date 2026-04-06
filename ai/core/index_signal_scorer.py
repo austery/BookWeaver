@@ -43,8 +43,9 @@ class IndexSignalScorer:
     _ROLE_RE = re.compile(r'role="doc-index"', re.IGNORECASE)
 
     # CSS class hints: class="index", class="glossary", class="searchable-terms"
+    # Match semantic class tokens (word boundaries), NOT substrings inside class names
     _CLASS_RE = re.compile(
-        r'class="[^"]*(?:index|glossary|idx|searchable-terms)[^"]*"', re.IGNORECASE
+        r'class="[^"]*\b(?:index|glossary|idx|searchable-terms)\b[^"]*"', re.IGNORECASE
     )
 
     # Anchor/ID hints: id="index_term_102", id="glossary-entry"

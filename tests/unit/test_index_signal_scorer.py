@@ -88,3 +88,33 @@ def test_combined_signals_exceed_threshold() -> None:
     )
     assert scorer.is_strong_candidate(score) is True
     assert len(score.reasons) >= 2
+
+
+def test_class_indexterm_should_not_trigger_css_class_signal() -> None:
+    """Regression: class="indexterm" should NOT match as index/glossary CSS signal.
+
+    The _CLASS_RE pattern currently matches substrings, so "indexterm" incorrectly
+    triggers the css_class signal. This creates false positives when combined with
+    line_shape patterns in body chapters.
+    """
+    scorer = IndexSignalScorer()
+    score = scorer.score_document(
+        href="chapter01.xhtml",
+        xhtml='<div class="indexterm"><p>Adapter, 10-15, 42</p></div>',
+    )
+    # Expected: css_class should NOT be in reasons
+    # Actual (before fix): css_class IS in reasons, incorrectly
+    assert "css_class" not in score.reasons
+    # Should only have line_shape signal (score=20), below strong threshold (35)
+    assert scorer.is_strong_candidate(score) is False
+
+
+def test_class_reindex_should_not_trigger_css_class_signal() -> None:
+    """Regression: class="reindex" should NOT match as index/glossary CSS signal."""
+    scorer = IndexSignalScorer()
+    score = scorer.score_document(
+        href="chapter02.xhtml",
+        xhtml='<div class="reindex"><p>Bridge pattern, 22</p></div>',
+    )
+    assert "css_class" not in score.reasons
+    assert scorer.is_strong_candidate(score) is False

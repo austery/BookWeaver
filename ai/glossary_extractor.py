@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from ai.core.glossary import validate_model_output
-from ai.core.index_signal_scorer import IndexSignalScorer
+from ai.core.index_signal_scorer import IndexSignalScore, IndexSignalScorer
 from ai.epub_package import load_epub_package, resolve_opf_href
 
 
@@ -239,7 +239,7 @@ def _select_scored_index_text(epub_path: Path) -> str:
 
     Scans all spine documents and scores them for index/glossary signals
     (epub:type, CSS classes, filename hints, heading markers, line patterns).
-    Returns the first strong candidate found.
+    Returns text from the strongest candidate (highest score), not the first strong.
 
     This is the Tier 1 detector that handles non-standard EPUB structures
     (e.g., epub:type="glossary", ix01.xhtml, class="index").
@@ -249,6 +249,9 @@ def _select_scored_index_text(epub_path: Path) -> str:
     """
     scorer = IndexSignalScorer()
     model = load_epub_package(epub_path)
+
+    best_score: IndexSignalScore | None = None
+    best_text = ""
 
     with zipfile.ZipFile(epub_path, "r") as zf:
         for idref in model.spine_itemrefs:
@@ -270,11 +273,14 @@ def _select_scored_index_text(epub_path: Path) -> str:
             if _is_placeholder_index_text(extracted):
                 continue
 
-            # Separate mixed English+Chinese if needed
-            english_part, _ = _separate_mixed_index(extracted)
-            return english_part if english_part.strip() else extracted
+            # Keep the candidate with the highest score
+            if best_score is None or score.total > best_score.total:
+                best_score = score
+                # Separate mixed English+Chinese if needed
+                english_part, _ = _separate_mixed_index(extracted)
+                best_text = english_part if english_part.strip() else extracted
 
-    return ""
+    return best_text
 
 
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:

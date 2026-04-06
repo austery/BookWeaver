@@ -264,6 +264,44 @@ def test_extract_epub_index_and_toc_uses_scorer_selected_glossary_doc(tmp_path: 
     assert "Hexagonal Architecture, 112" in index_text
 
 
+def test_extract_epub_index_and_toc_prefers_strongest_candidate_not_first_strong(
+    tmp_path: Path,
+) -> None:
+    """Regression: _select_scored_index_text must choose STRONGEST candidate, not first-strong.
+
+    Scenario:
+    - chapter01.xhtml has class="indexterm" + line_shape (borderline, weak score)
+    - backmatter.xhtml has epub:type="index" (strong score)
+
+    Expected: backmatter.xhtml wins (highest score)
+    Actual (before fix): chapter01.xhtml wins (first strong candidate in spine order)
+    """
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            # Borderline chapter: class="indexterm" + line_shape (if css_class wrongly triggered = 40 score)
+            (
+                "c1",
+                "chapter01.xhtml",
+                '<div class="indexterm"><p>Adapter, 10-15, 42</p><p>Bridge, 22</p></div>',
+            ),
+            # Real backmatter index: epub:type="index" (score=40 from epub_type alone)
+            (
+                "idx",
+                "backmatter.xhtml",
+                '<section epub:type="index"><h2>Index</h2><p>Connascence, 99</p><p>Hexagonal Architecture, 202</p></section>',
+            ),
+        ],
+        toc_content="Part 1",
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    # Must prefer the stronger backmatter index, NOT the earlier borderline chapter
+    assert "Connascence, 99" in index_text
+    assert "Hexagonal Architecture, 202" in index_text
+    # Borderline chapter content must NOT leak through
+    assert "Adapter, 10-15, 42" not in index_text
+
+
 def test_build_extraction_prompt_contains_index_and_toc() -> None:
     prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15)
     assert "Connascence" in prompt
