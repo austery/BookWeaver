@@ -85,6 +85,7 @@ _CHECKPOINT_SCHEMA_VERSION = 1
 _CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _CHECKPOINT_STATE_FILE = "state.json"
 _CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
+_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v2"
 _DEFAULT_BATCH_CHARS_PRO_EPUB = 60_000
 _DEFAULT_BATCH_CHARS_PRO = 60_000
 _DEFAULT_BATCH_CHARS_STANDARD = 10_000
@@ -240,6 +241,7 @@ class CheckpointMetadata:
     max_batch_chars: int
     separator_overhead: int
     system_prompt_hash: str
+    segmenter_signature: str | None
 
 
 def _compute_input_signature(input_file: Path) -> str:
@@ -254,6 +256,12 @@ def _checkpoint_state_file(checkpoint_dir: Path) -> Path:
 
 def _checkpoint_translations_file(checkpoint_dir: Path) -> Path:
     return checkpoint_dir / _CHECKPOINT_TRANSLATIONS_FILE
+
+
+def _segmenter_signature_for_format(input_format: str) -> str | None:
+    if input_format == "epub":
+        return _EPUB_SEGMENTER_SIGNATURE
+    return None
 
 
 def _resolve_checkpoint_dir(
@@ -288,6 +296,7 @@ def _build_checkpoint_metadata(
         max_batch_chars=max_batch_chars,
         separator_overhead=separator_overhead,
         system_prompt_hash=hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
+        segmenter_signature=_segmenter_signature_for_format(input_format),
     )
 
 
@@ -318,6 +327,7 @@ def _persist_checkpoint(
         "separator_overhead": metadata.separator_overhead,
         "system_prompt_hash": metadata.system_prompt_hash,
         "translated_segment_count": len(translations),
+        "segmenter_signature": metadata.segmenter_signature,
     }
     translations_payload: dict[str, object] = {
         "schema_version": _CHECKPOINT_SCHEMA_VERSION,
@@ -370,13 +380,14 @@ def _load_checkpoint_translations(
         return {}
 
     soft_mismatches: list[str] = []
-    expected_pairs: tuple[tuple[str, str | int], ...] = (
+    expected_pairs: tuple[tuple[str, str | int | None], ...] = (
         ("output_lang", metadata.output_lang),
         ("model", metadata.model),
         ("provider", metadata.provider),
         ("max_batch_chars", metadata.max_batch_chars),
         ("separator_overhead", metadata.separator_overhead),
         ("system_prompt_hash", metadata.system_prompt_hash),
+        ("segmenter_signature", metadata.segmenter_signature),
     )
     for key, expected in expected_pairs:
         if raw_state.get(key) != expected:
