@@ -378,6 +378,45 @@ class TestGlossaryPromptInjection:
         assert "Preserve code blocks" in prompt
 
 
+class TestGlossaryProgressLog:
+    def test_glossary_resolved_log_includes_mode_and_metrics(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Regression: glossary resolution progress log should include mode + metrics.
+
+        When glossary extraction resolves, the progress log should emit:
+        - action=resolved
+        - mode (auto|deep-scan)
+        - tier (index | local-refinement | deep-scan)
+        - docs, chars, candidate_count, term_count (useful metrics)
+
+        This is a unit test of _log_progress; integration test would mock run() call.
+        """
+        from ai.cli import _log_progress
+
+        # Simulate glossary resolution log (as emitted by ai/cli.py line 979-987)
+        _log_progress(
+            "glossary",
+            action="resolved",
+            mode="auto",
+            tier="local-refinement",
+            docs=3,
+            chars=8450,
+            candidate_count=24,
+            term_count=18,
+        )
+
+        out = capsys.readouterr().out
+        assert "[progress:glossary]" in out
+        assert "action=resolved" in out
+        assert "mode=auto" in out
+        assert "tier=local-refinement" in out
+        assert "docs=3" in out
+        assert "chars=8450" in out
+        assert "candidate_count=24" in out
+        assert "term_count=18" in out
+
+
 # ── Language resolution ───────────────────────────────────────
 
 
@@ -1544,12 +1583,12 @@ class TestRunGlossaryExtractionOrchestration:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Regression test: legacy --extract-glossary uses mode-based routing.
-        
+
         resolve_glossary_request(extract_glossary=True) yields mode="auto",
         so the first mode-based branch handles it. The legacy elif branch
         with `extract_glossary and glossary_request.mode != "manual"` is
         unreachable dead code.
-        
+
         This test verifies that extract_glossary=True routes through the
         correct mode="auto" path and extraction still happens.
         """

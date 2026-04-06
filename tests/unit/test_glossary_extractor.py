@@ -15,7 +15,6 @@ from ai.glossary_extractor import (
     extract_epub_index_and_toc,
     extract_glossary_from_epub,
 )
-from ai.core.local_glossary_candidates import build_local_glossary_candidates
 
 
 def _wrap_xhtml(body: str) -> str:
@@ -697,3 +696,127 @@ def test_extract_glossary_deep_scan_logs_payload_stats(tmp_path: Path) -> None:
     assert "chars" in report
     assert report["docs"] > 0
     assert report["chars"] > 0
+
+
+# ── Regression Matrix Tests ───────────────────────────────────────
+
+
+def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: Path) -> None:
+    """Regression matrix: locks orchestration paths for representative EPUB classes.
+
+    Classes tested:
+    - standard-index: typical tech book with named index file
+    - nonstandard-markup: non-standard content structure
+    - fiction-no-index: narrative book without index
+    - low-density-narrative: fiction with sparse terminology
+
+    The test uses mocked model output; the goal is to verify orchestration
+    paths (index detection, tier routing, fallback) remain stable.
+    """
+    # Create subdirs
+    (tmp_path / "standard").mkdir()
+    (tmp_path / "nonstandard").mkdir()
+    (tmp_path / "fiction").mkdir()
+    (tmp_path / "lowdensity").mkdir()
+
+    # Standard index: tech book with named index file
+    standard_index_epub = _make_spine_epub(
+        tmp_path / "standard",
+        docs=[
+            ("ch1", "chapter1.xhtml", "<p>Chapter 1: Hexagonal Architecture concepts.</p>"),
+        ],
+        include_named_index=True,
+        named_index_content="<ul><li>Hexagonal Architecture</li><li>Ports and Adapters</li></ul>",
+    )
+
+    # Nonstandard markup: no named index, but high-signal last doc
+    nonstandard_docs = [
+        ("ch1", "chapter1.xhtml", "<p>Chapter content here.</p>"),
+        (
+            "appendix",
+            "backmatter.xhtml",
+            "<h1>Index</h1><p>API Design, Hexagonal Architecture, Domain-Driven Design</p>",
+        ),
+    ]
+    nonstandard_epub = _make_spine_epub(tmp_path / "nonstandard", nonstandard_docs)
+
+    # Fiction no index: narrative with no index-like structures
+    fiction_docs = [
+        ("ch1", "chapter1.xhtml", "<p>It was a dark and stormy night in the village.</p>"),
+        ("ch2", "chapter2.xhtml", "<p>The protagonist walked slowly down the path.</p>"),
+    ]
+    fiction_epub = _make_spine_epub(tmp_path / "fiction", fiction_docs)
+
+    # Low-density narrative: fiction with sparse terminology
+    low_density_docs = [
+        ("ch1", "chapter1.xhtml", "<p>Once upon a time in a faraway land.</p>"),
+    ]
+    low_density_epub = _make_spine_epub(tmp_path / "lowdensity", low_density_docs)
+
+    mock_translate = MagicMock(
+        return_value=json.dumps(
+            {
+                "critical_terminology": [
+                    {
+                        "term": "Hexagonal Architecture",
+                        "suggested_translation": "六边形架构",
+                        "priority": "critical",
+                    }
+                ]
+            }
+        )
+    )
+
+    # Test standard-index (should hit tier-1 named index)
+    output1 = tmp_path / "standard" / "glossary.json"
+    report1 = extract_glossary_from_epub(
+        epub_path=standard_index_epub,
+        output_path=output1,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+    # Note: actual tier names are "index" (tier 1), "local-refinement" (tier 2), "deep-scan" (tier 3)
+    assert report1["tier"] in (
+        "index",
+        "local-refinement",
+    )  # Can be index if strong signals, else local-refinement
+    assert output1.exists()
+
+    # Test nonstandard-markup (should hit tier-2 via heuristic or tier-1 if signals strong)
+    output2 = tmp_path / "nonstandard" / "glossary.json"
+    report2 = extract_glossary_from_epub(
+        epub_path=nonstandard_epub,
+        output_path=output2,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+    # Tier depends on index signal strength
+    assert report2["tier"] in ("index", "local-refinement")
+    assert output2.exists()
+
+    # Test fiction-no-index (should hit tier-2 local shortlist)
+    output3 = tmp_path / "fiction" / "glossary.json"
+    report3 = extract_glossary_from_epub(
+        epub_path=fiction_epub,
+        output_path=output3,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+    assert report3["tier"] == "local-refinement"
+    assert output3.exists()
+
+    # Test low-density-narrative (should hit tier-2 with low candidate count)
+    output4 = tmp_path / "lowdensity" / "glossary.json"
+    report4 = extract_glossary_from_epub(
+        epub_path=low_density_epub,
+        output_path=output4,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+    assert report4["tier"] == "local-refinement"
+    assert "candidate_count" in report4
+    assert output4.exists()

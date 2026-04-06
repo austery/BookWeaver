@@ -370,11 +370,47 @@ By default, glossary injection includes all terms. Use `--glossary-min-priority`
 - `high` — Important terms that appear frequently
 - `medium` — Supporting vocabulary with lower frequency (default inclusion, can be filtered)
 
+### Extraction modes
+
+BookWeaver supports multiple glossary extraction strategies via `--glossary-mode`:
+
+**`auto` (default with `--extract-glossary`):**
+- **Tier 1**: If strong index signals detected → extract from index/TOC directly
+- **Tier 2**: If no strong index → build local terminology shortlist, then refine with AI
+- Automatically adapts to EPUB structure (technical books with indexes vs. fiction)
+- Balance of quality and token cost
+
+**`deep-scan` (whole-book AI extraction):**
+- Explicit whole-book terminology extraction using AI analysis
+- Higher token cost, comprehensive coverage
+- Never automatic — requires explicit `--glossary-mode deep-scan`
+
+**Manual glossary (skip extraction):**
+- Use `--glossary <path>` to provide pre-built glossary JSON
+- Skips all extraction, directly injects from file
+
+**Backward compatibility:**
+- `--extract-glossary` is a backward-compatible alias for `--glossary-mode auto`
+- Existing workflows continue working unchanged
+
+**Examples:**
+
+```bash
+# Auto mode (adaptive tier-based extraction)
+uv run bookweaver book.epub --output out.epub --extract-glossary
+uv run bookweaver book.epub --output out.epub --glossary-mode auto
+
+# Deep-scan mode (whole-book AI extraction, higher cost)
+uv run bookweaver book.epub --output out.epub --glossary-mode deep-scan
+
+# Manual glossary (no extraction)
+uv run bookweaver book.epub --output out.epub --glossary glossary.json
+```
+
 ### Extraction behavior
 
 - **Index detection**: Two-pass approach (filename hints first, then content heuristics for Kindle-format EPUBs)
 - **Default model**: Pro model (slower but more reliable terminology selection)
-- **Full-index mode**: Use `--full-index` to extract all index entries without AI filtering (comprehensive but slower)
 - **CLI→API fallback**: If Gemini CLI unavailable, automatically falls back to Gemini API (requires `GEMINI_API_KEY` or config)
 - **API-only extraction**: Use `--api-key` to force direct API extraction:
   ```bash

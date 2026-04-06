@@ -979,6 +979,7 @@ def run(
                 _log_progress(
                     "glossary",
                     action="resolved",
+                    mode=glossary_request.mode,
                     tier=report.get("tier"),
                     docs=report.get("docs", 0),
                     chars=report.get("chars", 0),
