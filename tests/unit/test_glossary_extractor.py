@@ -511,6 +511,29 @@ def test_collect_spine_blocks_skips_nav_via_toc_item_id(tmp_path: Path) -> None:
     assert any("Chapter 2 content" in text for text in texts)
 
 
+def test_collect_spine_blocks_keeps_content_files_with_toc_substring(tmp_path: Path) -> None:
+    """Regression: content files like protocols.xhtml must not be mistaken for TOC docs."""
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            (
+                "p1",
+                "protocols.xhtml",
+                "<h1>Protocols</h1><p>Protocol terminology should remain available.</p>",
+            ),
+            ("c2", "chapter2.xhtml", "<h1>Chapter 2</h1><p>Chapter 2 content.</p>"),
+        ],
+    )
+
+    blocks = _collect_spine_blocks(epub)
+
+    texts = [block.text for block in blocks]
+    combined_text = " ".join(texts)
+
+    assert "Protocol terminology should remain available." in combined_text
+    assert any("Chapter 2 content." in text for text in texts)
+
+
 def test_extract_glossary_auto_falls_back_to_local_refinement_when_no_index_signals(
     tmp_path: Path,
 ) -> None:

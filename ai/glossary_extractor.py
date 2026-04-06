@@ -38,6 +38,7 @@ _INDEX_PAGE_TOKEN_RE = re.compile(r"(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*�
 _INDEX_LIKE_LINE_RE = re.compile(
     r"^[A-Za-z0-9].{1,160},\s*(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶])(?:\s*,\s*(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶]))*$"
 )
+_TOC_FILENAME_HINT_RE = re.compile(r"(?<![a-z0-9])(?:toc|contents)(?![a-z0-9])", re.IGNORECASE)
 
 
 def _looks_like_index_content(text: str) -> bool:
@@ -715,6 +716,11 @@ def extract_glossary_from_epub(
     }
 
 
+def _looks_like_toc_href(href: str) -> bool:
+    """Return True when the basename stem looks like a TOC/navigation filename."""
+    return bool(_TOC_FILENAME_HINT_RE.search(Path(href).stem))
+
+
 def _collect_spine_blocks(epub_path: Path) -> list[TextBlock]:
     """Collect text blocks from EPUB spine with labels and weights for local candidate ranking.
 
@@ -746,9 +752,7 @@ def _collect_spine_blocks(epub_path: Path) -> list[TextBlock]:
         for idx, idref in enumerate(model.spine_itemrefs)
         if idref in model.manifest_items
         and idref != model.toc_item_id  # Skip nav/toc declared via spine@toc
-        and not any(
-            hint in model.manifest_items[idref].href.lower() for hint in ("toc", "contents")
-        )
+        and not _looks_like_toc_href(model.manifest_items[idref].href)
     ]
 
     if not content_items:
