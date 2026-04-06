@@ -149,7 +149,11 @@ class TestSanityCheckBatch:
     def test_passes_normal_en_to_zh(self) -> None:
         from ai.cli import _sanity_check_batch
 
-        segs = [self._make_seg("ch1.xhtml::0", "The key principle is that space curves.", "核心原则是空间弯曲。")]
+        segs = [
+            self._make_seg(
+                "ch1.xhtml::0", "The key principle is that space curves.", "核心原则是空间弯曲。"
+            )
+        ]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
 
     def test_raises_on_empty_output(self) -> None:
@@ -182,7 +186,13 @@ class TestSanityCheckBatch:
         from ai.ports.provider import TranslationError
 
         # Source >= min_cjk_source_length (40) so CJK check fires.
-        segs = [self._make_seg("ch1.xhtml::0", "Hello world example, this is a longer test.", "Hello world example, this is a longer test.")]
+        segs = [
+            self._make_seg(
+                "ch1.xhtml::0",
+                "Hello world example, this is a longer test.",
+                "Hello world example, this is a longer test.",
+            )
+        ]
         with pytest.raises(TranslationError, match="cjk_density"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=5)
 
@@ -280,7 +290,13 @@ class TestSanityCheckBatch:
         from ai.ports.provider import TranslationError
 
         # Pure prose (>= 40 chars, no URL, no copyright marker) — check fires.
-        segs = [self._make_seg("ch1.xhtml::0", "Hello world example, this is a longer test.", "Hello world example, this is a longer test.")]
+        segs = [
+            self._make_seg(
+                "ch1.xhtml::0",
+                "Hello world example, this is a longer test.",
+                "Hello world example, this is a longer test.",
+            )
+        ]
         with pytest.raises(TranslationError, match="cjk_density"):
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
@@ -821,6 +837,66 @@ class TestMainModelExplicitness:
 
         assert captured["model"] == "gemini-2.5-flash"
         assert captured["model_explicit"] is False
+
+
+class TestGlossaryModeParser:
+    """Test --glossary-mode argument parsing."""
+
+    def test_glossary_mode_deep_scan_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["input.epub", "--output", "out.epub", "--glossary-mode", "deep-scan"]
+        )
+        assert args.glossary_mode == "deep-scan"
+
+    def test_glossary_mode_auto_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["input.epub", "--output", "out.epub", "--glossary-mode", "auto"])
+        assert args.glossary_mode == "auto"
+
+    def test_glossary_mode_defaults_to_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["input.epub", "--output", "out.epub"])
+        assert args.glossary_mode is None
+
+    def test_extract_glossary_leaves_glossary_mode_none(self) -> None:
+        """--extract-glossary doesn't set glossary_mode (backward compat)."""
+        parser = build_parser()
+        args = parser.parse_args(["input.epub", "--output", "out.epub", "--extract-glossary"])
+        assert args.extract_glossary is True
+        assert args.glossary_mode is None
+
+
+class TestGlossaryModeMainForwarding:
+    """Test that glossary_mode flows through main() to run()."""
+
+    def test_main_forwards_glossary_mode_deep_scan(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+
+        cli_module.main(
+            ["book.epub", "--output", "translated.epub", "--glossary-mode", "deep-scan"]
+        )
+
+        assert captured["glossary_mode"] == "deep-scan"
+
+    def test_main_forwards_glossary_mode_auto(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+
+        cli_module.main(["book.epub", "--output", "translated.epub", "--glossary-mode", "auto"])
+
+        assert captured["glossary_mode"] == "auto"
+
+    def test_main_forwards_glossary_mode_none_when_omitted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+
+        cli_module.main(["book.epub", "--output", "translated.epub"])
+
+        assert captured["glossary_mode"] is None
 
 
 # ── Format routing (parser) ──────────────────────────────────

@@ -27,6 +27,7 @@ from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
+from ai.core.glossary_resolution import resolve_glossary_request
 from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import Segment, TranslatedSegment
 
@@ -140,7 +141,7 @@ def _count_cjk(text: str) -> int:
 # any of these are present in the source segment.
 _URL_HINT_RE = re.compile(
     r"https?://|www\.|\.com\b|\.org\b|\.net\b|\.co\.\w{2}\b|@\w"  # URLs / handles
-    r"|©|ISBN\b|First\s+published\b",                               # copyright metadata
+    r"|©|ISBN\b|First\s+published\b",  # copyright metadata
     re.IGNORECASE,
 )
 
@@ -170,7 +171,11 @@ def _sanity_check_batch(
                     f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]"
                     f" (segment {seg.id})"
                 )
-        if check_cjk and len(src) >= probe_config.min_cjk_source_length and not _URL_HINT_RE.search(src):
+        if (
+            check_cjk
+            and len(src) >= probe_config.min_cjk_source_length
+            and not _URL_HINT_RE.search(src)
+        ):
             tgt_stripped = tgt.strip()
             cjk_count = _count_cjk(tgt_stripped)
             # Subtract ASCII letters (preserved proper nouns / company names) from the
@@ -430,6 +435,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Auto-extract glossary before translation (EPUB input only)",
     )
     p.add_argument("--glossary", default=None, help="Path to extracted glossary JSON")
+    p.add_argument(
+        "--glossary-mode",
+        choices=["auto", "deep-scan"],
+        default=None,
+        help="Glossary request mode: auto (quick extraction) or deep-scan (comprehensive extraction)",
+    )
     p.add_argument(
         "--glossary-min-priority",
         default=None,
@@ -852,6 +863,7 @@ def run(
     prompt: str | None = None,
     extract_glossary: bool = False,
     glossary: str | None = None,
+    glossary_mode: str | None = None,
     glossary_min_priority: str | None = None,
     glossary_max_terms: int | None = None,
     cli_api_fallback: bool = False,
@@ -898,6 +910,19 @@ def run(
 
         fmt = input_format if input_format != "auto" else detect_input_format(input_path)
         _log_progress("input", format=fmt, input=input_path, output=output, output_lang=output_lang)
+
+        stage = "glossary-request"
+        glossary_request = resolve_glossary_request(
+            glossary=glossary,
+            glossary_mode=glossary_mode,
+            extract_glossary=extract_glossary,
+        )
+        _log_progress(
+            "glossary",
+            action="request",
+            mode=glossary_request.mode,
+            explicit=glossary_request.explicit,
+        )
 
         if glossary_max_terms is not None and glossary_max_terms <= 0:
             msg = f"glossary_max_terms must be > 0, got {glossary_max_terms}"
@@ -1135,6 +1160,7 @@ def main(argv: list[str] | None = None) -> None:
         prompt=args.prompt,
         extract_glossary=args.extract_glossary,
         glossary=args.glossary,
+        glossary_mode=args.glossary_mode,
         glossary_min_priority=args.glossary_min_priority,
         glossary_max_terms=args.glossary_max_terms,
         cli_api_fallback=args.cli_api_fallback,
