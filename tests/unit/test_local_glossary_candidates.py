@@ -13,10 +13,10 @@ def test_extracts_repeated_fiction_entities() -> None:
     """Repeated title-case entities like 'Frodo', 'Gandalf', 'Shire' should be ranked high."""
     blocks = [
         TextBlock(text="Frodo walked with Gandalf through the Shire.", label="body", weight=1.0),
-        TextBlock(text="The Shire was peaceful. Frodo met Gandalf again.", label="body", weight=1.0),
         TextBlock(
-            text="Gandalf advised Frodo. The Shire remained calm.", label="body", weight=1.0
+            text="The Shire was peaceful. Frodo met Gandalf again.", label="body", weight=1.0
         ),
+        TextBlock(text="Gandalf advised Frodo. The Shire remained calm.", label="body", weight=1.0),
     ]
 
     candidates = build_local_glossary_candidates(blocks, max_candidates=10)
@@ -103,14 +103,34 @@ def test_front_and_back_matter_weights_break_ties() -> None:
 def test_respects_max_candidates_limit() -> None:
     """Should respect max_candidates limit."""
     # Create 100 unique title-case words (simple names)
-    first_names = ["Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Henry", "Iris", "Jack"]
-    last_names = ["Anderson", "Brown", "Clark", "Davis", "Evans", "Foster", "Green", "Harris", "Jones", "King"]
+    first_names = [
+        "Alice",
+        "Bob",
+        "Carol",
+        "David",
+        "Eve",
+        "Frank",
+        "Grace",
+        "Henry",
+        "Iris",
+        "Jack",
+    ]
+    last_names = [
+        "Anderson",
+        "Brown",
+        "Clark",
+        "Davis",
+        "Evans",
+        "Foster",
+        "Green",
+        "Harris",
+        "Jones",
+        "King",
+    ]
     terms = [f"{first} {last}" for first in first_names for last in last_names]  # 100 unique names
-    
+
     blocks = [
-        TextBlock(
-            text=" ".join(terms), label="body", weight=1.0
-        ),  # 100 unique terms
+        TextBlock(text=" ".join(terms), label="body", weight=1.0),  # 100 unique terms
     ]
 
     candidates = build_local_glossary_candidates(blocks, max_candidates=10)
@@ -168,9 +188,46 @@ def test_candidates_include_sources_metadata() -> None:
     assert frodo is not None, "Should extract 'Frodo'"
     assert hasattr(frodo, "sources"), "Candidate missing 'sources' field"
     # Sources should be a tuple or frozenset of contributing block labels
-    assert isinstance(frodo.sources, (tuple, frozenset)), f"Invalid sources type: {type(frodo.sources)}"
+    assert isinstance(frodo.sources, (tuple, frozenset)), (
+        f"Invalid sources type: {type(frodo.sources)}"
+    )
     # Frodo appears in all three block types
     assert set(frodo.sources) == {"front", "body", "back"}
+
+
+def test_phrase_builder_rejects_trailing_connectors() -> None:
+    """Phrase builder should not emit ghost terms with trailing connector words.
+
+    Regression test for quality-review finding:
+    - Blocks like 'History of Architecture' should extract 'History of Architecture'
+    - But NOT 'History of' (connector without following title-case word)
+    - Similarly 'Ports and Adapters' is valid, but 'Ports and' is not
+    """
+    blocks = [
+        # Valid multiword term
+        TextBlock(text="The History of Architecture is fascinating.", label="body", weight=1.0),
+        # Connector at sentence boundary (no valid word follows)
+        TextBlock(
+            text="We study Ports and design. Systems of various types.", label="body", weight=1.0
+        ),
+        # Another case: connector before lowercase word
+        TextBlock(text="Domain of expertise matters.", label="body", weight=1.0),
+    ]
+
+    candidates = build_local_glossary_candidates(blocks, max_candidates=20)
+    terms = [c.term for c in candidates]
+
+    # Valid multiword terms should be extracted
+    assert "History of Architecture" in terms, (
+        "Should extract complete phrase 'History of Architecture'"
+    )
+
+    # Ghost terms with trailing connectors should be rejected
+    invalid_terms = ["Ports and", "History of", "Systems of", "Domain of"]
+    for invalid in invalid_terms:
+        assert invalid not in terms, (
+            f"Should NOT extract invalid phrase '{invalid}' with trailing connector"
+        )
 
 
 def test_candidates_preserve_entity_vs_technical_classification() -> None:
@@ -186,20 +243,25 @@ def test_candidates_preserve_entity_vs_technical_classification() -> None:
 
     candidates = build_local_glossary_candidates(blocks, max_candidates=10)
 
+    # Verify we extracted candidates (test must fail if extraction produces zero results)
+    assert len(candidates) > 0, "Should extract at least one candidate from the test blocks"
+
     # Extract candidates by name
     gandalf = next((c for c in candidates if c.term == "Gandalf"), None)
     frodo = next((c for c in candidates if c.term == "Frodo"), None)
     hexagonal = next((c for c in candidates if "Hexagonal Architecture" in c.term), None)
     ports = next((c for c in candidates if "Ports and Adapters" in c.term), None)
 
-    # Verify entities are classified as 'entity'
-    if gandalf:
-        assert gandalf.kind == "entity", f"Gandalf should be 'entity', got {gandalf.kind}"
-    if frodo:
-        assert frodo.kind == "entity", f"Frodo should be 'entity', got {frodo.kind}"
+    # Verify entities exist and are classified as 'entity'
+    assert gandalf is not None, "Should extract 'Gandalf' as entity"
+    assert gandalf.kind == "entity", f"Gandalf should be 'entity', got {gandalf.kind}"
+    assert frodo is not None, "Should extract 'Frodo' as entity"
+    assert frodo.kind == "entity", f"Frodo should be 'entity', got {frodo.kind}"
 
-    # Verify technical terms are classified as 'technical'
-    if hexagonal:
-        assert hexagonal.kind == "technical", f"Hexagonal Architecture should be 'technical', got {hexagonal.kind}"
-    if ports:
-        assert ports.kind == "technical", f"Ports and Adapters should be 'technical', got {ports.kind}"
+    # Verify technical terms exist and are classified as 'technical'
+    assert hexagonal is not None, "Should extract 'Hexagonal Architecture' as technical term"
+    assert hexagonal.kind == "technical", (
+        f"Hexagonal Architecture should be 'technical', got {hexagonal.kind}"
+    )
+    assert ports is not None, "Should extract 'Ports and Adapters' as technical term"
+    assert ports.kind == "technical", f"Ports and Adapters should be 'technical', got {ports.kind}"

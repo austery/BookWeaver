@@ -118,7 +118,7 @@ def build_local_glossary_candidates(
         for i, word in enumerate(words):
             # Clean punctuation from word
             cleaned = word.strip('.,;:!?"()[]{}')
-            
+
             # Check for title-case single word
             if _TITLE_CASE_WORD.fullmatch(cleaned):
                 if _is_valid_term(cleaned):
@@ -128,17 +128,51 @@ def build_local_glossary_candidates(
                     j = i + 1
                     while j < len(words) and j <= i + 6:  # Max 6 words in a phrase
                         next_word = words[j].strip('.,;:!?"()[]{}')
-                        if _TITLE_CASE_WORD.fullmatch(next_word) and next_word.lower() not in _STOPWORDS:
+                        if (
+                            _TITLE_CASE_WORD.fullmatch(next_word)
+                            and next_word.lower() not in _STOPWORDS
+                        ):
                             # Title-case non-stopword: add it
                             phrase_words.append(next_word)
                             j += 1
-                        elif next_word.lower() in {"and", "or", "of", "the", "a", "an", "for", "in", "on", "at", "to", "with"} and next_word[0].islower():
-                            # Lowercase connector word only (avoid sentence boundaries)
-                            phrase_words.append(next_word)
-                            j += 1
+                        elif (
+                            next_word.lower()
+                            in {
+                                "and",
+                                "or",
+                                "of",
+                                "the",
+                                "a",
+                                "an",
+                                "for",
+                                "in",
+                                "on",
+                                "at",
+                                "to",
+                                "with",
+                            }
+                            and next_word[0].islower()
+                        ):
+                            # Lowercase connector word: peek ahead to verify a title-case word follows
+                            # This prevents ghost terms like "Ports and" or "History of"
+                            if j + 1 < len(words):
+                                peek_word = words[j + 1].strip('.,;:!?"()[]{}')
+                                if (
+                                    _TITLE_CASE_WORD.fullmatch(peek_word)
+                                    and peek_word.lower() not in _STOPWORDS
+                                ):
+                                    # Valid connector with title-case word following: include it
+                                    phrase_words.append(next_word)
+                                    j += 1
+                                else:
+                                    # No valid title-case word follows: stop here
+                                    break
+                            else:
+                                # Connector at end of text: stop here
+                                break
                         else:
                             break
-                    
+
                     # If we have a multi-word phrase, it's a technical term
                     if len(phrase_words) > 1:
                         phrase = " ".join(phrase_words)
@@ -164,7 +198,9 @@ def build_local_glossary_candidates(
                 term_data[term] = {"weights": [], "kind": "entity", "sources": set()}
                 term_data[term]["weights"].append(block.weight)
                 term_data[term]["sources"].add(block.label)
-            elif term not in technical_candidates:  # Don't duplicate if already recorded as technical
+            elif (
+                term not in technical_candidates
+            ):  # Don't duplicate if already recorded as technical
                 term_data[term]["weights"].append(block.weight)
                 term_data[term]["sources"].add(block.label)
 
@@ -178,11 +214,11 @@ def build_local_glossary_candidates(
         sources = tuple(sorted(data["sources"]))
         candidates_list.append(
             LocalGlossaryCandidate(
-                term=term, 
-                frequency=frequency, 
+                term=term,
+                frequency=frequency,
                 weighted_score=weighted_score,
                 kind=kind,
-                sources=sources
+                sources=sources,
             )
         )
 

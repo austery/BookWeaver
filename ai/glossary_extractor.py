@@ -547,4 +547,3 @@ def _collect_spine_blocks(epub_path: Path) -> list[TextBlock]:
                 continue
 
     return blocks
-
