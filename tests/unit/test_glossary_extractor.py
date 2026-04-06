@@ -726,7 +726,15 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
             ("ch1", "chapter1.xhtml", "<p>Chapter 1: Hexagonal Architecture concepts.</p>"),
         ],
         include_named_index=True,
-        named_index_content="<ul><li>Hexagonal Architecture</li><li>Ports and Adapters</li></ul>",
+        named_index_content=(
+            "<ul>"
+            "<li>Hexagonal Architecture, 12, 34</li>"
+            "<li>Ports and Adapters, 56, 78</li>"
+            "<li>Domain-Driven Design, 90</li>"
+            "<li>Event Sourcing, 101</li>"
+            "<li>Command Query Responsibility Segregation, 118</li>"
+            "</ul>"
+        ),
     )
 
     # Nonstandard markup: no named index, but high-signal last doc
@@ -776,11 +784,7 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
         max_terms=20,
         mode="auto",
     )
-    # Note: actual tier names are "index" (tier 1), "local-refinement" (tier 2), "deep-scan" (tier 3)
-    assert report1["tier"] in (
-        "index",
-        "local-refinement",
-    )  # Can be index if strong signals, else local-refinement
+    assert report1["tier"] == "index"
     assert output1.exists()
 
     # Test nonstandard-markup (should hit tier-2 via heuristic or tier-1 if signals strong)
