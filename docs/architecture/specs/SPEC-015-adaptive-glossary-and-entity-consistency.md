@@ -95,8 +95,9 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
   - [ ] `--glossary <path>` wins over extraction flags
   - [ ] `--glossary-min-priority` continues to apply to all glossary sources
   - [ ] `--glossary-max-terms` continues to cap final emitted terms
-- [ ] Add a resolver that produces one of: `manual`, `tier1-index-heavy`, `tier2-light-local`, `tier3-deep-ai`, or `none`.
-- [ ] Emit structured progress logs for resolved tier, explicitness, and skip reasons.
+- [ ] Add a CLI request-policy resolver that produces one of: `manual`, `auto`, `deep-scan`, or `none`.
+- [ ] Keep tier selection inside the EPUB extractor once automatic mode is requested.
+- [ ] Emit structured progress logs for resolved request mode, selected tier, explicitness, and skip reasons.
 
 **Acceptance**: A whole-book deep AI scan cannot start unless the user explicitly requests `--glossary-mode deep-scan`, and the chosen glossary path is deterministic from CLI inputs.
 
@@ -199,7 +200,9 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 ## 7. Related
 
 - **Code**: `ai/glossary_extractor.py`
-- **Code**: `ai/core/glossary.py`
+- **Code**: `ai/core/glossary_resolution.py`
+- **Code**: `ai/core/index_signal_scorer.py`
+- **Code**: `ai/core/local_glossary_candidates.py`
 - **Code**: `ai/glossary_injector.py`
 - **Code**: `ai/cli.py`
 - **Code**: `translatebook.sh`
