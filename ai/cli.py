@@ -100,7 +100,7 @@ class _SanityProbeConfig:
     enabled: bool = True
     max_length_ratio: float = 2.0
     min_length_ratio: float = 0.15
-    min_source_length: int = 10
+    min_source_length: int = 20
     min_cjk_density: float = 0.30
     min_cjk_source_length: int = 40
     heartbeat_chars: int = 60

@@ -47,9 +47,16 @@
     "model": "gemini-2.5-flash"
   },
   "epub_resilience": {
-    "rate_limit_backoff_seconds": [60, 120],
-    "timeout_backoff_seconds": [60],
-    "transient_backoff_seconds": [45],
+    "rate_limit_backoff_seconds": [
+      60,
+      120
+    ],
+    "timeout_backoff_seconds": [
+      60
+    ],
+    "transient_backoff_seconds": [
+      45
+    ],
     "max_split_depth": null,
     "doc_failure_budget": null,
     "failed_docs_path": null,
@@ -70,8 +77,8 @@
     "enabled": true,
     "max_length_ratio": 2.0,
     "min_length_ratio": 0.15,
-    "min_source_length": 10,
-    "min_cjk_density": 0.30,
+    "min_source_length": 20,
+    "min_cjk_density": 0.3,
     "min_cjk_source_length": 40,
     "heartbeat_chars": 60
   }

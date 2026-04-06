@@ -84,7 +84,7 @@ class TestSanityProbeConfig:
         assert cfg.enabled is True
         assert cfg.max_length_ratio == 2.0
         assert cfg.min_length_ratio == 0.15
-        assert cfg.min_source_length == 10
+        assert cfg.min_source_length == 20
         assert cfg.min_cjk_density == 0.30
         assert cfg.min_cjk_source_length == 40
         assert cfg.heartbeat_chars == 60
@@ -201,6 +201,15 @@ class TestSanityCheckBatch:
 
         segs = [self._make_seg("ch1.xhtml::0", "A", "翻译一下这个字母A的中文意思是什么")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_skips_length_ratio_for_short_section_heading(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # "Acknowledgements" (16 chars) → "致谢" (2 chars): ratio 0.125 < 0.15.
+        # Short single-word EN headings legitimately translate to 2-char Chinese.
+        # The length-ratio check must be skipped for source < min_source_length.
+        segs = [self._make_seg("split_000.html::16", "Acknowledgements", "致谢")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=438)
 
     def test_skips_cjk_check_for_non_zh_lang(self) -> None:
         from ai.cli import _sanity_check_batch
