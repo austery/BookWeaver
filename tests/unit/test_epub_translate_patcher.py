@@ -95,6 +95,30 @@ def test_extract_translatable_segments_includes_leaf_div_prose() -> None:
     assert segments[0].text == "Hello world!"
 
 
+def test_extract_translatable_segments_skips_short_bold_heading_div() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='chapter-heading'><b>Preface</b></div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert segments == []
+
+
+def test_extract_translatable_segments_skips_div_with_image_descendant() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='figure'><img src='figure.png' alt='Figure'/>Figure 1.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert segments == []
+
+
 def test_extract_translatable_segments_skips_outer_div_when_inner_paragraph_exists() -> None:
     from ai.epub_package import extract_translatable_segments
 

@@ -58,6 +58,24 @@ class TranslatableSegment:
 _SKIP_TEXT_TAGS = {"script", "style"}
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _HEADING_CLASS_HINTS = ("head", "title", "subhead")
+_STRUCTURAL_CONTAINER_TAGS = {
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "caption",
+    "ul",
+    "ol",
+    "dl",
+    "img",
+    "svg",
+    "nav",
+}
+_EMPHASIS_TAGS = {"b", "strong"}
+_EMPHASIS_CLASS_HINTS = ("bold",)
+_MAX_HEADING_LIKE_DIV_TEXT_LEN = 120
 _TOC_DOC_HINTS = ("toc", "contents")
 _STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
 _TRANSLATION_CLASS = "bw-translation"
@@ -122,7 +140,32 @@ def _is_heading_like_node(node: ET.Element) -> bool:
         return True
 
     class_name = (node.get("class") or "").lower()
-    return any(hint in class_name for hint in _HEADING_CLASS_HINTS)
+    if any(hint in class_name for hint in _HEADING_CLASS_HINTS):
+        return True
+
+    if tag_name != "div":
+        return False
+
+    text = _normalize_visible_text(node)
+    return bool(text) and len(text) <= _MAX_HEADING_LIKE_DIV_TEXT_LEN and _has_emphasis_signal(node)
+
+
+def _has_structural_container_descendant(node: ET.Element) -> bool:
+    return any(
+        descendant is not node and _local_name(descendant.tag).lower() in _STRUCTURAL_CONTAINER_TAGS
+        for descendant in node.iter()
+    )
+
+
+def _has_emphasis_signal(node: ET.Element) -> bool:
+    for descendant in node.iter():
+        tag = _local_name(descendant.tag).lower()
+        if tag in _EMPHASIS_TAGS:
+            return True
+        class_name = (descendant.get("class") or "").lower()
+        if any(hint in class_name for hint in _EMPHASIS_CLASS_HINTS):
+            return True
+    return False
 
 
 def _should_render_translation(*, block_node: ET.Element, document_path: str | None) -> bool:
@@ -305,6 +348,8 @@ def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableS
         if _has_skip_ancestor(node, parent_map):
             continue
         if _is_heading_like_node(node):
+            continue
+        if tag_name == "div" and _has_structural_container_descendant(node):
             continue
         if _has_translatable_block_descendant(node):
             continue
