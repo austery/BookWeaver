@@ -450,3 +450,52 @@ def test_markdown_api_provider_dry_run_no_gemini_dependency_error() -> None:
         combined_output = f"{completed.stdout}\n{completed.stderr}"
         assert completed.returncode == 0
         assert "Gemini CLI not found" not in combined_output
+
+
+def test_epub_dry_run_glossary_mode_deep_scan_is_forwarded_to_ai_cli() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "epub",
+                "--glossary-mode",
+                "deep-scan",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "--glossary-mode deep-scan" in combined_output
+
+
+def test_markdown_dry_run_extract_glossary_is_still_compatible() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_epub = Path(temp_dir) / "book.epub"
+        _build_min_epub(input_epub)
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "translatebook.sh",
+                "--dry-run",
+                "--workflow",
+                "markdown",
+                "--extract-glossary",
+                str(input_epub),
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        combined_output = f"{completed.stdout}\n{completed.stderr}"
+        assert completed.returncode == 0
+        assert "--extract-glossary" in combined_output

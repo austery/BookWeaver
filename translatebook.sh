@@ -18,6 +18,7 @@ OUTPUT_LANG="zh"
 CUSTOM_PROMPT=""
 EXTRACT_GLOSSARY=false
 GLOSSARY_PATH=""
+GLOSSARY_MODE=""
 GLOSSARY_MIN_PRIORITY=""
 GLOSSARY_MAX_TERMS=""
 CLEAN_TEMP=false
@@ -93,7 +94,8 @@ OPTIONS:
     -l, --ilang LANG        Input language (default: auto)
     --olang LANG           Output language (default: zh)
     -p, --prompt TEXT      Custom prompt for translation (step 3)
-    --extract-glossary     Extract terminology glossary before translation (EPUB input only)
+    --extract-glossary     Extract glossary via adaptive auto mode (EPUB input only)
+    --glossary-mode MODE   Glossary extraction mode: auto or deep-scan
     --glossary PATH        Path to pre-extracted glossary JSON (skip extraction step)
     --clean                Clean temp directory before starting
     --no-skip              Deprecated compatibility flag (ignored in ai.cli translation paths)
@@ -330,6 +332,10 @@ parse_args() {
             --extract-glossary)
                 EXTRACT_GLOSSARY=true
                 shift
+                ;;
+            --glossary-mode)
+                GLOSSARY_MODE="$2"
+                shift 2
                 ;;
             --glossary)
                 GLOSSARY_PATH="$2"
@@ -575,6 +581,7 @@ show_config() {
     echo "  Output language: $OUTPUT_LANG"
     echo "  Custom prompt: ${CUSTOM_PROMPT:-'None'}"
     echo "  Extract glossary: ${EXTRACT_GLOSSARY}"
+    echo "  Glossary mode: ${GLOSSARY_MODE:-'Not set'}"
     echo "  Glossary path:    ${GLOSSARY_PATH:-'None'}"
   echo "  Glossary min pri: ${GLOSSARY_MIN_PRIORITY:-'all'}"
   echo "  Glossary max terms: ${GLOSSARY_MAX_TERMS:-'20 (default)'}"
@@ -738,6 +745,9 @@ main() {
         fi
         if [[ -n "$GLOSSARY_PATH" ]]; then
             cmd+=(--glossary "$GLOSSARY_PATH")
+        fi
+        if [[ -n "$GLOSSARY_MODE" ]]; then
+            cmd+=(--glossary-mode "$GLOSSARY_MODE")
         fi
         if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
             cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
@@ -935,6 +945,9 @@ main() {
                     if [[ -n "$GLOSSARY_PATH" ]]; then
                         translate_cmd+=(--glossary "$GLOSSARY_PATH")
                     fi
+                    if [[ -n "$GLOSSARY_MODE" ]]; then
+                        translate_cmd+=(--glossary-mode "$GLOSSARY_MODE")
+                    fi
                     if [[ -n "$GLOSSARY_MIN_PRIORITY" ]]; then
                         translate_cmd+=(--glossary-min-priority "$GLOSSARY_MIN_PRIORITY")
                     fi
@@ -943,6 +956,9 @@ main() {
                     fi
                     if [[ "$FALLBACK_PROVIDER" == "api" ]]; then
                         translate_cmd+=(--cli-api-fallback)
+                    fi
+                    if [[ "$EXTRACT_GLOSSARY" == true ]]; then
+                        translate_cmd+=(--extract-glossary)
                     fi
 
                     local translate_cmd_display
