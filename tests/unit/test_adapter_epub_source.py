@@ -8,7 +8,6 @@ grouping by document, and correct delegation to epub_package functions.
 from __future__ import annotations
 
 import io
-import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,18 +48,19 @@ class FakeRawSegment:
 
 
 def _make_test_epub(doc_contents: dict[str, str], opf_path: str = "OEBPS/content.opf") -> Path:
-    """Create an in-memory EPUB zip under the worktree."""
+    """Create an in-memory EPUB zip and write it to a temp path."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for path, content in doc_contents.items():
             zf.writestr(path, content)
     buf.seek(0)
-    scratch_dir = Path(__file__).resolve().parents[2] / "scratch-check" / "unit-epub-adapter"
-    scratch_dir.mkdir(parents=True, exist_ok=True)
-    index = len(list(scratch_dir.glob("test-*.epub")))
-    epub_path = scratch_dir / f"test-{index}.epub"
-    epub_path.write_bytes(buf.getvalue())
-    return epub_path
+    # Write to a temp file
+    import tempfile
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".epub", delete=False)
+    tmp.write(buf.getvalue())
+    tmp.close()
+    return Path(tmp.name)
 
 
 def _two_doc_model(epub_path: Path) -> FakeModel:
@@ -386,18 +386,11 @@ class TestSave:
                 TranslatedSegment(id="OEBPS/ch.xhtml::0", original="Hi", translated="你好"),
             ]
         )
-        output_path = Path(__file__).resolve().parents[2] / "scratch-check" / "output.epub"
-        adapter.save(str(output_path))
+        adapter.save("/tmp/output.epub")
 
         assert len(repack_calls) == 1
         src, out, overrides = repack_calls[0]
         assert src == epub_path
-        assert out == output_path
+        assert out == Path("/tmp/output.epub")
         assert "OEBPS/ch.xhtml" in overrides
         epub_path.unlink()
-
-
-def teardown_module() -> None:
-    scratch_dir = Path(__file__).resolve().parents[2] / "scratch-check"
-    if scratch_dir.exists():
-        shutil.rmtree(scratch_dir)

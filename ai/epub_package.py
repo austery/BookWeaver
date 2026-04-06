@@ -178,7 +178,11 @@ def _is_emphasized_wrapper_chain(node: ET.Element) -> bool:
         return True
 
     child_tag = _local_name(child.tag).lower()
-    if child_tag in _BLOCK_TAGS or child_tag in _STRUCTURAL_CONTAINER_TAGS or child_tag in _HEADING_TAGS:
+    if (
+        child_tag in _BLOCK_TAGS
+        or child_tag in _STRUCTURAL_CONTAINER_TAGS
+        or child_tag in _HEADING_TAGS
+    ):
         return False
     return _is_emphasized_wrapper_chain(child)
 
