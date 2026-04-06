@@ -137,3 +137,69 @@ def test_filters_single_letter_terms() -> None:
     assert "B" not in terms
     assert "C" not in terms
     assert "Valid Term" in terms or "Valid" in terms or "Term" in terms
+
+
+def test_candidates_include_kind_metadata() -> None:
+    """Task 5 contract: candidates must include 'kind' field for entity/technical classification."""
+    blocks = [
+        TextBlock(text="Frodo walked through the Shire.", label="body", weight=1.0),
+        TextBlock(text="Hexagonal Architecture is a pattern.", label="body", weight=1.0),
+    ]
+
+    candidates = build_local_glossary_candidates(blocks, max_candidates=10)
+
+    # Verify all candidates have 'kind' field
+    for candidate in candidates:
+        assert hasattr(candidate, "kind"), f"Candidate {candidate.term} missing 'kind' field"
+        assert candidate.kind in ("entity", "technical"), f"Invalid kind: {candidate.kind}"
+
+
+def test_candidates_include_sources_metadata() -> None:
+    """Task 5 contract: candidates must include 'sources' field tracking contributing blocks."""
+    blocks = [
+        TextBlock(text="Frodo appears here.", label="front", weight=1.5),
+        TextBlock(text="Frodo appears again.", label="body", weight=1.0),
+        TextBlock(text="Frodo final appearance.", label="back", weight=1.2),
+    ]
+
+    candidates = build_local_glossary_candidates(blocks, max_candidates=10)
+    frodo = next((c for c in candidates if c.term == "Frodo"), None)
+
+    assert frodo is not None, "Should extract 'Frodo'"
+    assert hasattr(frodo, "sources"), "Candidate missing 'sources' field"
+    # Sources should be a tuple or frozenset of contributing block labels
+    assert isinstance(frodo.sources, (tuple, frozenset)), f"Invalid sources type: {type(frodo.sources)}"
+    # Frodo appears in all three block types
+    assert set(frodo.sources) == {"front", "body", "back"}
+
+
+def test_candidates_preserve_entity_vs_technical_classification() -> None:
+    """Task 5 contract: preserve extraction branch (entity vs technical) as 'kind' metadata."""
+    blocks = [
+        # Fiction entity (title-case single word)
+        TextBlock(text="Gandalf spoke to Frodo.", label="body", weight=1.0),
+        # Technical term (multiword)
+        TextBlock(text="Hexagonal Architecture is important.", label="body", weight=1.0),
+        # Another technical term
+        TextBlock(text="Ports and Adapters pattern.", label="body", weight=1.0),
+    ]
+
+    candidates = build_local_glossary_candidates(blocks, max_candidates=10)
+
+    # Extract candidates by name
+    gandalf = next((c for c in candidates if c.term == "Gandalf"), None)
+    frodo = next((c for c in candidates if c.term == "Frodo"), None)
+    hexagonal = next((c for c in candidates if "Hexagonal Architecture" in c.term), None)
+    ports = next((c for c in candidates if "Ports and Adapters" in c.term), None)
+
+    # Verify entities are classified as 'entity'
+    if gandalf:
+        assert gandalf.kind == "entity", f"Gandalf should be 'entity', got {gandalf.kind}"
+    if frodo:
+        assert frodo.kind == "entity", f"Frodo should be 'entity', got {frodo.kind}"
+
+    # Verify technical terms are classified as 'technical'
+    if hexagonal:
+        assert hexagonal.kind == "technical", f"Hexagonal Architecture should be 'technical', got {hexagonal.kind}"
+    if ports:
+        assert ports.kind == "technical", f"Ports and Adapters should be 'technical', got {ports.kind}"

@@ -489,16 +489,18 @@ def _collect_spine_blocks(epub_path: Path) -> list[TextBlock]:
 
     Filtering:
         - Skips TOC documents (identified by filename hints: "toc", "contents")
+        - Skips nav document declared via spine@toc (model.toc_item_id)
         - Skips empty or whitespace-only blocks
     """
     model = load_epub_package(epub_path)
     blocks: list[TextBlock] = []
 
-    # Filter out TOC first
+    # Filter out TOC (both by filename hints and by spine@toc declaration)
     content_items = [
         (idx, idref)
         for idx, idref in enumerate(model.spine_itemrefs)
         if idref in model.manifest_items
+        and idref != model.toc_item_id  # Skip nav/toc declared via spine@toc
         and not any(
             hint in model.manifest_items[idref].href.lower() for hint in ("toc", "contents")
         )

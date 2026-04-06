@@ -30,6 +30,8 @@ class LocalGlossaryCandidate:
     term: str
     frequency: int  # Raw occurrence count
     weighted_score: float  # Frequency * average block weight
+    kind: str  # "entity" (title-case single/phrase) or "technical" (multiword)
+    sources: tuple[str, ...]  # Contributing block labels ("front", "body", "back")
 
 
 # Common English stopwords to filter from candidates
@@ -95,21 +97,23 @@ def build_local_glossary_candidates(
     if not blocks:
         return []
 
-    # Track term occurrences and their block weights
-    term_weights: dict[str, list[float]] = {}
+    # Track term occurrences, weights, kind, and source labels
+    term_data: dict[str, dict[str, any]] = {}
 
     for block in blocks:
-        # Extract candidates from this block
-        candidates = set()
+        # Extract candidates from this block with their kind
+        technical_candidates = set()
+        entity_candidates = set()
 
         # Extract multiword technical terms first (they're more specific)
         for match in _MULTIWORD_TECHNICAL.finditer(block.text):
             term = match.group()
             if _is_valid_term(term):
-                candidates.add(term)
+                technical_candidates.add(term)
 
         # Extract title-case words (single words or consecutive title-case words)
-        # This extracts individual title-case words and consecutive sequences
+        # Single title-case words are entities (fiction names)
+        # Consecutive title-case words are technical terms (e.g., "Hexagonal Architecture")
         words = block.text.split()
         for i, word in enumerate(words):
             # Clean punctuation from word
@@ -118,42 +122,68 @@ def build_local_glossary_candidates(
             # Check for title-case single word
             if _TITLE_CASE_WORD.fullmatch(cleaned):
                 if _is_valid_term(cleaned):
-                    candidates.add(cleaned)
-                
-                # Check for consecutive title-case words (e.g., "Ports and Adapters")
-                # Look ahead for potential multi-word terms
-                phrase_words = [cleaned]
-                j = i + 1
-                while j < len(words) and j <= i + 6:  # Max 6 words in a phrase
-                    next_word = words[j].strip('.,;:!?"()[]{}')
-                    if _TITLE_CASE_WORD.fullmatch(next_word):
-                        phrase_words.append(next_word)
-                        j += 1
-                    elif next_word.lower() in {"and", "or", "of", "the", "a", "an", "for", "in", "on", "at", "to", "with"}:
-                        phrase_words.append(next_word)
-                        j += 1
+                    # Check for consecutive title-case words (e.g., "Hexagonal Architecture")
+                    # Look ahead for potential multi-word terms
+                    phrase_words = [cleaned]
+                    j = i + 1
+                    while j < len(words) and j <= i + 6:  # Max 6 words in a phrase
+                        next_word = words[j].strip('.,;:!?"()[]{}')
+                        if _TITLE_CASE_WORD.fullmatch(next_word) and next_word.lower() not in _STOPWORDS:
+                            # Title-case non-stopword: add it
+                            phrase_words.append(next_word)
+                            j += 1
+                        elif next_word.lower() in {"and", "or", "of", "the", "a", "an", "for", "in", "on", "at", "to", "with"} and next_word[0].islower():
+                            # Lowercase connector word only (avoid sentence boundaries)
+                            phrase_words.append(next_word)
+                            j += 1
+                        else:
+                            break
+                    
+                    # If we have a multi-word phrase, it's a technical term
+                    if len(phrase_words) > 1:
+                        phrase = " ".join(phrase_words)
+                        if _is_valid_term(phrase):
+                            technical_candidates.add(phrase)
                     else:
-                        break
-                
-                # If we have a multi-word phrase, add it
-                if len(phrase_words) > 1:
-                    phrase = " ".join(phrase_words)
-                    if _is_valid_term(phrase):
-                        candidates.add(phrase)
+                        # Single word is an entity
+                        entity_candidates.add(cleaned)
 
-        # Record weights for each candidate in this block
-        for term in candidates:
-            if term not in term_weights:
-                term_weights[term] = []
-            term_weights[term].append(block.weight)
+        # Record weights, kind, and sources for technical candidates (takes precedence)
+        for term in technical_candidates:
+            if term not in term_data:
+                term_data[term] = {"weights": [], "kind": "technical", "sources": set()}
+            # Always keep technical kind even if it was previously entity
+            elif term_data[term]["kind"] != "technical":
+                term_data[term]["kind"] = "technical"
+            term_data[term]["weights"].append(block.weight)
+            term_data[term]["sources"].add(block.label)
 
-    # Build candidates with frequency and weighted score
+        # Record weights, kind, and sources for entity candidates (only if not already technical)
+        for term in entity_candidates:
+            if term not in term_data:
+                term_data[term] = {"weights": [], "kind": "entity", "sources": set()}
+                term_data[term]["weights"].append(block.weight)
+                term_data[term]["sources"].add(block.label)
+            elif term not in technical_candidates:  # Don't duplicate if already recorded as technical
+                term_data[term]["weights"].append(block.weight)
+                term_data[term]["sources"].add(block.label)
+
+    # Build candidates with frequency, weighted score, kind, and sources
     candidates_list = []
-    for term, weights in term_weights.items():
-        frequency = len(weights)
-        weighted_score = sum(weights)
+    for term, data in term_data.items():
+        frequency = len(data["weights"])
+        weighted_score = sum(data["weights"])
+        kind = data["kind"]
+        # Sort sources for deterministic ordering
+        sources = tuple(sorted(data["sources"]))
         candidates_list.append(
-            LocalGlossaryCandidate(term=term, frequency=frequency, weighted_score=weighted_score)
+            LocalGlossaryCandidate(
+                term=term, 
+                frequency=frequency, 
+                weighted_score=weighted_score,
+                kind=kind,
+                sources=sources
+            )
         )
 
     # Sort by weighted_score descending, then by term alphabetically for stability

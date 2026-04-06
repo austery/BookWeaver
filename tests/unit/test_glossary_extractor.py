@@ -449,3 +449,54 @@ def test_collect_spine_blocks_skips_toc_and_boilerplate(tmp_path: Path) -> None:
     assert any(label == "front" for label in labels)
     assert any(label == "body" for label in labels)
     assert any(label == "back" for label in labels)
+
+
+def test_collect_spine_blocks_skips_nav_via_toc_item_id(tmp_path: Path) -> None:
+    """Regression: _collect_spine_blocks should skip nav/toc via toc_item_id even if href is not 'toc.xhtml'."""
+    epub = tmp_path / "nav-test.epub"
+    
+    # Create EPUB with nav document declared via spine@toc but with non-standard filename
+    opf_xml = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Test Book</dc:title></metadata>"
+        "<manifest>"
+        '<item id="nav" href="navigation.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>'
+        "</manifest>"
+        '<spine toc="nav">'  # nav is declared as TOC via spine@toc
+        '<itemref idref="nav"/>'
+        '<itemref idref="c1"/>'
+        '<itemref idref="c2"/>'
+        "</spine>"
+        "</package>"
+    )
+    
+    with zipfile.ZipFile(epub, "w") as z:
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?>'
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/></rootfiles></container>',
+        )
+        z.writestr("OEBPS/content.opf", opf_xml)
+        z.writestr("OEBPS/navigation.xhtml", _wrap_xhtml("<nav><ol><li>Table of Contents Marker</li></ol></nav>"))
+        z.writestr("OEBPS/chapter1.xhtml", _wrap_xhtml("<h1>Chapter 1</h1><p>Chapter 1 content.</p>"))
+        z.writestr("OEBPS/chapter2.xhtml", _wrap_xhtml("<h1>Chapter 2</h1><p>Chapter 2 content.</p>"))
+    
+    blocks = _collect_spine_blocks(epub)
+    
+    # Verify we got blocks
+    assert len(blocks) > 0
+    
+    # Verify nav was skipped even though it's not named "toc.xhtml" or "contents.xhtml"
+    texts = [block.text for block in blocks]
+    combined_text = " ".join(texts)
+    assert "Table of Contents Marker" not in combined_text, "Nav document should be skipped via toc_item_id"
+    
+    # Verify actual chapters are present
+    assert any("Chapter 1 content" in text for text in texts)
+    assert any("Chapter 2 content" in text for text in texts)
