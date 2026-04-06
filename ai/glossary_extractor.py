@@ -16,6 +16,7 @@ from typing import Callable
 
 from ai.core.glossary import validate_model_output
 from ai.core.index_signal_scorer import IndexSignalScore, IndexSignalScorer
+from ai.core.local_glossary_candidates import TextBlock
 from ai.epub_package import load_epub_package, resolve_opf_href
 
 
@@ -467,3 +468,81 @@ def extract_glossary_from_epub(
     print(f"[glossary] Written to: {output_path}", flush=True)
 
     return glossary
+
+
+def _collect_spine_blocks(epub_path: Path) -> list[TextBlock]:
+    """Collect text blocks from EPUB spine with labels and weights for local candidate ranking.
+
+    Skips TOC/navigation boilerplate and retains front/body/back matter with appropriate
+    weight bias for tie-breaking in candidate ranking.
+
+    Args:
+        epub_path: Path to the EPUB file
+
+    Returns:
+        List of TextBlock instances with text, label, and weight metadata
+
+    Block labeling strategy:
+        - "front": First ~10% of spine (preface, foreword, etc.) — weight 1.5
+        - "back": Last ~10% of spine (appendix, index, etc.) — weight 1.2
+        - "body": Middle ~80% of spine (main chapters) — weight 1.0
+
+    Filtering:
+        - Skips TOC documents (identified by filename hints: "toc", "contents")
+        - Skips empty or whitespace-only blocks
+    """
+    model = load_epub_package(epub_path)
+    blocks: list[TextBlock] = []
+
+    # Filter out TOC first
+    content_items = [
+        (idx, idref)
+        for idx, idref in enumerate(model.spine_itemrefs)
+        if idref in model.manifest_items
+        and not any(
+            hint in model.manifest_items[idref].href.lower() for hint in ("toc", "contents")
+        )
+    ]
+
+    if not content_items:
+        return blocks
+
+    total_content_items = len(content_items)
+
+    # Define front/back matter thresholds (10% on each end, min 1 item)
+    # For small EPUBs (< 10 items), only mark first and last items
+    front_threshold = max(1, total_content_items // 10)
+    back_start = total_content_items - max(1, total_content_items // 10)
+
+    with zipfile.ZipFile(epub_path, "r") as zf:
+        for content_idx, (_, idref) in enumerate(content_items):
+            item = model.manifest_items[idref]
+
+            # Determine label and weight based on position in content spine
+            if content_idx < front_threshold:
+                label = "front"
+                weight = 1.5
+            elif content_idx >= back_start:
+                label = "back"
+                weight = 1.2
+            else:
+                label = "body"
+                weight = 1.0
+
+            # Extract text from document
+            resolved_path = resolve_opf_href(model.opf_path, item.href)
+            try:
+                raw = zf.read(resolved_path).decode("utf-8")
+                text = _xhtml_to_text(raw)
+
+                # Skip empty or whitespace-only blocks
+                if not text or not text.strip():
+                    continue
+
+                blocks.append(TextBlock(text=text, label=label, weight=weight))
+
+            except (KeyError, UnicodeDecodeError):
+                continue
+
+    return blocks
+

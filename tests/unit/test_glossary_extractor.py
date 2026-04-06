@@ -9,6 +9,7 @@ import pytest
 
 from ai.glossary_extractor import (
     _build_extraction_prompt,
+    _collect_spine_blocks,
     _looks_like_index_content,
     _validate_and_parse_glossary,
     extract_epub_index_and_toc,
@@ -413,3 +414,38 @@ def test_build_extraction_prompt_selective_uses_max_terms() -> None:
     )
     assert "Connascence" in prompt
     assert "15" in prompt
+
+
+def test_collect_spine_blocks_skips_toc_and_boilerplate(tmp_path: Path) -> None:
+    """_collect_spine_blocks should skip TOC/nav boilerplate and retain front/body content."""
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("front", "preface.xhtml", "<h1>Preface</h1><p>This is the preface content.</p>"),
+            ("c1", "chapter1.xhtml", "<h1>Chapter 1</h1><p>This is chapter 1 content.</p>"),
+            ("c2", "chapter2.xhtml", "<h1>Chapter 2</h1><p>This is chapter 2 content.</p>"),
+            ("back", "appendix.xhtml", "<h1>Appendix</h1><p>This is appendix content.</p>"),
+        ],
+        toc_content="Part 1",
+    )
+
+    blocks = _collect_spine_blocks(epub)
+
+    # Verify we got blocks
+    assert len(blocks) > 0
+
+    # Verify TOC was skipped (toc.xhtml should not appear in text)
+    texts = [block.text for block in blocks]
+    combined_text = " ".join(texts)
+    assert "Part 1" not in combined_text or len([t for t in texts if "Part 1" in t]) == 0
+
+    # Verify actual content is present
+    assert any("preface content" in text.lower() for text in texts)
+    assert any("chapter 1 content" in text.lower() for text in texts)
+    assert any("appendix content" in text.lower() for text in texts)
+
+    # Verify labels exist (front, body, back)
+    labels = [block.label for block in blocks]
+    assert any(label == "front" for label in labels)
+    assert any(label == "body" for label in labels)
+    assert any(label == "back" for label in labels)
