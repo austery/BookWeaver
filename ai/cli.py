@@ -373,6 +373,8 @@ def _load_checkpoint_translations(
         hard_mismatches.append("input signature")
     if raw_state.get("input_format") != metadata.input_format:
         hard_mismatches.append("input format")
+    if raw_state.get("segmenter_signature") != metadata.segmenter_signature:
+        hard_mismatches.append("segmenter signature")
     if hard_mismatches:
         print(
             f"[resume] Warning: checkpoint invalidated ({', '.join(hard_mismatches)} changed), starting fresh."
@@ -387,7 +389,6 @@ def _load_checkpoint_translations(
         ("max_batch_chars", metadata.max_batch_chars),
         ("separator_overhead", metadata.separator_overhead),
         ("system_prompt_hash", metadata.system_prompt_hash),
-        ("segmenter_signature", metadata.segmenter_signature),
     )
     for key, expected in expected_pairs:
         if raw_state.get(key) != expected:

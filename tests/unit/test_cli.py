@@ -1988,7 +1988,7 @@ class TestRunResumeCheckpoint:
         input_epub: Path,
         output_lang: str = "zh",
         model: str = "gemini-2.5-flash",
-        segmenter_signature: str | None = "epub-leaf-block-v2",
+        segmenter_signature: str | None = cli_module._EPUB_SEGMENTER_SIGNATURE,
     ) -> None:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         system_prompt = build_system_prompt("Chinese", immersive=True)
@@ -2160,6 +2160,35 @@ class TestRunResumeCheckpoint:
             output=str(out_file),
             input_format="epub",
             resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["A", "B"], ["C"]]
+
+    def test_run_force_resume_rejects_checkpoint_when_segmenter_signature_mismatches(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_force_mismatched_segmenter_signature"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            segmenter_signature="epub-div-block-v1",
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            force_resume=True,
             checkpoint_dir=str(checkpoint_dir),
         )
 
