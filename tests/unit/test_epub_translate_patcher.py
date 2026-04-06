@@ -100,11 +100,15 @@ def test_extract_translatable_segments_skips_short_bold_heading_div() -> None:
 
     source = (
         "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
-        "<div class='chapter-heading'><b>Preface</b></div>"
+        "<div class='calibre13'><span class='bold'>PREFACE</span></div>"
+        "<div class='intro'>Normal prose paragraph.</div>"
         "</body></html>"
     )
     segments = extract_translatable_segments(source)
-    assert segments == []
+    assert len(segments) == 1
+    segment = segments[0]
+    assert segment.tag_name == "div"
+    assert segment.text == "Normal prose paragraph."
 
 
 def test_extract_translatable_segments_skips_div_with_image_descendant() -> None:
