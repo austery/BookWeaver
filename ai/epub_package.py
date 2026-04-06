@@ -146,8 +146,7 @@ def _is_heading_like_node(node: ET.Element) -> bool:
     if tag_name != "div":
         return False
 
-    text = _normalize_visible_text(node)
-    return bool(text) and len(text) <= _MAX_HEADING_LIKE_DIV_TEXT_LEN and _has_emphasis_signal(node)
+    return _is_emphasized_wrapper_div(node)
 
 
 def _has_structural_container_descendant(node: ET.Element) -> bool:
@@ -158,14 +157,39 @@ def _has_structural_container_descendant(node: ET.Element) -> bool:
 
 
 def _has_emphasis_signal(node: ET.Element) -> bool:
-    for descendant in node.iter():
-        tag = _local_name(descendant.tag).lower()
-        if tag in _EMPHASIS_TAGS:
-            return True
-        class_name = (descendant.get("class") or "").lower()
-        if any(hint in class_name for hint in _EMPHASIS_CLASS_HINTS):
-            return True
-    return False
+    tag = _local_name(node.tag).lower()
+    if tag in _EMPHASIS_TAGS:
+        return True
+    class_name = (node.get("class") or "").lower()
+    return any(hint in class_name for hint in _EMPHASIS_CLASS_HINTS)
+
+
+def _is_emphasized_wrapper_chain(node: ET.Element) -> bool:
+    children = list(node)
+    if len(children) != 1:
+        return False
+    if (node.text or "").strip():
+        return False
+
+    child = children[0]
+    if (child.tail or "").strip():
+        return False
+    if _has_emphasis_signal(child):
+        return True
+
+    child_tag = _local_name(child.tag).lower()
+    if child_tag in _BLOCK_TAGS or child_tag in _STRUCTURAL_CONTAINER_TAGS or child_tag in _HEADING_TAGS:
+        return False
+    return _is_emphasized_wrapper_chain(child)
+
+
+def _is_emphasized_wrapper_div(node: ET.Element) -> bool:
+    text = _normalize_visible_text(node)
+    return (
+        bool(text)
+        and len(text) <= _MAX_HEADING_LIKE_DIV_TEXT_LEN
+        and _is_emphasized_wrapper_chain(node)
+    )
 
 
 def _should_render_translation(*, block_node: ET.Element, document_path: str | None) -> bool:
@@ -338,14 +362,19 @@ def _resolve_node_by_path(body: ET.Element, path: tuple[int, ...]) -> ET.Element
     return current
 
 
-def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableSegment]:
+def _collect_translatable_block_segments(
+    body: ET.Element, document_path: str | None = None
+) -> list[TranslatableSegment]:
     parent_map = _build_parent_map(body)
+    skip_divs_for_toc = _is_toc_document(document_path)
     segments: list[TranslatableSegment] = []
     for node in body.iter():
         tag_name = _local_name(node.tag).lower()
         if tag_name not in _BLOCK_TAGS:
             continue
         if _has_skip_ancestor(node, parent_map):
+            continue
+        if tag_name == "div" and skip_divs_for_toc:
             continue
         if _is_heading_like_node(node):
             continue
@@ -584,12 +613,14 @@ def resolve_opf_href(opf_path: str, href: str) -> str:
     return posixpath.normpath(posixpath.join(str(opf_dir), href))
 
 
-def extract_translatable_segments(xhtml: str) -> list[TranslatableSegment]:
+def extract_translatable_segments(
+    xhtml: str, document_path: str | None = None
+) -> list[TranslatableSegment]:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
     if body is None:
         return []
-    return _collect_translatable_block_segments(body)
+    return _collect_translatable_block_segments(body, document_path)
 
 
 def patch_xhtml_alternating(
@@ -605,7 +636,7 @@ def patch_xhtml_alternating(
             raise ValueError("translation count does not match translatable segments")
         return xhtml
 
-    segments = _collect_translatable_block_segments(body)
+    segments = _collect_translatable_block_segments(body, document_path)
     if len(segments) != len(translations):
         raise ValueError(
             f"translation count mismatch: expected {len(segments)}, got {len(translations)}"

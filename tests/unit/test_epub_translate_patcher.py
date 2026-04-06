@@ -111,6 +111,35 @@ def test_extract_translatable_segments_skips_short_bold_heading_div() -> None:
     assert segment.text == "Normal prose paragraph."
 
 
+def test_extract_translatable_segments_skips_toc_divs_when_document_path_is_contents() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div><a href='chapter1.xhtml'>Chapter One</a></div>"
+        "<p><a href='chapter2.xhtml'>Chapter Two</a></p>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source, document_path="OEBPS/text/contents.xhtml")
+    assert len(segments) == 1
+    assert segments[0].tag_name == "p"
+    assert segments[0].text == "Chapter Two"
+
+
+def test_extract_translatable_segments_keeps_short_prose_div_with_inline_emphasis() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div>Hello <strong>world</strong>.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world."
+
+
 def test_extract_translatable_segments_skips_div_with_image_descendant() -> None:
     from ai.epub_package import extract_translatable_segments
 
@@ -228,6 +257,7 @@ def test_patch_xhtml_alternating_inserts_translation_after_prose_div() -> None:
     children = list(body)
     assert len(children) == 2
     assert children[0].tag == "{http://www.w3.org/1999/xhtml}div"
+    assert children[1].tag == "{http://www.w3.org/1999/xhtml}p"
     assert children[1].attrib["class"] == "bw-translation"
     assert children[1].text == translation
 

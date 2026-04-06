@@ -8,6 +8,7 @@ grouping by document, and correct delegation to epub_package functions.
 from __future__ import annotations
 
 import io
+import shutil
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,19 +49,18 @@ class FakeRawSegment:
 
 
 def _make_test_epub(doc_contents: dict[str, str], opf_path: str = "OEBPS/content.opf") -> Path:
-    """Create an in-memory EPUB zip and write it to a temp path."""
+    """Create an in-memory EPUB zip under the worktree."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for path, content in doc_contents.items():
             zf.writestr(path, content)
     buf.seek(0)
-    # Write to a temp file
-    import tempfile
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".epub", delete=False)
-    tmp.write(buf.getvalue())
-    tmp.close()
-    return Path(tmp.name)
+    scratch_dir = Path(__file__).resolve().parents[2] / "scratch-check" / "unit-epub-adapter"
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    index = len(list(scratch_dir.glob("test-*.epub")))
+    epub_path = scratch_dir / f"test-{index}.epub"
+    epub_path.write_bytes(buf.getvalue())
+    return epub_path
 
 
 def _two_doc_model(epub_path: Path) -> FakeModel:
@@ -121,7 +121,7 @@ class TestGetSegments:
             }
         )
 
-        def fake_extract(xhtml: str) -> list[FakeRawSegment]:
+        def fake_extract(xhtml: str, document_path: str | None = None) -> list[FakeRawSegment]:
             if "Hello" in xhtml:
                 return [FakeRawSegment("Hello", (0,), "p")]
             return [FakeRawSegment("World", (0,), "p")]
@@ -159,7 +159,7 @@ class TestGetSegments:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda _: [
+            _extract_segments=lambda _, document_path=None: [
                 FakeRawSegment("A", (0,), "p"),
                 FakeRawSegment("B", (1,), "p"),
             ],
@@ -192,7 +192,7 @@ class TestGetSegments:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda _: [
+            _extract_segments=lambda _, document_path=None: [
                 FakeRawSegment("Text", (0, 2), "blockquote"),
             ],
         )
@@ -217,10 +217,38 @@ class TestGetSegments:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda _: [],
+            _extract_segments=lambda _, document_path=None: [],
         )
 
         assert adapter.get_segments() == []
+        epub_path.unlink()
+
+    def test_get_segments_passes_document_path_to_extractor(self) -> None:
+        epub_path = _make_test_epub({"OEBPS/chapter1.xhtml": "<p>Hello</p>"})
+        model = FakeModel(
+            epub_path=epub_path,
+            opf_path="OEBPS/content.opf",
+            spine_itemrefs=["ch1"],
+            manifest_items={
+                "ch1": FakeManifestItem(id="ch1", href="chapter1.xhtml"),
+            },
+        )
+        extract_calls: list[tuple[str, str | None]] = []
+
+        def fake_extract(xhtml: str, document_path: str | None = None) -> list[FakeRawSegment]:
+            extract_calls.append((xhtml, document_path))
+            return [FakeRawSegment("Hello", (0,), "p")]
+
+        adapter = EpubSourceAdapter(
+            epub_path,
+            _load_package=lambda _: model,
+            _extract_segments=fake_extract,
+        )
+
+        segments = adapter.get_segments()
+
+        assert len(segments) == 1
+        assert extract_calls == [("<p>Hello</p>", "OEBPS/chapter1.xhtml")]
         epub_path.unlink()
 
 
@@ -259,7 +287,7 @@ class TestApplyTranslations:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda xhtml: (
+            _extract_segments=lambda xhtml, document_path=None: (
                 [FakeRawSegment("A", (0,), "p"), FakeRawSegment("B", (1,), "p")]
                 if "A" in xhtml
                 else [FakeRawSegment("C", (0,), "p")]
@@ -307,7 +335,7 @@ class TestApplyTranslations:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda _: [
+            _extract_segments=lambda _, document_path=None: [
                 FakeRawSegment("X", (0,), "p"),
                 FakeRawSegment("Y", (1,), "p"),
             ],
@@ -347,7 +375,7 @@ class TestSave:
         adapter = EpubSourceAdapter(
             epub_path,
             _load_package=lambda _: model,
-            _extract_segments=lambda _: [FakeRawSegment("Hi", (0,), "p")],
+            _extract_segments=lambda _, document_path=None: [FakeRawSegment("Hi", (0,), "p")],
             _patch_xhtml=lambda xhtml, trans, **kw: "PATCHED",
             _repack_epub=lambda src, out, overrides: repack_calls.append((src, out, overrides)),
         )
@@ -358,11 +386,18 @@ class TestSave:
                 TranslatedSegment(id="OEBPS/ch.xhtml::0", original="Hi", translated="你好"),
             ]
         )
-        adapter.save("/tmp/output.epub")
+        output_path = Path(__file__).resolve().parents[2] / "scratch-check" / "output.epub"
+        adapter.save(str(output_path))
 
         assert len(repack_calls) == 1
         src, out, overrides = repack_calls[0]
         assert src == epub_path
-        assert out == Path("/tmp/output.epub")
+        assert out == output_path
         assert "OEBPS/ch.xhtml" in overrides
         epub_path.unlink()
+
+
+def teardown_module() -> None:
+    scratch_dir = Path(__file__).resolve().parents[2] / "scratch-check"
+    if scratch_dir.exists():
+        shutil.rmtree(scratch_dir)

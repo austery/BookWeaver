@@ -11,7 +11,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
@@ -25,6 +25,10 @@ class _RawSegment:
     tag_name: str
 
 
+class _ExtractSegmentsFn(Protocol):
+    def __call__(self, xhtml: str, document_path: str | None = None) -> list[Any]: ...
+
+
 # ── Default operation loaders (import legacy at call time) ────
 
 
@@ -34,10 +38,10 @@ def _default_load_package(epub_path: Path) -> object:
     return load_epub_package(epub_path)
 
 
-def _default_extract_segments(xhtml: str) -> list[Any]:
+def _default_extract_segments(xhtml: str, document_path: str | None = None) -> list[Any]:
     from ai.epub_package import extract_translatable_segments
 
-    return extract_translatable_segments(xhtml)
+    return extract_translatable_segments(xhtml, document_path=document_path)
 
 
 def _default_patch_xhtml(
@@ -83,7 +87,7 @@ class EpubSourceAdapter(IBookSource):
         epub_path: str | Path,
         *,
         _load_package: Callable[..., Any] | None = None,
-        _extract_segments: Callable[..., list[Any]] | None = None,
+        _extract_segments: _ExtractSegmentsFn | None = None,
         _patch_xhtml: Callable[..., str] | None = None,
         _repack_epub: Callable[..., None] | None = None,
     ) -> None:
@@ -107,7 +111,7 @@ class EpubSourceAdapter(IBookSource):
         result: list[Segment] = []
         for doc_path in self._doc_order:
             xhtml = self._doc_xhtml[doc_path]
-            raw_segments = self._extract_fn(xhtml)
+            raw_segments = self._extract_fn(xhtml, document_path=doc_path)
 
             coerced: list[_RawSegment] = []
             for i, raw in enumerate(raw_segments):
