@@ -1348,7 +1348,8 @@ class TestRunGlossaryExtractionOrchestration:
             output_path: Path,
             provider_adapter: object,
             max_terms: int = 20,
-        ) -> None:
+            mode: str = "auto",
+        ) -> dict:
             assert epub_path == in_epub
             extracted_path_calls.append(output_path)
             assert max_terms == 20
@@ -1357,6 +1358,7 @@ class TestRunGlossaryExtractionOrchestration:
                 '{"critical_terminology":[{"term":"API","suggested_translation":"接口","priority":"high"}]}',
                 encoding="utf-8",
             )
+            return {"tier": "index", "term_count": 1, "docs": 0, "chars": 100, "candidate_count": 0}
 
         monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
 
@@ -1398,10 +1400,12 @@ class TestRunGlossaryExtractionOrchestration:
             output_path: Path,
             provider_adapter: object,
             max_terms: int = 20,
-        ) -> None:
+            mode: str = "auto",
+        ) -> dict:
             received_max_terms.append(max_terms)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text('{"critical_terminology":[]}', encoding="utf-8")
+            return {"tier": "index", "term_count": 0, "docs": 0, "chars": 0, "candidate_count": 0}
 
         monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
 
@@ -1460,7 +1464,11 @@ class TestRunGlossaryExtractionOrchestration:
         )
 
         stdout = capsys.readouterr().out
-        assert "Glossary extraction is only supported for EPUBs" in stdout
+        # New code path uses mode-based warning
+        assert (
+            "Glossary extraction is only supported for EPUBs" in stdout
+            or "only supported for EPUBs; skipping extraction" in stdout
+        )
 
     def test_epub_extract_glossary_uses_pro_model_but_translation_stays_flash(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1509,12 +1517,14 @@ class TestRunGlossaryExtractionOrchestration:
             output_path: Path,
             provider_adapter: object,
             max_terms: int = 20,
-        ) -> None:
+            mode: str = "auto",
+        ) -> dict:
             assert isinstance(provider_adapter, dict)
             assert provider_adapter["model"] == "gemini-2.5-pro"
             assert max_terms == 20
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text('{"critical_terminology":[]}', encoding="utf-8")
+            return {"tier": "index", "term_count": 0, "docs": 0, "chars": 0, "candidate_count": 0}
 
         monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
 
@@ -1529,6 +1539,186 @@ class TestRunGlossaryExtractionOrchestration:
         assert create_calls == ["gemini-2.5-pro", "gemini-2.5-flash"]
         assert isinstance(_NoopEngine.last_provider, dict)
         assert _NoopEngine.last_provider["model"] == "gemini-2.5-flash"
+
+    def test_run_passes_glossary_mode_to_extractor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run() should pass glossary_mode from resolve_glossary_request to extractor."""
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {"provider": "test"},
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        temp_dir = tmp_path / "book_temp"
+        monkeypatch.setattr(cli_module, "_resolve_extraction_temp_dir", lambda input_path: temp_dir)
+
+        extract_mode_received = None
+
+        def fake_extract(
+            *,
+            epub_path: Path,
+            output_path: Path,
+            provider_adapter: object,
+            max_terms: int = 20,
+            mode: str = "auto",
+        ) -> dict:
+            nonlocal extract_mode_received
+            extract_mode_received = mode
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text('{"critical_terminology":[]}', encoding="utf-8")
+            return {"tier": "index", "term_count": 0}
+
+        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="flash",
+            input_format="epub",
+            glossary_mode="deep-scan",
+        )
+
+        assert extract_mode_received == "deep-scan"
+
+    def test_manual_glossary_skips_auto_extraction_even_when_mode_set(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When --glossary <path> is set, extraction should be skipped even if mode is auto/deep-scan."""
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {"provider": "test"},
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        manual_glossary = tmp_path / "manual.json"
+        manual_glossary.write_text('{"critical_terminology":[]}', encoding="utf-8")
+
+        extract_called = False
+
+        def fake_extract(*args: object, **kwargs: object) -> dict:
+            nonlocal extract_called
+            extract_called = True
+            return {"tier": "none", "term_count": 0}
+
+        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="flash",
+            input_format="epub",
+            glossary=str(manual_glossary),
+            glossary_mode="auto",  # Should be ignored because manual glossary provided
+        )
+
+        assert not extract_called, "Extraction should not run when manual glossary is provided"
+
+    def test_manual_glossary_warns_when_overriding_extraction_flags(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """When --glossary <path> overrides --extract-glossary or --glossary-mode, warn the user."""
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {"provider": "test"},
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        manual_glossary = tmp_path / "manual.json"
+        manual_glossary.write_text('{"critical_terminology":[]}', encoding="utf-8")
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            model="flash",
+            input_format="epub",
+            glossary=str(manual_glossary),
+            extract_glossary=True,  # Should trigger warning
+        )
+
+        captured = capsys.readouterr()
+        assert "manual glossary" in captured.out.lower() or "override" in captured.out.lower()
+
+    def test_non_epub_deep_scan_warns_and_skips_extraction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """When glossary_mode is auto/deep-scan but input is not EPUB, warn and skip extraction."""
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {"provider": "test"},
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "MarkdownSourceAdapter", lambda path: _NoopSource())
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+
+        # Create markdown directory with page files
+        in_md_dir = tmp_path / "md_dir"
+        in_md_dir.mkdir()
+        (in_md_dir / "page0001.md").write_text("# Title\nContent", encoding="utf-8")
+        out_file = tmp_path / "out.md"
+
+        extract_called = False
+
+        def fake_extract(*args: object, **kwargs: object) -> dict:
+            nonlocal extract_called
+            extract_called = True
+            return {"tier": "none", "term_count": 0}
+
+        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
+
+        run(
+            input_path=str(in_md_dir),
+            output=str(out_file),
+            model="flash",
+            input_format="markdown",
+            glossary_mode="deep-scan",
+        )
+
+        assert not extract_called, "Extraction should not run for non-EPUB input"
+        captured = capsys.readouterr()
+        assert "epub" in captured.out.lower() and (
+            "skip" in captured.out.lower() or "warn" in captured.out.lower()
+        )
 
 
 class _ResumeProvider:

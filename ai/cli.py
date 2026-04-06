@@ -557,8 +557,13 @@ def _extract_glossary_to_path(
     output_path: Path,
     provider_adapter: ITranslationProvider,
     max_terms: int = 20,
-) -> None:
-    """Extract glossary JSON from EPUB and write to output_path."""
+    mode: str = "auto",
+) -> dict[str, object]:
+    """Extract glossary JSON from EPUB and write to output_path.
+
+    Returns:
+        A report dict with extraction metadata (tier, docs, chars, candidate_count, term_count).
+    """
     from ai.glossary_extractor import extract_glossary_from_epub
 
     def translate_fn(prompt: str) -> str:
@@ -568,12 +573,13 @@ def _extract_glossary_to_path(
             raise RuntimeError(msg)
         return translated[0]
 
-    extract_glossary_from_epub(
+    return extract_glossary_from_epub(
         epub_path=epub_path,
         output_path=output_path,
         translate_fn=translate_fn,
         max_terms=max_terms,
         full_index=False,
+        mode=mode,
     )
 
 
@@ -929,7 +935,61 @@ def run(
             raise ValueError(msg)
 
         effective_glossary = glossary
-        if extract_glossary:
+
+        # Warn if manual glossary overrides extraction flags
+        if glossary_request.mode == "manual" and (
+            extract_glossary or glossary_mode in ("auto", "deep-scan")
+        ):
+            print("Warning: Manual glossary provided (--glossary) overrides extraction flags.")
+
+        # Handle glossary extraction based on resolved mode
+        if glossary_request.mode in ("auto", "deep-scan"):
+            stage = "glossary-extraction"
+
+            if fmt != "epub":
+                print(
+                    f"Warning: Glossary extraction mode '{glossary_request.mode}' is only supported for EPUBs; skipping extraction."
+                )
+            else:
+                temp_dir = _resolve_extraction_temp_dir(input_path)
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                extracted_glossary = temp_dir / "extracted_glossary.json"
+                _log_progress(
+                    "glossary",
+                    action="extract",
+                    mode=glossary_request.mode,
+                    output=extracted_glossary,
+                )
+                extract_model, extract_is_pro = resolve_model("pro", runtime_config)
+                extract_provider_adapter = create_provider(
+                    provider,
+                    extract_model,
+                    is_pro=extract_is_pro,
+                    use_segment_tags=False,
+                    config=runtime_config,
+                    cli_api_fallback=cli_api_fallback,
+                )
+                report = _extract_glossary_to_path(
+                    epub_path=input_file,
+                    output_path=extracted_glossary,
+                    provider_adapter=extract_provider_adapter,
+                    max_terms=glossary_max_terms or 20,
+                    mode=glossary_request.mode,
+                )
+                _log_progress(
+                    "glossary",
+                    action="resolved",
+                    tier=report.get("tier"),
+                    docs=report.get("docs", 0),
+                    chars=report.get("chars", 0),
+                    candidate_count=report.get("candidate_count", 0),
+                    term_count=report.get("term_count", 0),
+                )
+                effective_glossary = str(extracted_glossary)
+
+        elif extract_glossary and glossary_request.mode != "manual":
+            # Legacy --extract-glossary flag (backward compat)
+            # Skip if manual glossary was provided (mode == "manual")
             stage = "glossary-extraction"
             if fmt != "epub":
                 print(
@@ -949,11 +1009,12 @@ def run(
                     config=runtime_config,
                     cli_api_fallback=cli_api_fallback,
                 )
-                _extract_glossary_to_path(
+                report = _extract_glossary_to_path(
                     epub_path=input_file,
                     output_path=extracted_glossary,
                     provider_adapter=extract_provider_adapter,
                     max_terms=glossary_max_terms or 20,
+                    mode="auto",  # Default to auto for legacy flag
                 )
                 effective_glossary = str(extracted_glossary)
 

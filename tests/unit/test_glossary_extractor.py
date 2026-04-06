@@ -15,6 +15,7 @@ from ai.glossary_extractor import (
     extract_epub_index_and_toc,
     extract_glossary_from_epub,
 )
+from ai.core.local_glossary_candidates import build_local_glossary_candidates
 
 
 def _wrap_xhtml(body: str) -> str:
@@ -509,3 +510,190 @@ def test_collect_spine_blocks_skips_nav_via_toc_item_id(tmp_path: Path) -> None:
     # Verify actual chapters are present
     assert any("Chapter 1 content" in text for text in texts)
     assert any("Chapter 2 content" in text for text in texts)
+
+
+def test_extract_glossary_auto_falls_back_to_local_refinement_when_no_index_signals(
+    tmp_path: Path,
+) -> None:
+    """Tier 1 auto mode should fall back to Tier 2 local refinement when no index signals exist."""
+    # Create EPUB with no index/glossary signals, only body chapters
+    docs = [
+        ("ch1", "chapter1.xhtml", "<p>Chapter 1: Frodo and Gandalf discuss the Ring.</p>"),
+        ("ch2", "chapter2.xhtml", "<p>Chapter 2: Gandalf talks about the Shire.</p>"),
+    ]
+    epub = _make_spine_epub(tmp_path, docs, include_named_index=False)
+    output_path = tmp_path / "glossary.json"
+
+    mock_translate = MagicMock(
+        return_value=json.dumps(
+            {
+                "critical_terminology": [
+                    {
+                        "term": "Ring",
+                        "suggested_translation": "魔戒",
+                        "reason": "Core artifact",
+                        "priority": "critical",
+                    }
+                ]
+            }
+        )
+    )
+
+    report = extract_glossary_from_epub(
+        epub_path=epub,
+        output_path=output_path,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+
+    # Assert that Tier 2 local refinement was used
+    assert report["tier"] == "local-refinement"
+    assert report["candidate_count"] > 0, "Should have built local candidates"
+    assert report["term_count"] == 1
+    assert "docs=" in str(report) or report.get("docs", 0) > 0
+
+
+def test_extract_glossary_auto_ignores_toc_only_books_and_uses_local_refinement(
+    tmp_path: Path,
+) -> None:
+    """Auto mode should NOT treat TOC-only books as Tier 1 success; should fall back to Tier 2."""
+    # Create EPUB with TOC but no index, and some body content for Tier 2
+    docs = [
+        ("ch1", "chapter1.xhtml", "<p>Chapter 1: Introduction to the Ring.</p>"),
+        ("ch2", "chapter2.xhtml", "<p>Chapter 2: The Shire and Gandalf.</p>"),
+    ]
+    epub = _make_spine_epub(
+        tmp_path, docs, toc_content="Chapter 1\nChapter 2", include_named_index=False
+    )
+    output_path = tmp_path / "glossary.json"
+
+    mock_translate = MagicMock(
+        return_value=json.dumps(
+            {
+                "critical_terminology": [
+                    {
+                        "term": "Ring",
+                        "suggested_translation": "魔戒",
+                        "reason": "Core artifact",
+                        "priority": "critical",
+                    }
+                ]
+            }
+        )
+    )
+
+    report = extract_glossary_from_epub(
+        epub_path=epub,
+        output_path=output_path,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="auto",
+    )
+
+    # TOC-only should NOT be treated as Tier 1 success
+    assert report["tier"] == "local-refinement", "TOC-only should fall back to Tier 2"
+
+
+def test_extract_glossary_deep_scan_uses_dedicated_prompt(tmp_path: Path) -> None:
+    """Deep-scan mode should use whole-book extraction prompt."""
+    docs = [
+        ("ch1", "chapter1.xhtml", "<p>Chapter 1: Advanced topics in Hexagonal Architecture.</p>"),
+        ("ch2", "chapter2.xhtml", "<p>Chapter 2: Ports and Adapters pattern explained.</p>"),
+    ]
+    epub = _make_spine_epub(tmp_path, docs, include_named_index=False)
+    output_path = tmp_path / "glossary.json"
+
+    mock_translate = MagicMock(
+        return_value=json.dumps(
+            {
+                "critical_terminology": [
+                    {
+                        "term": "Hexagonal Architecture",
+                        "suggested_translation": "六边形架构",
+                        "reason": "Core pattern",
+                        "priority": "critical",
+                    }
+                ]
+            }
+        )
+    )
+
+    report = extract_glossary_from_epub(
+        epub_path=epub,
+        output_path=output_path,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="deep-scan",
+    )
+
+    # Assert deep-scan tier
+    assert report["tier"] == "deep-scan"
+    # Verify whole-book prompt was used (check prompt content includes whole-book markers)
+    prompt_arg = mock_translate.call_args[0][0]
+    assert (
+        "整本书" in prompt_arg or "whole-book" in prompt_arg.lower() or "WHOLE_BOOK" in prompt_arg
+    )
+
+
+def test_extract_glossary_trims_final_terms_to_max_terms(tmp_path: Path) -> None:
+    """Extractor should cap final critical_terminology list to max_terms after parsing."""
+    docs = [
+        (
+            "ch1",
+            "chapter1.xhtml",
+            "<p>Advanced Hexagonal Architecture and Ports and Adapters pattern.</p>",
+        ),
+    ]
+    epub = _make_spine_epub(tmp_path, docs, include_named_index=False)
+    output_path = tmp_path / "glossary.json"
+
+    # Model returns 5 terms but max_terms=2
+    mock_translate = MagicMock(
+        return_value=json.dumps(
+            {
+                "critical_terminology": [
+                    {"term": f"Term{i}", "suggested_translation": f"术语{i}", "priority": "high"}
+                    for i in range(5)
+                ]
+            }
+        )
+    )
+
+    extract_glossary_from_epub(
+        epub_path=epub,
+        output_path=output_path,
+        translate_fn=mock_translate,
+        max_terms=2,
+        mode="deep-scan",
+    )
+
+    # Read output and verify it has only 2 terms
+    glossary = json.loads(output_path.read_text(encoding="utf-8"))
+    assert len(glossary["critical_terminology"]) == 2
+
+
+def test_extract_glossary_deep_scan_logs_payload_stats(tmp_path: Path) -> None:
+    """Deep-scan should emit payload stats (docs, chars) in report."""
+    docs = [
+        ("ch1", "chapter1.xhtml", "<p>Chapter 1 content here.</p>"),
+        ("ch2", "chapter2.xhtml", "<p>Chapter 2 content here.</p>"),
+    ]
+    epub = _make_spine_epub(tmp_path, docs, include_named_index=False)
+    output_path = tmp_path / "glossary.json"
+
+    mock_translate = MagicMock(return_value=json.dumps({"critical_terminology": []}))
+
+    report = extract_glossary_from_epub(
+        epub_path=epub,
+        output_path=output_path,
+        translate_fn=mock_translate,
+        max_terms=20,
+        mode="deep-scan",
+    )
+
+    # Assert stats are present
+    assert "docs" in report
+    assert "chars" in report
+    assert report["docs"] > 0
+    assert report["chars"] > 0
