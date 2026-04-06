@@ -245,6 +245,25 @@ def test_extract_epub_index_and_toc_skips_placeholder_named_index_and_finds_real
     assert "Ports and Adapters, 404" in index_text
 
 
+def test_extract_epub_index_and_toc_uses_scorer_selected_glossary_doc(tmp_path: Path) -> None:
+    """Integration test: scorer detects epub:type=glossary doc and extracts it."""
+    epub = _make_spine_epub(
+        tmp_path,
+        docs=[
+            ("c1", "chapter1.xhtml", "<h1>Chapter 1</h1><p>Regular chapter content.</p>"),
+            (
+                "back",
+                "appendix.xhtml",
+                '<section epub:type="glossary"><h2>Glossary</h2><p>Connascence, 42</p><p>Hexagonal Architecture, 112</p></section>',
+            ),
+        ],
+        toc_content="Part 1",
+    )
+    index_text, _ = extract_epub_index_and_toc(epub)
+    assert "Connascence, 42" in index_text
+    assert "Hexagonal Architecture, 112" in index_text
+
+
 def test_build_extraction_prompt_contains_index_and_toc() -> None:
     prompt = _build_extraction_prompt("Connascence, 42", "Chapter 1: Intro", max_terms=15)
     assert "Connascence" in prompt

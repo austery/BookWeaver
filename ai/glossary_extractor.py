@@ -15,10 +15,11 @@ from pathlib import Path
 from typing import Callable
 
 from ai.core.glossary import validate_model_output
+from ai.core.index_signal_scorer import IndexSignalScorer
 from ai.epub_package import load_epub_package, resolve_opf_href
 
 
-_INDEX_DOC_HINTS = ("index", "idx")
+_INDEX_DOC_HINTS = ("index", "idx", "glossary")
 
 # Content-based heuristics for Kindle/generic EPUBs where the index file
 # isn't named "index.xhtml" but starts with alphabetical navigation markers.
@@ -27,7 +28,7 @@ _INDEX_CONTENT_MARKERS = (
     "[ a ][ b ]",
 )
 
-_INDEX_HEADING_HINTS = ("index", "searchable terms")
+_INDEX_HEADING_HINTS = ("index", "glossary", "searchable terms", "terminology")
 _INDEX_LINE_TAGS = {"h1", "h2", "h3", "p", "li", "dd", "dt"}
 _INDEX_PAGE_TOKEN_RE = re.compile(r"(?:\d{1,4}(?:[-–]\d{1,4})?|[♣♦•·*†‡§¶])$")
 _INDEX_LIKE_LINE_RE = re.compile(
@@ -233,10 +234,56 @@ def _separate_mixed_index(text: str) -> tuple[str, str]:
     return "\n".join(english_lines), "\n".join(chinese_lines)
 
 
+def _select_scored_index_text(epub_path: Path) -> str:
+    """Select index/glossary text using signal-based scoring.
+
+    Scans all spine documents and scores them for index/glossary signals
+    (epub:type, CSS classes, filename hints, heading markers, line patterns).
+    Returns the first strong candidate found.
+
+    This is the Tier 1 detector that handles non-standard EPUB structures
+    (e.g., epub:type="glossary", ix01.xhtml, class="index").
+
+    Returns:
+        Extracted index text from the highest-scoring document, or empty string.
+    """
+    scorer = IndexSignalScorer()
+    model = load_epub_package(epub_path)
+
+    with zipfile.ZipFile(epub_path, "r") as zf:
+        for idref in model.spine_itemrefs:
+            item = model.manifest_items.get(idref)
+            if item is None:
+                continue
+
+            resolved_path = resolve_opf_href(model.opf_path, item.href)
+            try:
+                raw = zf.read(resolved_path).decode("utf-8")
+            except (KeyError, UnicodeDecodeError):
+                continue
+
+            score = scorer.score_document(href=item.href, xhtml=raw)
+            if not scorer.is_strong_candidate(score):
+                continue
+
+            extracted = _xhtml_to_text(raw)
+            if _is_placeholder_index_text(extracted):
+                continue
+
+            # Separate mixed English+Chinese if needed
+            english_part, _ = _separate_mixed_index(extracted)
+            return english_part if english_part.strip() else extracted
+
+    return ""
+
+
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     """Extract plain text from Index and TOC documents inside the EPUB.
 
-    Detection is three-stage:
+    Detection is four-stage (Tier 1):
+    0. Signal-scored detection — scans all spine docs for strong index/glossary
+       signals (epub:type, CSS classes, filename hints, heading markers).
+       Handles non-standard structures (ix01.xhtml, class="glossary", etc.).
     1. Filename hints ("index", "idx") — fast, works for standard EPUB naming.
     2. Content heuristics — scans the last 10 spine docs in reverse for
        alphabetical nav markers (e.g. Kindle format uses "[ A ][ B ][ C ]").
@@ -252,6 +299,10 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     model = load_epub_package(epub_path)
     index_text = ""
     toc_text = ""
+
+    # Pass 0: Signal-scored detection (Tier 1 enhancement)
+    # Checks ALL spine docs for strong index/glossary signals before fallback passes
+    index_text = _select_scored_index_text(epub_path)
 
     with zipfile.ZipFile(epub_path, "r") as zf:
         # Pass 1: filename-based detection + TOC
