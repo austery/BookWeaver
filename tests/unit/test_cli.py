@@ -1540,6 +1540,72 @@ class TestRunGlossaryExtractionOrchestration:
         assert isinstance(_NoopEngine.last_provider, dict)
         assert _NoopEngine.last_provider["model"] == "gemini-2.5-flash"
 
+    def test_legacy_extract_glossary_routes_through_mode_based_branch(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression test: legacy --extract-glossary uses mode-based routing.
+        
+        resolve_glossary_request(extract_glossary=True) yields mode="auto",
+        so the first mode-based branch handles it. The legacy elif branch
+        with `extract_glossary and glossary_request.mode != "manual"` is
+        unreachable dead code.
+        
+        This test verifies that extract_glossary=True routes through the
+        correct mode="auto" path and extraction still happens.
+        """
+        monkeypatch.setattr(cli_module, "load_config", lambda: {})
+        monkeypatch.setattr(
+            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "create_provider",
+            lambda *args, **kwargs: {"provider": "test"},
+        )
+        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
+        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
+        monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
+        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+
+        temp_dir = tmp_path / "book_temp"
+        monkeypatch.setattr(cli_module, "_resolve_extraction_temp_dir", lambda input_path: temp_dir)
+
+        extraction_happened = False
+        received_mode = None
+
+        def fake_extract(
+            *,
+            epub_path: Path,
+            output_path: Path,
+            provider_adapter: object,
+            max_terms: int = 20,
+            mode: str = "auto",
+        ) -> dict:
+            nonlocal extraction_happened, received_mode
+            extraction_happened = True
+            received_mode = mode
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text('{"critical_terminology":[]}', encoding="utf-8")
+            return {"tier": "index", "term_count": 0, "docs": 0, "chars": 0, "candidate_count": 0}
+
+        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
+
+        # Call with legacy extract_glossary=True (no explicit glossary_mode)
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            extract_glossary=True,  # Legacy flag
+        )
+
+        # Verify extraction happened through mode-based branch
+        assert extraction_happened, "Extraction should have been triggered"
+        assert received_mode == "auto", "Legacy extract_glossary should map to mode='auto'"
+
     def test_run_passes_glossary_mode_to_extractor(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

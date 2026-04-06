@@ -987,37 +987,6 @@ def run(
                 )
                 effective_glossary = str(extracted_glossary)
 
-        elif extract_glossary and glossary_request.mode != "manual":
-            # Legacy --extract-glossary flag (backward compat)
-            # Skip if manual glossary was provided (mode == "manual")
-            stage = "glossary-extraction"
-            if fmt != "epub":
-                print(
-                    "Warning: Glossary extraction is only supported for EPUBs; ignoring --extract-glossary."
-                )
-            else:
-                temp_dir = _resolve_extraction_temp_dir(input_path)
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                extracted_glossary = temp_dir / "extracted_glossary.json"
-                _log_progress("glossary", action="extract", output=extracted_glossary)
-                extract_model, extract_is_pro = resolve_model("pro", runtime_config)
-                extract_provider_adapter = create_provider(
-                    provider,
-                    extract_model,
-                    is_pro=extract_is_pro,
-                    use_segment_tags=False,
-                    config=runtime_config,
-                    cli_api_fallback=cli_api_fallback,
-                )
-                report = _extract_glossary_to_path(
-                    epub_path=input_file,
-                    output_path=extracted_glossary,
-                    provider_adapter=extract_provider_adapter,
-                    max_terms=glossary_max_terms or 20,
-                    mode="auto",  # Default to auto for legacy flag
-                )
-                effective_glossary = str(extracted_glossary)
-
         stage = "prompt-build"
         language_name = _get_language_name(output_lang)
         glossary_block = load_glossary_block(effective_glossary, min_priority=glossary_min_priority)

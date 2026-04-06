@@ -594,7 +594,6 @@ def extract_glossary_from_epub(
         doc_count = len(blocks)
 
         # Build local refinement prompt
-        model = load_epub_package(epub_path)
         book_title = "Unknown"  # We can extract from OPF metadata if needed
 
         prompt = _LOCAL_REFINEMENT_PROMPT_TEMPLATE.format(
@@ -644,7 +643,6 @@ def extract_glossary_from_epub(
         print(f"[glossary] Payload: docs={doc_count}, chars={total_chars}", flush=True)
 
         # Build deep-scan prompt
-        model = load_epub_package(epub_path)
         book_title = "Unknown"
 
         prompt = _DEEP_SCAN_PROMPT_TEMPLATE.format(
