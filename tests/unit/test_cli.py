@@ -1907,8 +1907,8 @@ class TestRunSanityProbe:
         run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
 
         out = capsys.readouterr().out
-        # _ResumeSource has 3 segments planned into 2 batches
-        assert out.count("[progress:batch_sample]") == 2
+        # _ResumeSource has 3 segments — all fit in one batch with default max_batch_chars
+        assert out.count("[progress:batch_sample]") == 1
 
     def test_run_halts_on_empty_translation(
         self,
@@ -2054,8 +2054,8 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B"], ["C"]]
-        assert source.applied is not None
+        # B (chapter1) and C (chapter2) merge into one cross-doc batch
+        assert provider.calls == [["B", "C"]]
         assert [item.translated for item in source.applied] == ["缓存:A", "翻译:B", "翻译:C"]
 
     def test_run_force_resume_allows_model_mismatch_checkpoint(
@@ -2085,7 +2085,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B"], ["C"]]
+        assert provider.calls == [["B", "C"]]
 
     def test_run_resume_rejects_incompatible_checkpoint_without_force(
         self,
@@ -2114,7 +2114,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B"], ["C"]]
+        assert provider.calls == [["A", "B", "C"]]
 
     def test_run_resume_rejects_checkpoint_when_segmenter_signature_missing(
         self,
@@ -2143,7 +2143,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B"], ["C"]]
+        assert provider.calls == [["A", "B", "C"]]
 
     def test_run_resume_rejects_checkpoint_when_segmenter_signature_mismatches(
         self,
@@ -2172,7 +2172,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B"], ["C"]]
+        assert provider.calls == [["A", "B", "C"]]
 
     def test_run_force_resume_rejects_checkpoint_when_segmenter_signature_mismatches(
         self,
@@ -2201,7 +2201,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B"], ["C"]]
+        assert provider.calls == [["A", "B", "C"]]
 
     def test_run_resume_uses_stable_default_checkpoint_layout(
         self,
@@ -2287,16 +2287,14 @@ class TestRunProgressLogging:
             stdout,
         )
         assert re.search(r"\[progress:source\].*segments=3", stdout)
-        assert re.search(r"\[progress:batch\].*index=1/2", stdout)
+        # All 3 segments (A, B from chapter1 + C from chapter2) merge into one batch
+        assert re.search(r"\[progress:batch\].*index=1/1", stdout)
         assert re.search(r"\[progress:batch\].*translated=0/3", stdout)
-        assert re.search(r"\[progress:batch\].*batch_segments=2", stdout)
+        assert re.search(r"\[progress:batch\].*batch_segments=3", stdout)
         assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml", stdout)
-        assert re.search(r"\[progress:batch\].*index=2/2", stdout)
-        assert re.search(r"\[progress:batch\].*translated=2/3", stdout)
-        assert re.search(r"\[progress:batch\].*batch_segments=1", stdout)
-        assert re.search(r"\[progress:batch\].*docs=chapter2.xhtml", stdout)
+        assert re.search(r"\[progress:batch\].*docs=.*chapter2.xhtml", stdout)
         assert re.search(r"\[progress:save\].*segments=3", stdout)
-        assert re.search(r"\[progress:done\].*segments=3.*batches=2.*resumed=0", stdout)
+        assert re.search(r"\[progress:done\].*segments=3.*batches=1.*resumed=0", stdout)
 
     def test_run_logs_resumed_context_when_checkpoint_loaded(
         self,
