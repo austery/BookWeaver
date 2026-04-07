@@ -46,17 +46,17 @@ Real-world EPUB scans still show high structural variance:
 
 Current behavior can degrade into “TOC-only” extraction or no glossary at all. That is better than nothing, but it is not enough for the consistency goals of BookWeaver when translating technical books, fiction, or mixed narrative/reference works.
 
-This SPEC describes a two-tier active glossary ladder with Tier 2 reserved for future architecture:
+This SPEC replaces the previous heavy/light/minimal draft with a clearer three-tier glossary ladder:
 
 - Tier 1: automatic `index-heavy` extraction when structural signals are strong;
-- Tier 2: ⚠️ **Future Architecture** (not currently active) — zero-dependency local heuristics + LLM refinement;
-- Tier 3: `deep-ai` whole-book extraction, serving as fallback when Tier 1 fails or triggered explicitly via `--glossary-mode deep-scan`.
+- Tier 2: automatic `light-local` extraction using zero-dependency Python heuristics plus LLM refinement;
+- Tier 3: explicit `deep-ai` whole-book extraction, available only when the user requests it.
 
 Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injection via `--glossary <path>` stays supported and continues to use the current glossary JSON schema (`critical_terminology` with `term`, `suggested_translation`, optional `negative_constraint`, and `priority`).
 
 ## 3. Design Decision
 
-**Chosen approach**: Use a two-tier active glossary ladder (Tier 1 `index-heavy` → Tier 3 `deep-ai` fallback), with Tier 2 `light-local` reserved for future architecture. Tier 1 runs automatically when structural signals are strong; Tier 3 runs as fallback when Tier 1 fails or when explicitly triggered by `--glossary-mode deep-scan`.
+**Chosen approach**: Introduce a three-tier glossary extraction ladder: automatic Tier 1 `index-heavy`, automatic Tier 2 `light-local`, and explicit Tier 3 `deep-ai` triggered only by `--glossary-mode deep-scan`.
 
 **Rationale**: This approach improves recall for books without a clean index, avoids dependency bloat, preserves the existing glossary schema/injection path, and guarantees that expensive whole-book extraction never happens implicitly.
 
@@ -65,15 +65,15 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 | Keep index-only extraction (current + small patches) | Small code change | Still brittle for non-standard EPUBs and fiction/entity consistency | ❌ Rejected |
 | Add local NLP libraries (`spaCy`, `scikit-learn`) for entity/keyword extraction | Better local NLP accuracy | Dependency bloat, packaging complexity, heavier install/runtime footprint | ❌ Rejected |
 | Automatically deep-scan full books when heuristics think the book is “small enough” | Highest recall with less operator involvement | Surprising token cost; violates CLI cost-control expectations | ❌ Rejected |
-| **Two-tier active ladder: Tier 1 index-heavy → Tier 3 deep-ai fallback** (Tier 2 reserved for future architecture) | Best balance of recall, runtime cost, and architectural cleanliness | Tier 2 removed from current pipeline | ✅ Chosen |
+| **Three-tier ladder: Tier 1 index-heavy, Tier 2 zero-dependency local heuristics + LLM refinement, Tier 3 explicit deep scan** | Best balance of recall, runtime cost, and architectural cleanliness | Adds resolver/orchestration logic | ✅ Chosen |
 
 ### Tier Summary
 
 | Tier | Trigger | Input Scope | Technique | Cost Profile |
 |------|---------|-------------|-----------|--------------|
 | Tier 1 `index-heavy` | Automatic when index/glossary signals are strong | Index, TOC, tail spine, glossary-like docs | Signal scoring + current index extraction path | Low |
-| Tier 2 `light-local` | **⚠️ Future Architecture** (not currently active) | — | — | — |
-| Tier 3 `deep-ai` | Automatic fallback when Tier 1 fails, or explicit CLI request via `--glossary-mode deep-scan` | Whole-book plain text | Direct LLM extraction from the full book (includes important names, places, and entities for consistency) | Highest / controlled by explicit CLI flag or Tier 1 failure |
+| Tier 2 `light-local` | Automatic fallback when Tier 1 signals are weak or absent | Full-book plain text extracted locally from EPUB spine docs | Zero-dependency Python heuristics + Gemini refinement of shortlisted candidates | Medium / controlled |
+| Tier 3 `deep-ai` | **Explicit CLI request only** via `--glossary-mode deep-scan` | Whole-book plain text | Direct LLM extraction from the full book | Highest / user-approved |
 
 ### Resolution Contract
 
@@ -81,9 +81,9 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 2. If `--glossary-mode deep-scan` is provided, Tier 3 runs directly.
 3. If `--glossary-mode auto` is provided, or the legacy `--extract-glossary` flag is used, BookWeaver runs the automatic ladder:
    - Tier 1 when index/glossary signal score is above threshold.
-   - Tier 3 as fallback when Tier 1 fails or yields an empty glossary.
-4. Automatic modes may never escalate to expensive tiers beyond what is explicitly triggered.
-5. If Tier 1 fails and Tier 3 fallback is used, BookWeaver logs the reason and continues with the Tier 3 glossary.
+   - Tier 2 otherwise.
+4. Automatic modes may never escalate into Tier 3 on their own.
+5. If Tier 2 still yields no usable glossary, BookWeaver continues without an auto glossary and logs the reason.
 
 ## 4. Implementation Phases
 
@@ -95,9 +95,8 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
   - [ ] `--glossary <path>` wins over extraction flags
   - [ ] `--glossary-min-priority` continues to apply to all glossary sources
   - [ ] `--glossary-max-terms` continues to cap final emitted terms
-- [ ] Add a CLI request-policy resolver that produces one of: `manual`, `auto`, `deep-scan`, or `none`.
-- [ ] Keep tier selection inside the EPUB extractor once automatic mode is requested.
-- [ ] Emit structured progress logs for resolved request mode, selected tier, explicitness, and skip reasons.
+- [ ] Add a resolver that produces one of: `manual`, `tier1-index-heavy`, `tier2-light-local`, `tier3-deep-ai`, or `none`.
+- [ ] Emit structured progress logs for resolved tier, explicitness, and skip reasons.
 
 **Acceptance**: A whole-book deep AI scan cannot start unless the user explicitly requests `--glossary-mode deep-scan`, and the chosen glossary path is deterministic from CLI inputs.
 
@@ -115,7 +114,7 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 
 **Acceptance**: Books with non-standard index naming/markup still resolve to Tier 1 and produce a non-empty index-derived glossary when glossary-like structure is present.
 
-### Phase 3: Tier 2 zero-dependency local prefilter — ⚠️ Future Architecture (not currently active) — Target: TBD
+### Phase 3: Tier 2 zero-dependency local prefilter — Target: TBD
 
 - [ ] Build a local plain-text extraction pass over EPUB spine docs using existing package/XHTML text helpers.
 - [ ] Normalize whitespace and strip obvious navigation/boilerplate noise before scoring candidates.
@@ -134,7 +133,7 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 
 **Acceptance**: Tier 2 runs with zero new third-party NLP dependencies and produces a ranked shortlist that captures recurring entities and terms from books that lack a usable index.
 
-### Phase 4: Tier 2 Gemini refinement and glossary emission — ⚠️ Future Architecture (not currently active) — Target: TBD
+### Phase 4: Tier 2 Gemini refinement and glossary emission — Target: TBD
 
 - [ ] Send the Tier 2 shortlist plus compact book context to Gemini for cleanup and canonicalization.
 - [ ] Ask the model to:
@@ -151,14 +150,12 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 ### Phase 5: Tier 3 explicit `deep-ai` whole-book extraction — Target: TBD
 
 - [ ] Add a dedicated Tier 3 prompt path that performs direct glossary extraction from the whole book.
-- [ ] Trigger Tier 3 when `--glossary-mode deep-scan` is explicitly passed by the user, or as fallback when Tier 1 fails.
-- [ ] Tier 3 prompt includes important names, places, invented entities, and terms for translation consistency (not limited to neutral terminology only).
-- [ ] Log the extraction mode as explicit or fallback and include preflight payload diagnostics such as total chars/docs before the request is sent.
+- [ ] Trigger Tier 3 only when `--glossary-mode deep-scan` is explicitly passed by the user.
+- [ ] Log the extraction mode as explicit and include preflight payload diagnostics such as total chars/docs before the request is sent.
 - [ ] Reuse the same final glossary JSON schema and output location (`extracted_glossary.json`) as the automatic modes.
-- [ ] Default `max_terms` set to 50 (controls final glossary size).
-- [ ] Never auto-escalate from Tier 1 into Tier 3 without explicit user request or Tier 1 failure detection.
+- [ ] Never auto-upgrade from Tier 1 or Tier 2 into Tier 3 based on book size, heuristic confidence, or provider availability.
 
-**Acceptance**: Tier 3 gives operators a high-recall glossary path for difficult books, and serves as a reliable fallback when Tier 1 index detection fails.
+**Acceptance**: Tier 3 gives operators a high-recall glossary path for difficult books, but it is impossible to trigger accidentally.
 
 ### Phase 6: Runtime integration, docs, and quality gates — Target: TBD
 
@@ -181,30 +178,28 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 
 ## 5. Acceptance Criteria
 
-- [ ] `--extract-glossary` remains supported and resolves to the automatic ladder (`Tier 1` only; Tier 2 reserved for future use).
-- [ ] A whole-book LLM glossary extraction cannot run unless the user explicitly requests `--glossary-mode deep-scan` or Tier 1 auto-extraction fails.
-- [ ] Tier 2 reserved for future architecture; currently does not run in the active pipeline.
-- [ ] Tier 3 includes important names, places, and entities in glossary extraction to support translation consistency (not limited to neutral terminology).
+- [ ] `--extract-glossary` remains supported and resolves to the automatic ladder (`Tier 1` or `Tier 2` only).
+- [ ] A whole-book LLM glossary extraction cannot run unless the user explicitly requests `--glossary-mode deep-scan`.
+- [ ] Tier 2 uses Python standard library heuristics only; it does not add `spaCy`, `scikit-learn`, or similar heavy NLP dependencies.
+- [ ] Tier 2 sends at most the configured local shortlist budget (target: top 300 candidates) to Gemini, and final glossary output still honors `--glossary-max-terms`.
 - [ ] Manual `--glossary <path>` input remains compatible and bypasses auto extraction deterministically.
 - [ ] Non-standard index books (for example `ix01.xhtml` plus glossary/index markup) resolve to Tier 1 and produce index-derived glossary output.
-- [ ] Books without explicit index but with recurring names/terms would have resolved to Tier 2; now Tier 3 serves as fallback and produces a high-recall glossary more often than the current baseline.
+- [ ] Books without explicit index but with recurring names/terms resolve to Tier 2 and produce a non-empty glossary more often than the current baseline.
 - [ ] Runtime logs clearly expose resolved tier, explicitness, candidate counts, and skip reasons.
 - [ ] Existing glossary JSON schema and prompt injection behavior remain backward compatible for known-good SPEC-010 flows.
-- [ ] Tests cover resolver logic, Tier 1 signal scoring, CLI precedence, and prompt payload generation for Tier 1 and Tier 3.
+- [ ] Tests cover resolver logic, local heuristic ranking, CLI precedence, and prompt payload generation for all three tiers.
 
 ## 6. Status History
 
 | Date | Status | Note |
 |------|--------|------|
 | 2026-04-04 | 📝 草案 (Draft) | Initial adaptive strategy draft from cross-book scan and glossary miss analysis |
-| 2026-04-05 | 📝 草案 (Draft) | Simplified to two-tier active design: Tier 1 `index-heavy` + Tier 3 `deep-ai` fallback; Tier 2 reserved for future architecture. Default max_terms raised from 20 → 50. Tier 3 now includes names and places for translation consistency. |
+| 2026-04-05 | 📝 草案 (Draft) | Reframed as a three-tier ladder with zero-dependency Tier 2 heuristics and explicit opt-in Tier 3 deep scan |
 
 ## 7. Related
 
 - **Code**: `ai/glossary_extractor.py`
-- **Code**: `ai/core/glossary_resolution.py`
-- **Code**: `ai/core/index_signal_scorer.py`
-- **Code**: `ai/core/local_glossary_candidates.py`
+- **Code**: `ai/core/glossary.py`
 - **Code**: `ai/glossary_injector.py`
 - **Code**: `ai/cli.py`
 - **Code**: `translatebook.sh`
