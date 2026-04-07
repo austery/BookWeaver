@@ -1,0 +1,354 @@
+{
+  "critical_terminology": [
+    {
+      "term": "pseudouridine",
+      "suggested_translation": "假尿苷",
+      "negative_constraint": "NOT 假尿嘧啶",
+      "reason": "本书核心科学突破之一，将mRNA修饰为非致炎性的关键分子。",
+      "priority": "critical"
+    },
+    {
+      "term": "N1-methylpseudouridine",
+      "suggested_translation": "N1-甲基假尿苷",
+      "negative_constraint": "",
+      "reason": "辉瑞/BioNTech新冠疫苗中使用的核心修饰核苷，直接关系到技术的最终应用。",
+      "priority": "critical"
+    },
+    {
+      "term": "nucleoside",
+      "suggested_translation": "核苷",
+      "negative_constraint": "NOT 核苷酸 (nucleotide)",
+      "reason": "极易与核苷酸混淆，作者在书中特别区分了这两者，因为修饰发生在核苷层面。",
+      "priority": "critical"
+    },
+    {
+      "term": "uridine",
+      "suggested_translation": "尿苷",
+      "negative_constraint": "NOT 尿嘧啶 (uracil)",
+      "reason": "尿苷是结合了核糖的尿嘧啶，作者特别说明了RNA含uridine而DNA含thymine，翻译必须精准区分。",
+      "priority": "critical"
+    },
+    {
+      "term": "messenger RNA (mRNA)",
+      "suggested_translation": "信使RNA",
+      "negative_constraint": "NOT 转移RNA或普通RNA",
+      "reason": "作者毕生研究的核心对象，需全书保持一致缩写或全称。",
+      "priority": "critical"
+    },
+    {
+      "term": "dendritic cells",
+      "suggested_translation": "树突状细胞",
+      "negative_constraint": "NOT 树突细胞 (神经元术语)",
+      "reason": "关键的免疫细胞，作者曾误以为是神经元细胞，是连接先天和适应性免疫的桥梁，也是疫苗的靶点。",
+      "priority": "critical"
+    },
+    {
+      "term": "toll-like receptors (TLRs)",
+      "suggested_translation": "Toll样受体",
+      "negative_constraint": "",
+      "reason": "识别未修饰mRNA并引发炎症反应的关键先天免疫系统受体。",
+      "priority": "critical"
+    },
+    {
+      "term": "Katalin Karikó",
+      "suggested_translation": "卡塔林·考里科",
+      "negative_constraint": "",
+      "reason": "本书作者，诺贝尔奖得主，中文译名需采用学界和官方新闻中确立的标准译名。",
+      "priority": "critical"
+    },
+    {
+      "term": "Drew Weissman",
+      "suggested_translation": "德鲁·韦斯曼",
+      "negative_constraint": "",
+      "reason": "作者在宾大的核心科研伙伴，共同获得诺贝尔奖，译名需标准统一。",
+      "priority": "critical"
+    },
+    {
+      "term": "BioNTech",
+      "suggested_translation": "BioNTech (或 拜恩泰科)",
+      "negative_constraint": "",
+      "reason": "作者后期任职并研发出新冠mRNA疫苗的德国公司，全书非常重要的机构名。",
+      "priority": "critical"
+    },
+    {
+      "term": "nucleotide",
+      "suggested_translation": "核苷酸",
+      "negative_constraint": "NOT 核苷 (nucleoside)",
+      "reason": "经常与核苷在中文里混淆使用，必须在生化语境下严格区分。",
+      "priority": "high"
+    },
+    {
+      "term": "uracil",
+      "suggested_translation": "尿嘧啶",
+      "negative_constraint": "NOT 尿苷 (uridine)",
+      "reason": "构成尿苷的碱基，生物学基础概念，极易错译。",
+      "priority": "high"
+    },
+    {
+      "term": "RNase",
+      "suggested_translation": "核糖核酸酶 (或 RNase)",
+      "negative_constraint": "NOT RNA",
+      "reason": "分解RNA的酶，是作者实验中最大的污染源和阻碍，拼写极易和RNA混淆。",
+      "priority": "high"
+    },
+    {
+      "term": "liposome",
+      "suggested_translation": "脂质体",
+      "negative_constraint": "NOT 脂质 (lipid)",
+      "reason": "将DNA或RNA递送进细胞的重要载体技术，不可译为普通的“脂质”。",
+      "priority": "high"
+    },
+    {
+      "term": "innate immune system",
+      "suggested_translation": "先天免疫系统 (或 固有免疫系统)",
+      "negative_constraint": "NOT 内部免疫系统",
+      "reason": "与适应性免疫系统相对，是解释mRNA引发炎症和疫苗原理的核心概念。",
+      "priority": "high"
+    },
+    {
+      "term": "adaptive immune response",
+      "suggested_translation": "适应性免疫反应",
+      "negative_constraint": "",
+      "reason": "疫苗发挥作用的核心机制，必须与先天免疫准确对应。",
+      "priority": "high"
+    },
+    {
+      "term": "cytokine storm",
+      "suggested_translation": "细胞因子风暴",
+      "negative_constraint": "",
+      "reason": "过度免疫反应导致的致命症状，也是早期基因治疗失败和mRNA未修饰前面临的困境。",
+      "priority": "high"
+    },
+    {
+      "term": "urokinase receptor",
+      "suggested_translation": "尿激酶受体",
+      "negative_constraint": "",
+      "reason": "作者在宾大早期使用mRNA成功使其在细胞表达的关键蛋白质。",
+      "priority": "high"
+    },
+    {
+      "term": "2'-5' oligoadenylate (2-5A)",
+      "suggested_translation": "2'-5' 寡腺苷酸 (或 2-5A)",
+      "negative_constraint": "",
+      "reason": "作者早期试图合成并用作抗病毒药物的短链RNA分子。",
+      "priority": "high"
+    },
+    {
+      "term": "nucleoside analogues",
+      "suggested_translation": "核苷类似物",
+      "negative_constraint": "",
+      "reason": "一类重要的药物（如AZT），通过调整自然核苷结构产生疗效，启发了作者对mRNA的修饰。",
+      "priority": "high"
+    },
+    {
+      "term": "Northern blot",
+      "suggested_translation": "Northern印迹法 (或 RNA印迹法)",
+      "negative_constraint": "NOT 蛋白质印迹法 (Western blot)",
+      "reason": "专用于检测RNA的实验技术，若按字面直译或与其他blot混淆会造成严重学术错误。",
+      "priority": "high"
+    },
+    {
+      "term": "basic research",
+      "suggested_translation": "基础研究",
+      "negative_constraint": "NOT 基础调查",
+      "reason": "作者反复强调其区别于应用研究(applied research)的科学探索本质。",
+      "priority": "high"
+    },
+    {
+      "term": "in vitro",
+      "suggested_translation": "体外 (或 试管内)",
+      "negative_constraint": "NOT 体内",
+      "reason": "实验生物学核心术语，常与 in vivo 结对出现，容易翻译反转。",
+      "priority": "high"
+    },
+    {
+      "term": "in vivo",
+      "suggested_translation": "体内",
+      "negative_constraint": "NOT 体外",
+      "reason": "描述在活体生物中进行的实验，是验证mRNA疗效的关键环节。",
+      "priority": "high"
+    },
+    {
+      "term": "Uğur Şahin",
+      "suggested_translation": "乌古尔·萨欣",
+      "negative_constraint": "",
+      "reason": "BioNTech联合创始人兼CEO，重要人物，需使用标准译名。",
+      "priority": "high"
+    },
+    {
+      "term": "Özlem Türeci",
+      "suggested_translation": "奥兹莱姆·图雷奇",
+      "negative_constraint": "",
+      "reason": "BioNTech联合创始人，重要人物，需使用标准译名。",
+      "priority": "high"
+    },
+    {
+      "term": "Albert Szent-Györgyi",
+      "suggested_translation": "阿尔伯特·圣捷尔吉",
+      "negative_constraint": "",
+      "reason": "匈牙利裔诺贝尔奖得主，作者早年的科学启蒙偶像。",
+      "priority": "high"
+    },
+    {
+      "term": "Kisújszállás",
+      "suggested_translation": "小乌伊萨拉什",
+      "negative_constraint": "",
+      "reason": "作者的家乡，地名拼写特殊，需采用匈牙利地名的标准中文译法。",
+      "priority": "high"
+    },
+    {
+      "term": "Szeged",
+      "suggested_translation": "塞格德",
+      "negative_constraint": "",
+      "reason": "作者读大学和早期工作的匈牙利城市，全书高频地名。",
+      "priority": "high"
+    },
+    {
+      "term": "Biological Research Center (BRC)",
+      "suggested_translation": "生物研究中心 (或 匈牙利科学院生物研究中心)",
+      "negative_constraint": "",
+      "reason": "作者职业生涯早期的重要研究机构。",
+      "priority": "high"
+    },
+    {
+      "term": "University of Pennsylvania (Penn)",
+      "suggested_translation": "宾夕法尼亚大学 (宾大)",
+      "negative_constraint": "NOT 宾州州立大学 (Penn State)",
+      "reason": "作者工作数十年的大学，极易与宾州州立大学混淆。",
+      "priority": "high"
+    },
+    {
+      "term": "Robert Suhadolnik",
+      "suggested_translation": "罗伯特·苏哈多尔尼克",
+      "negative_constraint": "",
+      "reason": "将作者带到美国的天普大学实验室主任，重要人物。",
+      "priority": "high"
+    },
+    {
+      "term": "Elliot Barnathan",
+      "suggested_translation": "埃利奥特·巴纳森",
+      "negative_constraint": "",
+      "reason": "作者在宾大的早期支持者和重要合作医生。",
+      "priority": "high"
+    },
+    {
+      "term": "David Langer",
+      "suggested_translation": "大卫·兰格",
+      "negative_constraint": "",
+      "reason": "将作者招入神经外科并保住其职业生涯的关键医生。",
+      "priority": "high"
+    },
+    {
+      "term": "Béla Francia",
+      "suggested_translation": "贝拉·弗兰西亚",
+      "negative_constraint": "",
+      "reason": "作者的丈夫，贯穿全书的重要家庭成员。",
+      "priority": "high"
+    },
+    {
+      "term": "Susan Francia",
+      "suggested_translation": "苏珊·弗兰西亚",
+      "negative_constraint": "",
+      "reason": "作者的女儿，两届奥运会赛艇金牌得主。",
+      "priority": "high"
+    },
+    {
+      "term": "transfer RNA (tRNA)",
+      "suggested_translation": "转运RNA",
+      "negative_constraint": "",
+      "reason": "作者在实验中发现其不引发炎症反应，是启发mRNA修饰的关键比对物。",
+      "priority": "medium"
+    },
+    {
+      "term": "plasminogen activators",
+      "suggested_translation": "纤溶酶原激活剂",
+      "negative_constraint": "",
+      "reason": "作者早期试图通过mRNA表达的抗血栓蛋白，医学专有名词。",
+      "priority": "medium"
+    },
+    {
+      "term": "cordycepin",
+      "suggested_translation": "虫草素",
+      "negative_constraint": "",
+      "reason": "一种天然存在的核苷类似物，也是作者早期研究的对象。",
+      "priority": "medium"
+    },
+    {
+      "term": "gag protein",
+      "suggested_translation": "gag蛋白 (群特异性抗原蛋白)",
+      "negative_constraint": "NOT 呕吐蛋白",
+      "reason": "HIV病毒的主要结构蛋白，容易因字面意思(gag=作呕)被误译。",
+      "priority": "medium"
+    },
+    {
+      "term": "erythropoietin",
+      "suggested_translation": "促红细胞生成素",
+      "negative_constraint": "",
+      "reason": "作者成立公司后首个试图用mRNA生成的治疗贫血的蛋白质。",
+      "priority": "medium"
+    },
+    {
+      "term": "inducible nitric oxide synthase (iNOS)",
+      "suggested_translation": "诱导型一氧化氮合酶 (iNOS)",
+      "negative_constraint": "",
+      "reason": "作者与David Langer合作试图通过mRNA表达以治疗脑血管痉挛的酶。",
+      "priority": "medium"
+    },
+    {
+      "term": "cerebral vasospasm",
+      "suggested_translation": "脑血管痉挛",
+      "negative_constraint": "",
+      "reason": "神经外科研究试图解决的致死性病症，医学专业术语。",
+      "priority": "medium"
+    },
+    {
+      "term": "Lipofectin",
+      "suggested_translation": "Lipofectin (脂质转染试剂)",
+      "negative_constraint": "",
+      "reason": "商品名，早期用于将DNA/RNA递送进细胞的市售脂质试剂。",
+      "priority": "medium"
+    },
+    {
+      "term": "Hans Selye",
+      "suggested_translation": "汉斯·塞利",
+      "negative_constraint": "",
+      "reason": "《生命的压力》一书作者，最早提出生物学“压力”概念，对作者人生观影响深远。",
+      "priority": "medium"
+    },
+    {
+      "term": "RNARx",
+      "suggested_translation": "RNARx",
+      "negative_constraint": "NOT RNA处方",
+      "reason": "作者与Drew Weissman联合创办的公司名称，需保留原文。",
+      "priority": "medium"
+    },
+    {
+      "term": "kutató",
+      "suggested_translation": "探寻者 (研究员)",
+      "negative_constraint": "",
+      "reason": "匈牙利语，作者父亲用来形容她职业的词，双关了物理上的寻找和科学上的探索。",
+      "priority": "medium"
+    },
+    {
+      "term": "fizikai",
+      "suggested_translation": "体力劳动阶层 (物理类)",
+      "negative_constraint": "NOT 物理学",
+      "reason": "匈牙利语F标签，特指父母为体力劳动者的出身背景，具有时代特定的社会学含义。",
+      "priority": "medium"
+    },
+    {
+      "term": "dollars per net square footage",
+      "suggested_translation": "每净平方英尺美元收益 (实验室创收率)",
+      "negative_constraint": "",
+      "reason": "宾大用来评估研究人员分配实验室面积的冷酷财务指标，象征了阻碍作者研究的制度体系。",
+      "priority": "medium"
+    },
+    {
+      "term": "up or out",
+      "suggested_translation": "非升即走",
+      "negative_constraint": "NOT 上或下",
+      "reason": "美国高校终身教职系统的严酷淘汰机制，作者曾因此遭遇职场危机。",
+      "priority": "medium"
+    }
+  ]
+}

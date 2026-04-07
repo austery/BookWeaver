@@ -1,0 +1,270 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Breaking Through",
+      "suggested_translation": "突破",
+      "negative_constraint": "NOT 打破/穿越",
+      "reason": "本书书名核心词汇，指代科学上的重大突破与人生逆境的跨越",
+      "priority": "critical"
+    },
+    {
+      "term": "Katalin Karikó",
+      "suggested_translation": "卡塔林·考里科",
+      "negative_constraint": "NOT 卡塔琳/卡里科",
+      "reason": "本书作者、传主，2023年诺贝尔生理学或医学奖得主，姓名需保持绝对一致",
+      "priority": "critical"
+    },
+    {
+      "term": "Kati",
+      "suggested_translation": "考蒂",
+      "negative_constraint": "NOT 卡蒂/凯蒂",
+      "reason": "作者的小名/昵称，匈牙利语发音译名需统一",
+      "priority": "high"
+    },
+    {
+      "term": "Drew Weissman",
+      "suggested_translation": "德鲁·韦斯曼",
+      "negative_constraint": "NOT 魏斯曼",
+      "reason": "作者的重要科研合作伙伴，共同获得诺贝尔奖",
+      "priority": "critical"
+    },
+    {
+      "term": "Moderna",
+      "suggested_translation": "莫德纳",
+      "negative_constraint": "NOT 摩德纳",
+      "reason": "著名生物技术公司，开发了基于mRNA的COVID-19疫苗",
+      "priority": "critical"
+    },
+    {
+      "term": "University of Pennsylvania",
+      "suggested_translation": "宾夕法尼亚大学",
+      "negative_constraint": "NOT 宾州大学",
+      "reason": "作者开展关键mRNA研究的学术机构",
+      "priority": "critical"
+    },
+    {
+      "term": "Penn",
+      "suggested_translation": "宾大",
+      "negative_constraint": "NOT 佩恩",
+      "reason": "宾夕法尼亚大学的常见简称，需与具体人名区分",
+      "priority": "high"
+    },
+    {
+      "term": "University of Szeged",
+      "suggested_translation": "塞格德大学",
+      "negative_constraint": "NOT 斯塞格德大学",
+      "reason": "作者的母校，位于匈牙利",
+      "priority": "high"
+    },
+    {
+      "term": "Szeged",
+      "suggested_translation": "塞格德",
+      "negative_constraint": "NOT 斯塞格德",
+      "reason": "匈牙利城市名，作者求学和早期工作地",
+      "priority": "high"
+    },
+    {
+      "term": "Biological Research Center",
+      "suggested_translation": "生物研究中心",
+      "negative_constraint": "NOT 生物学研究中心",
+      "reason": "指代匈牙利科学院生物研究中心（BRC），作者早年的工作单位",
+      "priority": "high"
+    },
+    {
+      "term": "Hungarian Academy of Sciences",
+      "suggested_translation": "匈牙利科学院",
+      "negative_constraint": "",
+      "reason": "匈牙利最高学术机构",
+      "priority": "high"
+    },
+    {
+      "term": "Gene Therapy",
+      "suggested_translation": "基因疗法",
+      "negative_constraint": "NOT 基因治疗（作为专有名词时）",
+      "reason": "贯穿全书的核心科学概念",
+      "priority": "critical"
+    },
+    {
+      "term": "Institute for Human Gene Therapy",
+      "suggested_translation": "人类基因疗法研究所",
+      "negative_constraint": "",
+      "reason": "宾夕法尼亚大学内的重要科研机构",
+      "priority": "high"
+    },
+    {
+      "term": "National Institutes of Health",
+      "suggested_translation": "美国国立卫生研究院",
+      "negative_constraint": "NOT 国家卫生研究院",
+      "reason": "美国最高水平的医学与行为学研究机构，重要科研资金来源",
+      "priority": "high"
+    },
+    {
+      "term": "Susan",
+      "suggested_translation": "苏珊",
+      "negative_constraint": "",
+      "reason": "作者的女儿Susan Francia（两届奥运会赛艇金牌得主）",
+      "priority": "high"
+    },
+    {
+      "term": "Zsuzsi",
+      "suggested_translation": "茹茹",
+      "negative_constraint": "NOT 祖兹",
+      "reason": "女儿苏珊的匈牙利语小名/昵称",
+      "priority": "medium"
+    },
+    {
+      "term": "Francia",
+      "suggested_translation": "弗兰恰",
+      "negative_constraint": "NOT 法兰西亚",
+      "reason": "作者丈夫及女儿的姓氏，需按匈牙利语发音译",
+      "priority": "high"
+    },
+    {
+      "term": "Nobel Prize",
+      "suggested_translation": "诺贝尔奖",
+      "negative_constraint": "NOT 诺奖（正式行文中）",
+      "reason": "最高科学荣誉",
+      "priority": "critical"
+    },
+    {
+      "term": "Lasker Award",
+      "suggested_translation": "拉斯克奖",
+      "negative_constraint": "NOT 莱斯克奖",
+      "reason": "美国顶级医学奖，常被视为诺贝尔奖风向标",
+      "priority": "high"
+    },
+    {
+      "term": "Eastern Bloc",
+      "suggested_translation": "东方阵营",
+      "negative_constraint": "NOT 东欧集团",
+      "reason": "冷战时期的特定政治地理概念",
+      "priority": "medium"
+    },
+    {
+      "term": "Iron Curtain",
+      "suggested_translation": "铁幕",
+      "negative_constraint": "",
+      "reason": "冷战时期的特定政治地理概念",
+      "priority": "medium"
+    },
+    {
+      "term": "Lipofectin",
+      "suggested_translation": "Lipofectin脂质体",
+      "negative_constraint": "NOT 脂质转染试剂",
+      "reason": "一种专有的脂质体转染试剂名称，建议保留英文或加注",
+      "priority": "high"
+    },
+    {
+      "term": "Cs Gs and Ts",
+      "suggested_translation": "胞嘧啶、鸟嘌呤和胸腺嘧啶",
+      "negative_constraint": "NOT C、G和T",
+      "reason": "DNA/RNA碱基的通俗说法，中文语境下需准确译出碱基名称或保留字母加注",
+      "priority": "high"
+    },
+    {
+      "term": "Enzymes",
+      "suggested_translation": "酶",
+      "negative_constraint": "NOT 酵素",
+      "reason": "基础生物学名词，大陆规范译法为“酶”",
+      "priority": "high"
+    },
+    {
+      "term": "David Baltimore",
+      "suggested_translation": "戴维·巴尔的摩",
+      "negative_constraint": "NOT 大卫·巴尔的摩",
+      "reason": "诺贝尔奖得主，著名生物学家",
+      "priority": "high"
+    },
+    {
+      "term": "Elliot Barnathan",
+      "suggested_translation": "埃利奥特·巴纳森",
+      "negative_constraint": "",
+      "reason": "作者在宾大的早期重要合作者和支持者",
+      "priority": "high"
+    },
+    {
+      "term": "David Langer",
+      "suggested_translation": "戴维·兰格",
+      "negative_constraint": "",
+      "reason": "神经外科医生，曾资助并支持作者的研究",
+      "priority": "high"
+    },
+    {
+      "term": "Bill Kelley",
+      "suggested_translation": "比尔·凯利",
+      "negative_constraint": "",
+      "reason": "宾大医学部的重要管理人物（William Kelley）",
+      "priority": "medium"
+    },
+    {
+      "term": "Hans Selye",
+      "suggested_translation": "汉斯·塞利",
+      "negative_constraint": "NOT 汉斯·谢耶",
+      "reason": "内分泌学家，“压力”概念的提出者",
+      "priority": "high"
+    },
+    {
+      "term": "Stress of Life",
+      "suggested_translation": "《生命之压》",
+      "negative_constraint": "NOT 生活的压力",
+      "reason": "汉斯·塞利的著名著作书名，对作者有深远影响",
+      "priority": "high"
+    },
+    {
+      "term": "Judy Swain",
+      "suggested_translation": "朱迪·斯温",
+      "negative_constraint": "",
+      "reason": "宾大医学部的心血管部门主管",
+      "priority": "medium"
+    },
+    {
+      "term": "Jean Bennett",
+      "suggested_translation": "让·本内特",
+      "negative_constraint": "NOT 简·本内特",
+      "reason": "宾大的基因疗法先驱研究员",
+      "priority": "medium"
+    },
+    {
+      "term": "Pardi",
+      "suggested_translation": "帕尔迪",
+      "negative_constraint": "",
+      "reason": "诺贝特·帕尔迪 (Norbert Pardi)，作者的同事及重要合作者",
+      "priority": "high"
+    },
+    {
+      "term": "Suhadolnik",
+      "suggested_translation": "苏哈多尔尼克",
+      "negative_constraint": "",
+      "reason": "作者在天普大学工作时的上司罗伯特·苏哈多尔尼克",
+      "priority": "medium"
+    },
+    {
+      "term": "Nature",
+      "suggested_translation": "《自然》",
+      "negative_constraint": "NOT 自然杂志",
+      "reason": "国际顶级学术期刊名",
+      "priority": "high"
+    },
+    {
+      "term": "Lancet",
+      "suggested_translation": "《柳叶刀》",
+      "negative_constraint": "",
+      "reason": "国际顶级医学期刊名",
+      "priority": "high"
+    },
+    {
+      "term": "New York Times",
+      "suggested_translation": "《纽约时报》",
+      "negative_constraint": "NOT 纽约时代",
+      "reason": "知名媒体名称",
+      "priority": "medium"
+    },
+    {
+      "term": "Ivy League",
+      "suggested_translation": "常春藤盟校",
+      "negative_constraint": "NOT 常青藤联盟",
+      "reason": "美国顶尖高校联盟",
+      "priority": "medium"
+    }
+  ]
+}

@@ -1,0 +1,354 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Evolutionary Architecture",
+      "suggested_translation": "演进式架构",
+      "negative_constraint": "NOT 进化式架构",
+      "reason": "本书核心主题，Software Architecture语境下'Evolutionary'指随时间不断演变和适应，业界通常译为'演进'而非生物学上的'进化'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Fitness Function",
+      "suggested_translation": "适应度函数",
+      "negative_constraint": "NOT 健康度函数 / 适合度函数 / 适应性函数",
+      "reason": "本书核心原创借用概念（源自遗传算法）。在架构中用于评估架构特征是否符合预期，必须统一译为'适应度函数'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Architectural Quanta / Architectural Quantum",
+      "suggested_translation": "架构量子",
+      "negative_constraint": "NOT 架构配额 / 架构数量",
+      "reason": "本书核心概念，指具有高功能内聚、可独立部署的最小架构组件。Quantum容易被机器误译为'配额'或'数量'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Guided Change",
+      "suggested_translation": "引导式变更",
+      "negative_constraint": "NOT 指导性改变",
+      "reason": "演进式架构的重要特征，强调用适应度函数来'引导'架构演变，而非随机或强制改变。",
+      "priority": "critical"
+    },
+    {
+      "term": "Incremental Change",
+      "suggested_translation": "增量变更",
+      "negative_constraint": "NOT 渐进式改变",
+      "reason": "软件工程和部署管道中的标准术语，指小步快跑、逐步交付的变更方式。",
+      "priority": "critical"
+    },
+    {
+      "term": "Multiple Architectural Dimensions",
+      "suggested_translation": "多维架构 / 架构的多重维度",
+      "negative_constraint": "NOT 多个架构维度",
+      "reason": "指架构不仅关注技术，还包括数据、安全、运维等多个相互正交的维度。",
+      "priority": "high"
+    },
+    {
+      "term": "Architectural Governance",
+      "suggested_translation": "架构治理",
+      "negative_constraint": "NOT 架构管理",
+      "reason": "Governance在企业架构中专指'治理'，侧重于规则、标准和自动化合规检查，而非一般意义的Management。",
+      "priority": "high"
+    },
+    {
+      "term": "Atomic Fitness Functions",
+      "suggested_translation": "原子适应度函数",
+      "negative_constraint": "NOT 基本适应度函数",
+      "reason": "适应度函数分类之一，针对单一组件或维度的适应度评估。",
+      "priority": "critical"
+    },
+    {
+      "term": "Holistic Fitness Functions",
+      "suggested_translation": "全局适应度函数",
+      "negative_constraint": "NOT 整体的 / 全息的适应度函数",
+      "reason": "与原子（Atomic）相对，指跨越多个组件、评估系统整体特征的适应度函数。",
+      "priority": "critical"
+    },
+    {
+      "term": "Triggered Fitness Functions",
+      "suggested_translation": "触发型适应度函数",
+      "negative_constraint": "NOT 引发型适应度函数",
+      "reason": "适应度函数执行节奏的分类，指基于特定事件（如代码提交、PR）触发执行的函数。",
+      "priority": "critical"
+    },
+    {
+      "term": "Continual Fitness Functions",
+      "suggested_translation": "持续型适应度函数",
+      "negative_constraint": "NOT 连续型适应度函数",
+      "reason": "强调在部署管道或运行环境中按固定节奏持续不断地执行。",
+      "priority": "critical"
+    },
+    {
+      "term": "Temporal Fitness Functions",
+      "suggested_translation": "时间型适应度函数",
+      "negative_constraint": "NOT 临时适应度函数",
+      "reason": "Temporal在此指'与时间流逝相关的'，例如检查某些过期的库或时间戳，极易被机器误译为'临时的'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Static Fitness Functions",
+      "suggested_translation": "静态适应度函数",
+      "negative_constraint": "NOT 停滞的适应度函数",
+      "reason": "根据静态代码分析或固定指标得出结果的适应度函数。",
+      "priority": "critical"
+    },
+    {
+      "term": "Dynamic Fitness Functions",
+      "suggested_translation": "动态适应度函数",
+      "negative_constraint": "NOT 变化的适应度函数",
+      "reason": "需要运行系统并在动态上下文（如负载测试）中评估的适应度函数。",
+      "priority": "critical"
+    },
+    {
+      "term": "Intentional Fitness Functions",
+      "suggested_translation": "意图型适应度函数",
+      "negative_constraint": "NOT 有意的适应度函数",
+      "reason": "指架构师在设计之初就明确规划并实现的适应度函数，与'涌现型'相对。",
+      "priority": "critical"
+    },
+    {
+      "term": "Emergent Fitness Functions",
+      "suggested_translation": "涌现型适应度函数",
+      "negative_constraint": "NOT 紧急适应度函数 / 突发适应度函数",
+      "reason": "Emergent在复杂系统中指'涌现'，表示随着系统演进而逐渐被发现和添加的适应度函数，极易误译为'紧急'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Fidelity Fitness Functions",
+      "suggested_translation": "保真度适应度函数",
+      "negative_constraint": "NOT 忠诚度适应度函数 / 准确度适应度函数",
+      "reason": "用于评估演进后架构与原有架构或预期架构设计在功能/行为上的保真程度，极易被误译为'忠诚'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Connascence",
+      "suggested_translation": "共生性",
+      "negative_constraint": "NOT 耦合性 / 锥生性",
+      "reason": "Meilir Page-Jones提出的面向对象设计概念，描述软件组件之间共同改变的特性，是耦合的超集。业界多译为'共生性'。",
+      "priority": "critical"
+    },
+    {
+      "term": "Static Connascence",
+      "suggested_translation": "静态共生性",
+      "negative_constraint": "",
+      "reason": "在编译期即可确定的共生性（如名称、类型、位置共生性）。",
+      "priority": "high"
+    },
+    {
+      "term": "Dynamic Connascence",
+      "suggested_translation": "动态共生性",
+      "negative_constraint": "",
+      "reason": "在运行期才能确定的共生性（如执行顺序、时序、值共生性）。",
+      "priority": "high"
+    },
+    {
+      "term": "Dynamic Quantum Coupling",
+      "suggested_translation": "动态量子耦合",
+      "negative_constraint": "",
+      "reason": "指不同架构量子在运行时的动态通信与协同耦合关系。",
+      "priority": "critical"
+    },
+    {
+      "term": "Orthogonal Operational Coupling",
+      "suggested_translation": "正交运维耦合",
+      "negative_constraint": "NOT 垂直操作耦合",
+      "reason": "描述Service Mesh或Sidecar模式中，业务逻辑与运维治理逻辑的正交分离。",
+      "priority": "critical"
+    },
+    {
+      "term": "Data Mesh",
+      "suggested_translation": "数据网格",
+      "negative_constraint": "NOT 数据网 / 数据矩阵",
+      "reason": "新兴的数据架构范式（由Zhamak Dehghani提出），强调去中心化的数据产品所有权。",
+      "priority": "high"
+    },
+    {
+      "term": "Orthogonal Data Coupling",
+      "suggested_translation": "正交数据耦合",
+      "negative_constraint": "",
+      "reason": "在Data Mesh语境下，描述数据平面与计算平面的正交解耦关系。",
+      "priority": "critical"
+    },
+    {
+      "term": "Data product quantum",
+      "suggested_translation": "数据产品量子",
+      "negative_constraint": "",
+      "reason": "本书结合Data Mesh和架构量子理论原创的概念，指数据网格中独立的数据产品演进单元。",
+      "priority": "critical"
+    },
+    {
+      "term": "Afferent Coupling",
+      "suggested_translation": "传入耦合",
+      "negative_constraint": "NOT 输入耦合 / 求心耦合",
+      "reason": "面向对象软件架构度量指标（Ca），指依赖于当前组件的外部组件数量。",
+      "priority": "medium"
+    },
+    {
+      "term": "Efferent Coupling",
+      "suggested_translation": "传出耦合",
+      "negative_constraint": "NOT 输出耦合 / 离心耦合",
+      "reason": "面向对象软件架构度量指标（Ce），指当前组件依赖的外部组件数量。",
+      "priority": "medium"
+    },
+    {
+      "term": "Distance from the Main Sequence",
+      "suggested_translation": "偏离主序列的距离",
+      "negative_constraint": "NOT 与主序列的距离",
+      "reason": "Robert C. Martin提出的架构包度量指标，衡量抽象度与稳定性的平衡程度。",
+      "priority": "high"
+    },
+    {
+      "term": "Cyclomatic Complexity",
+      "suggested_translation": "圈复杂度",
+      "negative_constraint": "NOT 循环复杂度",
+      "reason": "标准的软件代码复杂度度量指标，常被机器误译为'循环复杂度'。",
+      "priority": "medium"
+    },
+    {
+      "term": "Herding Governance",
+      "suggested_translation": "羊群效应治理 / 聚集式治理",
+      "negative_constraint": "NOT 放牧治理",
+      "reason": "指像放牧一样控制指标（如圈复杂度）整体趋势的治理模式，要求指标在限定范围内聚集或收敛。",
+      "priority": "high"
+    },
+    {
+      "term": "Last Responsible Moment",
+      "suggested_translation": "最后责任时刻",
+      "negative_constraint": "NOT 最后的负责时刻",
+      "reason": "敏捷架构核心原则，指推迟做决策直到必须做决定的最后时刻，以保留最大的灵活性。",
+      "priority": "high"
+    },
+    {
+      "term": "Postel's Law",
+      "suggested_translation": "伯斯塔尔法则",
+      "negative_constraint": "NOT 波斯泰尔定律",
+      "reason": "又称鲁棒性原则（Robustness Principle）：“发送时保守，接收时宽容”。涉及人名Jon Postel，需统一。",
+      "priority": "medium"
+    },
+    {
+      "term": "Conway's Law",
+      "suggested_translation": "康威定律",
+      "negative_constraint": "",
+      "reason": "系统设计受限于组织沟通结构。组织架构核心定律，Melvin Conway提出。",
+      "priority": "medium"
+    },
+    {
+      "term": "Inverse Conway Maneuver",
+      "suggested_translation": "逆康威操作 / 逆康威策略",
+      "negative_constraint": "NOT 逆康威机动",
+      "reason": "为了得到期望的系统架构，预先重组团队沟通结构的组织演进策略。",
+      "priority": "high"
+    },
+    {
+      "term": "Anticorruption Layers",
+      "suggested_translation": "防腐层",
+      "negative_constraint": "NOT 反腐层",
+      "reason": "领域驱动设计(DDD)的经典模式，用于隔离子系统，防止一个子系统的领域模型被另一个系统污染。",
+      "priority": "high"
+    },
+    {
+      "term": "Sacrificial Architectures",
+      "suggested_translation": "牺牲型架构",
+      "negative_constraint": "NOT 献祭架构",
+      "reason": "由Martin Fowler提出，指明确预期在未来几年内会被完全丢弃和重写，仅为满足当前业务起步阶段需求的过渡性架构。",
+      "priority": "high"
+    },
+    {
+      "term": "Strangler Fig pattern",
+      "suggested_translation": "绞杀者无花果模式 / 绞杀者模式",
+      "negative_constraint": "NOT 陌生人无花果模式 / 陌生人模式",
+      "reason": "Martin Fowler提出的重构大型遗留系统的架构模式。Strangler极易被拼写混淆误译为Stranger(陌生人)。",
+      "priority": "high"
+    },
+    {
+      "term": "Big Ball of Mud",
+      "suggested_translation": "大泥球",
+      "negative_constraint": "",
+      "reason": "经典软件架构反模式，指缺乏清晰结构、代码严重交织、极难维护的系统。",
+      "priority": "medium"
+    },
+    {
+      "term": "Resume-Driven Development",
+      "suggested_translation": "简历驱动开发",
+      "negative_constraint": "NOT 恢复驱动开发",
+      "reason": "讽刺性的反模式词汇，指工程师为了给自己的简历增加亮点而引入不必要的流行新技术。Resume易被误译为'恢复'。",
+      "priority": "high"
+    },
+    {
+      "term": "Vendor King",
+      "suggested_translation": "供应商为王",
+      "negative_constraint": "NOT 供应商国王",
+      "reason": "本书指出的反模式，指企业架构过度依赖单一商业现成软件（COTS）供应商，导致架构丧失演进能力的困境。",
+      "priority": "high"
+    },
+    {
+      "term": "Leaky Abstractions",
+      "suggested_translation": "泄漏的抽象",
+      "negative_constraint": "NOT 漏水的抽象 / 漏洞抽象",
+      "reason": "Joel Spolsky提出的著名软件开发法则，指所有的非平凡抽象到某种程度都会发生内部细节“泄漏”。",
+      "priority": "high"
+    },
+    {
+      "term": "Last 10% Trap",
+      "suggested_translation": "最后的10%陷阱",
+      "negative_constraint": "NOT 最后10%圈套",
+      "reason": "本书指出的反模式，特别指代使用低代码/无代码工具时，前90%进度极快，但最后10%的定制需求因工具限制成为无法逾越的陷阱。",
+      "priority": "high"
+    },
+    {
+      "term": "Reporting Atop the System of Record",
+      "suggested_translation": "基于记录系统之上的报告",
+      "negative_constraint": "NOT 系统记录上的报告",
+      "reason": "反模式。System of Record指核心业务数据记录系统，直接在其上做复杂报表会导致数据库性能问题和紧耦合。",
+      "priority": "medium"
+    },
+    {
+      "term": "Hypothesis- and Data-Driven Development",
+      "suggested_translation": "假设与数据驱动开发",
+      "negative_constraint": "",
+      "reason": "结合科学方法论的软件工程实践，通过设定假设、获取数据验证来推动产品和架构演进。",
+      "priority": "high"
+    },
+    {
+      "term": "Expand/contract pattern",
+      "suggested_translation": "扩展/收缩模式",
+      "negative_constraint": "NOT 扩大/缩小模式",
+      "reason": "数据库重构和平滑过渡的经典模式（Parallel Change）。",
+      "priority": "high"
+    },
+    {
+      "term": "Cross-functional teams",
+      "suggested_translation": "跨职能团队",
+      "negative_constraint": "NOT 交叉功能团队",
+      "reason": "敏捷开发和康威定律语境下的标准团队组织形式。",
+      "priority": "medium"
+    },
+    {
+      "term": "Shared Database Integration",
+      "suggested_translation": "共享数据库集成",
+      "negative_constraint": "",
+      "reason": "微服务拆分和遗留系统改造中常见的数据耦合模式，需要通过演进式数据设计逐步解耦。",
+      "priority": "high"
+    },
+    {
+      "term": "Two-Phase Commit Transactions",
+      "suggested_translation": "两阶段提交事务",
+      "negative_constraint": "NOT 两次提交",
+      "reason": "分布式数据库一致性协议（2PC），常导致系统耦合加深，影响架构演进性。",
+      "priority": "medium"
+    },
+    {
+      "term": "Referential Integrity",
+      "suggested_translation": "引用完整性",
+      "negative_constraint": "NOT 参考完整性",
+      "reason": "数据库术语，在分布式系统和演进式数据架构中，由外键维护的引用完整性往往需要转换为业务逻辑层的软关联。",
+      "priority": "medium"
+    },
+    {
+      "term": "Sidecars and Service Mesh",
+      "suggested_translation": "边车与服务网格",
+      "negative_constraint": "NOT 侧车 / 服务网",
+      "reason": "云原生架构中的核心组件模式，用于实现正交的运维治理能力。词汇需保持业界统一规范翻译。",
+      "priority": "high"
+    }
+  ]
+}

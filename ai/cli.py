@@ -954,28 +954,35 @@ def run(
                 temp_dir = _resolve_extraction_temp_dir(input_path)
                 temp_dir.mkdir(parents=True, exist_ok=True)
                 extracted_glossary = temp_dir / "extracted_glossary.json"
-                _log_progress(
-                    "glossary",
-                    action="extract",
-                    mode=glossary_request.mode,
-                    output=extracted_glossary,
-                )
-                extract_model, extract_is_pro = resolve_model("pro", runtime_config)
-                extract_provider_adapter = create_provider(
-                    provider,
-                    extract_model,
-                    is_pro=extract_is_pro,
-                    use_segment_tags=False,
-                    config=runtime_config,
-                    cli_api_fallback=cli_api_fallback,
-                )
-                report = _extract_glossary_to_path(
-                    epub_path=input_file,
-                    output_path=extracted_glossary,
-                    provider_adapter=extract_provider_adapter,
-                    max_terms=glossary_max_terms or 20,
-                    mode=glossary_request.mode,
-                )
+                if extracted_glossary.exists():
+                    print(
+                        f"[glossary] Reusing cached glossary: {extracted_glossary}",
+                        flush=True,
+                    )
+                    report = {"tier": "cached", "docs": 0, "chars": 0, "candidate_count": 0, "term_count": 0}  # noqa: E501
+                else:
+                    _log_progress(
+                        "glossary",
+                        action="extract",
+                        mode=glossary_request.mode,
+                        output=extracted_glossary,
+                    )
+                    extract_model, extract_is_pro = resolve_model("pro", runtime_config)
+                    extract_provider_adapter = create_provider(
+                        provider,
+                        extract_model,
+                        is_pro=extract_is_pro,
+                        use_segment_tags=False,
+                        config=runtime_config,
+                        cli_api_fallback=cli_api_fallback,
+                    )
+                    report = _extract_glossary_to_path(
+                        epub_path=input_file,
+                        output_path=extracted_glossary,
+                        provider_adapter=extract_provider_adapter,
+                        max_terms=glossary_max_terms or 20,
+                        mode=glossary_request.mode,
+                    )
                 _log_progress(
                     "glossary",
                     action="resolved",

@@ -1,0 +1,326 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Nucleoside",
+      "suggested_translation": "核苷",
+      "negative_constraint": "NOT 核苷酸 (Nucleotide)",
+      "reason": "生物学极易混淆词汇。核苷（Nucleoside）不含磷酸基团，而核苷酸（Nucleotide）含有。本书核心发现“核苷修饰”若误翻为“核苷酸”会导致科学性错误。",
+      "priority": "critical"
+    },
+    {
+      "term": "Nucleotide",
+      "suggested_translation": "核苷酸",
+      "negative_constraint": "NOT 核苷 (Nucleoside)",
+      "reason": "与核苷（Nucleoside）结构不同，两者在基因工程和RNA研究中含义有着严格界限，极易在翻译中被混用。",
+      "priority": "critical"
+    },
+    {
+      "term": "Uridine",
+      "suggested_translation": "尿苷",
+      "negative_constraint": "NOT 尿嘧啶 (Uracil)",
+      "reason": "尿苷是核苷（包含糖基），而尿嘧啶只是碱基。作者突破性发现是替换了“尿苷”，翻译若混淆两者会破坏科学原理。",
+      "priority": "critical"
+    },
+    {
+      "term": "Uracil",
+      "suggested_translation": "尿嘧啶",
+      "negative_constraint": "NOT 尿苷 (Uridine)",
+      "reason": "构成RNA的四种基本碱基之一，翻译中常与它和核糖结合形成的尿苷（Uridine）混为一谈。",
+      "priority": "high"
+    },
+    {
+      "term": "Pseudouridine",
+      "suggested_translation": "假尿苷",
+      "negative_constraint": "NOT 伪尿嘧啶",
+      "reason": "作者获得诺贝尔奖的核心发现（用假尿苷替换尿苷以逃避免疫反应），是全书最重要的科学名词。",
+      "priority": "critical"
+    },
+    {
+      "term": "N1-methylpseudouridine",
+      "suggested_translation": "N1-甲基假尿苷",
+      "negative_constraint": "",
+      "reason": "新冠mRNA疫苗中实际使用的修饰核苷，是假尿苷技术的最终应用形式，专业名词需准确。",
+      "priority": "critical"
+    },
+    {
+      "term": "Dendritic cells",
+      "suggested_translation": "树突状细胞",
+      "negative_constraint": "NOT 神经树突细胞",
+      "reason": "作者在书中明确提到，她最初误以为这是一种神经细胞（因为带有dendrite字根），实际上它是先天免疫系统中的关键抗原呈递细胞。极易被外行译者误翻。",
+      "priority": "critical"
+    },
+    {
+      "term": "Immunogenic",
+      "suggested_translation": "免疫原性的（或：引起免疫反应的）",
+      "negative_constraint": "NOT 免疫的",
+      "reason": "描述外源物质进入人体后引发免疫反应的能力。书中用于描述未修饰的mRNA会引发强烈炎症反应，是核心问题所在。",
+      "priority": "critical"
+    },
+    {
+      "term": "Transcription",
+      "suggested_translation": "转录",
+      "negative_constraint": "NOT 抄写/翻译",
+      "reason": "中心法则核心概念，指DNA生成RNA的过程。日常用语中有“抄写”之意，在此必须使用严谨生物学译名。",
+      "priority": "high"
+    },
+    {
+      "term": "Translation",
+      "suggested_translation": "翻译",
+      "negative_constraint": "NOT 转化/释义",
+      "reason": "中心法则核心概念，指核糖体根据mRNA合成蛋白质的过程。虽然词汇同日常的“语言翻译”一样，但在文中是专业生物学动作。",
+      "priority": "high"
+    },
+    {
+      "term": "Antigen",
+      "suggested_translation": "抗原",
+      "negative_constraint": "NOT 抗体 (Antibody)",
+      "reason": "引发免疫反应的物质。翻译中常与抗体（Antibody，人体产生的防御物质）搞混。书中提到mRNA疫苗是让人体自己生成抗原。",
+      "priority": "critical"
+    },
+    {
+      "term": "Antibody",
+      "suggested_translation": "抗体",
+      "negative_constraint": "NOT 抗原 (Antigen)",
+      "reason": "免疫系统产生的用来对抗抗原的蛋白质。必须与抗原严格区分。",
+      "priority": "critical"
+    },
+    {
+      "term": "Innate immune response",
+      "suggested_translation": "先天免疫反应",
+      "negative_constraint": "NOT 内部免疫/天生免疫",
+      "reason": "免疫学基础概念，指非特异性的快速免疫防御。常与“适应性免疫”成对出现，译法固定。",
+      "priority": "high"
+    },
+    {
+      "term": "Adaptive immune response",
+      "suggested_translation": "适应性免疫反应",
+      "negative_constraint": "NOT 后天免疫/适应免疫",
+      "reason": "指针对特定病原体产生的高特异性、有记忆的免疫防御。需采用规范医学术语。",
+      "priority": "high"
+    },
+    {
+      "term": "Toll-like receptors (TLRs)",
+      "suggested_translation": "Toll样受体",
+      "negative_constraint": "NOT 收费样受体",
+      "reason": "先天免疫系统的重要模式识别受体。Toll源于德语，不应意译为“通行费/收费”。",
+      "priority": "high"
+    },
+    {
+      "term": "Cytokine storm",
+      "suggested_translation": "细胞因子风暴",
+      "negative_constraint": "NOT 细胞激素风暴",
+      "reason": "指免疫系统过度激活导致的致命炎症反应，在书中基因治疗致死案例及新冠重症机理中至关重要。",
+      "priority": "high"
+    },
+    {
+      "term": "Adjuvant",
+      "suggested_translation": "佐剂",
+      "negative_constraint": "NOT 辅助剂/添加剂",
+      "reason": "疫苗中用来增强机体对抗原免疫应答的物质，有特定的药学译名，不能用普通词汇代替。",
+      "priority": "high"
+    },
+    {
+      "term": "Liposomes",
+      "suggested_translation": "脂质体",
+      "negative_constraint": "NOT 脂肪体/脂蛋白",
+      "reason": "作者早期用于包裹并向细胞内递送DNA或mRNA的人工膜泡，是脂质纳米颗粒（LNP）的前身。",
+      "priority": "high"
+    },
+    {
+      "term": "RNase (Ribonuclease)",
+      "suggested_translation": "核糖核酸酶",
+      "negative_constraint": "NOT RNA酶",
+      "reason": "降解RNA的酶。作者提到实验室极易被该酶污染导致mRNA降解，是mRNA研究的最大障碍之一。",
+      "priority": "high"
+    },
+    {
+      "term": "In vitro",
+      "suggested_translation": "体外（实验）",
+      "negative_constraint": "NOT 试管内",
+      "reason": "生物学拉丁语专业术语，指在活体生物外部（如培养皿中）进行的实验。",
+      "priority": "high"
+    },
+    {
+      "term": "In vivo",
+      "suggested_translation": "体内（实验）",
+      "negative_constraint": "NOT 活体内",
+      "reason": "生物学拉丁语专业术语，指在活体生物内部进行的实验，与 In vitro 相对。",
+      "priority": "high"
+    },
+    {
+      "term": "Gene expression",
+      "suggested_translation": "基因表达",
+      "negative_constraint": "NOT 基因表现",
+      "reason": "指细胞根据基因指令合成相应蛋白质的过程，日常语境下的 expression（表情/表达）在此需严谨翻译。",
+      "priority": "high"
+    },
+    {
+      "term": "Plasmid",
+      "suggested_translation": "质粒",
+      "negative_constraint": "NOT 原生质体/质体",
+      "reason": "细菌细胞质中独立于染色体外的环状DNA分子。在基因克隆和体外转录mRNA中是基本工具。",
+      "priority": "medium"
+    },
+    {
+      "term": "Nucleoside analogues",
+      "suggested_translation": "核苷类似物",
+      "negative_constraint": "NOT 核苷相似体",
+      "reason": "一类通过模拟天然核苷来抑制病毒复制或癌细胞分裂的药物（如书中提到的AZT）。",
+      "priority": "high"
+    },
+    {
+      "term": "Northern blot",
+      "suggested_translation": "RNA印迹法（或：北印迹法）",
+      "negative_constraint": "NOT 北方印迹",
+      "reason": "用于检测特定RNA的实验室方法。虽然源自对Southern blot（发明者姓氏）的戏仿，但中文学术界通常译为RNA印迹法或北印迹法。",
+      "priority": "medium"
+    },
+    {
+      "term": "Plasminogen activators",
+      "suggested_translation": "纤溶酶原激活剂",
+      "negative_constraint": "NOT 质粒原激活剂",
+      "reason": "一种溶解血栓的分子。在作者与心脏病学家合作的章节中频繁出现。",
+      "priority": "medium"
+    },
+    {
+      "term": "Urokinase receptor",
+      "suggested_translation": "尿激酶受体",
+      "negative_constraint": "NOT 尿液激酶受体",
+      "reason": "作者首次成功使用合成mRNA在细胞表面表达的靶标蛋白，具有重要的里程碑意义。",
+      "priority": "medium"
+    },
+    {
+      "term": "Endothelial cells",
+      "suggested_translation": "内皮细胞",
+      "negative_constraint": "NOT 上皮细胞 (Epithelial cells)",
+      "reason": "血管内壁的细胞，极易与上皮细胞混淆。作者研究它们表达尿激酶受体的情况。",
+      "priority": "high"
+    },
+    {
+      "term": "Cerebral vasospasm",
+      "suggested_translation": "脑血管痉挛",
+      "negative_constraint": "NOT 大脑血管收缩",
+      "reason": "神经外科的一个致命并发症，大卫·兰格博士希望用mRNA编码一氧化氮合酶来治疗该病。",
+      "priority": "medium"
+    },
+    {
+      "term": "Nitric oxide synthase (iNOS)",
+      "suggested_translation": "诱导型一氧化氮合酶",
+      "negative_constraint": "NOT 氧化氮合成酶",
+      "reason": "合成一氧化氮的酶。医学术语，需准确对应其标准的中文学术译名。",
+      "priority": "medium"
+    },
+    {
+      "term": "Ornithine transcarbamylase (OTC) deficiency",
+      "suggested_translation": "鸟氨酸氨甲酰基转移酶缺乏症",
+      "negative_constraint": "NOT OTC缺陷症 (除非加注)",
+      "reason": "一种罕见的遗传代谢病。书中提到的基因治疗致死事件主角Jesse Gelsinger所患疾病。",
+      "priority": "medium"
+    },
+    {
+      "term": "Cordycepin",
+      "suggested_translation": "虫草素",
+      "negative_constraint": "NOT 虫草酸",
+      "reason": "一种从真菌中提取的天然核苷类似物，缺少特定羟基，作者曾通过研究它切入mRNA研究领域。",
+      "priority": "medium"
+    },
+    {
+      "term": "Recombinant protein",
+      "suggested_translation": "重组蛋白",
+      "negative_constraint": "NOT 复合蛋白",
+      "reason": "通过基因重组技术在实验室中制造的蛋白质，常用于传统疫苗或药物的生产。",
+      "priority": "medium"
+    },
+    {
+      "term": "Double-stranded RNA (dsRNA)",
+      "suggested_translation": "双链RNA",
+      "negative_constraint": "NOT 双链脱氧核糖核酸",
+      "reason": "病毒感染时常出现的分子，能引起细胞强烈的免疫反应（分泌干扰素）。",
+      "priority": "high"
+    },
+    {
+      "term": "Interferon",
+      "suggested_translation": "干扰素",
+      "negative_constraint": "NOT 阻断素",
+      "reason": "细胞在受病毒感染等刺激后分泌的一种具有抗病毒作用的细胞因子。作者在匈牙利时期研究的重点。",
+      "priority": "high"
+    },
+    {
+      "term": "Macrophage / Scavenger cells",
+      "suggested_translation": "巨噬细胞 / 清道夫细胞",
+      "negative_constraint": "NOT 拾荒细胞",
+      "reason": "先天免疫系统的重要吞噬细胞。Scavenger在医学上有固定译名“清道夫”，不应直译。",
+      "priority": "medium"
+    },
+    {
+      "term": "Polymerase chain reaction (PCR)",
+      "suggested_translation": "聚合酶链反应",
+      "negative_constraint": "NOT PCR检测",
+      "reason": "用于在体外扩增特定DNA片段的分子生物学技术，常被简称为PCR，需了解其全称的严谨译法。",
+      "priority": "high"
+    },
+    {
+      "term": "Subclone",
+      "suggested_translation": "亚克隆",
+      "negative_constraint": "NOT 次级克隆",
+      "reason": "分子生物学常用动词/名词，指将目标DNA片段从一个载体转移到另一个载体的过程。",
+      "priority": "medium"
+    },
+    {
+      "term": "Assay",
+      "suggested_translation": "测定（或：分析/生化鉴定）",
+      "negative_constraint": "NOT 实验 (Experiment)",
+      "reason": "在生化实验室中，指为了定性或定量分析某物质而设计的具体化验程序，区别于宏观的experiment。",
+      "priority": "high"
+    },
+    {
+      "term": "Basic research",
+      "suggested_translation": "基础研究",
+      "negative_constraint": "NOT 基本研究",
+      "reason": "以扩展人类知识为目的的科学研究，与旨在解决具体应用问题的应用研究（Applied research）相对。作者极度认同自己的基础研究者身份。",
+      "priority": "high"
+    },
+    {
+      "term": "Applied research",
+      "suggested_translation": "应用研究",
+      "negative_constraint": "NOT 实用研究",
+      "reason": "解决特定实际问题的研究，常与基础研究成对出现。",
+      "priority": "high"
+    },
+    {
+      "term": "Principal investigator (PI)",
+      "suggested_translation": "首席研究员（或：主要研究者/课题负责人）",
+      "negative_constraint": "NOT 主要调查员",
+      "reason": "学术界实验室或科研项目的直接领导者（相当于实验室的CEO）。Investigator在学术语境中不是调查员。",
+      "priority": "high"
+    },
+    {
+      "term": "Postdoc (Postdoctoral researcher)",
+      "suggested_translation": "博士后研究员",
+      "negative_constraint": "NOT 博士后学生",
+      "reason": "取得博士学位后进行的一段科研工作经历，它是一份工作而非学位。",
+      "priority": "medium"
+    },
+    {
+      "term": "Clinical trials",
+      "suggested_translation": "临床试验",
+      "negative_constraint": "NOT 临床测试",
+      "reason": "新药或疫苗在人体上进行的有效性和安全性评估，分为一期、二期、三期，是极其严谨的医药规范用语。",
+      "priority": "high"
+    },
+    {
+      "term": "Monoclonal antibodies",
+      "suggested_translation": "单克隆抗体",
+      "negative_constraint": "NOT 单一抗体",
+      "reason": "由单一B细胞克隆产生的、高度均一且针对特定抗原表位的抗体。现代生物制药的核心产品之一。",
+      "priority": "high"
+    },
+    {
+      "term": "Lesch-Nyhan syndrome",
+      "suggested_translation": "莱施-尼汉综合征（或：自毁容貌症）",
+      "negative_constraint": "",
+      "reason": "一种由于HPRT酶缺乏引起的罕见遗传病，伴有自残行为。专业罕见病需用标准医学译名。",
+      "priority": "medium"
+    }
+  ]
+}
