@@ -17,11 +17,64 @@ from ai.glossary_extractor import (
 )
 
 
+_VALID_GLOSSARY_JSON = json.dumps(
+    {
+        "critical_terminology": [
+            {
+                "term": "TestTerm",
+                "suggested_translation": "测试术语",
+                "reason": "test term",
+                "priority": "high",
+            }
+        ]
+    }
+)
+
+
 def _wrap_xhtml(body: str) -> str:
     return (
         '<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
         f"<body>{body}</body></html>"
     )
+
+
+def _make_xhtml(body: str) -> str:
+    return _wrap_xhtml(body)
+
+
+def _make_opf(spine_items: list[str]) -> str:
+    manifest_entries = "".join(
+        f'<item id="item{i}" href="{item}" media-type="application/xhtml+xml"/>'
+        for i, item in enumerate(spine_items)
+    )
+    spine_entries = "".join(
+        f'<itemref idref="item{i}"/>' for i, _ in enumerate(spine_items)
+    )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Test Book</dc:title></metadata>"
+        "<manifest>" + manifest_entries + "</manifest>"
+        "<spine>" + spine_entries + "</spine>"
+        "</package>"
+    )
+
+
+def _make_test_epub(tmp_path: Path, files: dict[str, str]) -> Path:
+    """Create an EPUB zip with specific file contents."""
+    epub = tmp_path / "test.epub"
+    container_xml = (
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+        'media-type="application/oebps-package+xml"/></rootfiles></container>'
+    )
+    with zipfile.ZipFile(epub, "w") as z:
+        z.writestr("META-INF/container.xml", container_xml)
+        for path, content in files.items():
+            z.writestr(path, content)
+    return epub
 
 
 def _make_minimal_epub(tmp_path: Path, index_content: str = "", toc_content: str = "") -> Path:
@@ -534,87 +587,58 @@ def test_collect_spine_blocks_keeps_content_files_with_toc_substring(tmp_path: P
     assert any("Chapter 2 content." in text for text in texts)
 
 
-def test_extract_glossary_auto_falls_back_to_local_refinement_when_no_index_signals(
+def test_extract_glossary_auto_falls_back_to_deep_scan_when_no_index_signals(
     tmp_path: Path,
 ) -> None:
-    """Tier 1 auto mode should fall back to Tier 2 local refinement when no index signals exist."""
-    # Create EPUB with no index/glossary signals, only body chapters
-    docs = [
-        ("ch1", "chapter1.xhtml", "<p>Chapter 1: Frodo and Gandalf discuss the Ring.</p>"),
-        ("ch2", "chapter2.xhtml", "<p>Chapter 2: Gandalf talks about the Shire.</p>"),
-    ]
-    epub = _make_spine_epub(tmp_path, docs, include_named_index=False)
-    output_path = tmp_path / "glossary.json"
-
-    mock_translate = MagicMock(
-        return_value=json.dumps(
-            {
-                "critical_terminology": [
-                    {
-                        "term": "Ring",
-                        "suggested_translation": "魔戒",
-                        "reason": "Core artifact",
-                        "priority": "critical",
-                    }
-                ]
-            }
-        )
+    """Auto mode must fall back to Tier 3 deep-scan when no index signals exist."""
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml(
+                "<p>Some body content without any index structure.</p>"
+            ),
+        },
     )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
 
     report = extract_glossary_from_epub(
-        epub_path=epub,
-        output_path=output_path,
-        translate_fn=mock_translate,
-        max_terms=20,
-        mode="auto",
+        epub_path=epub_path,
+        output_path=tmp_path / "out.json",
+        translate_fn=capture_fn,
     )
-
-    # Assert that Tier 2 local refinement was used
-    assert report["tier"] == "local-refinement"
-    assert report["candidate_count"] > 0, "Should have built local candidates"
-    assert report["term_count"] == 1
-    assert "docs=" in str(report) or report.get("docs", 0) > 0
+    assert report["tier"] == "deep-scan", "No-index auto mode must fall back to Tier 3 deep-scan"
+    assert len(calls) == 1
+    # Tier 3 prompt should contain the chapter body text (full book scan)
+    assert "body content" in calls[0]
 
 
-def test_extract_glossary_auto_ignores_toc_only_books_and_uses_local_refinement(
+def test_extract_glossary_auto_toc_only_falls_back_to_deep_scan(
     tmp_path: Path,
 ) -> None:
-    """Auto mode should NOT treat TOC-only books as Tier 1 success; should fall back to Tier 2."""
-    # Create EPUB with TOC but no index, and some body content for Tier 2
-    docs = [
-        ("ch1", "chapter1.xhtml", "<p>Chapter 1: Introduction to the Ring.</p>"),
-        ("ch2", "chapter2.xhtml", "<p>Chapter 2: The Shire and Gandalf.</p>"),
-    ]
-    epub = _make_spine_epub(
-        tmp_path, docs, toc_content="Chapter 1\nChapter 2", include_named_index=False
+    """Auto mode TOC-only books must fall back to Tier 3 deep-scan."""
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["toc.xhtml", "chapter.xhtml"]),
+            "OEBPS/toc.xhtml": _make_xhtml("<nav><ol><li>Chapter 1</li></ol></nav>"),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+        },
     )
-    output_path = tmp_path / "glossary.json"
 
-    mock_translate = MagicMock(
-        return_value=json.dumps(
-            {
-                "critical_terminology": [
-                    {
-                        "term": "Ring",
-                        "suggested_translation": "魔戒",
-                        "reason": "Core artifact",
-                        "priority": "critical",
-                    }
-                ]
-            }
-        )
-    )
+    def simple_fn(prompt: str) -> str:
+        return _VALID_GLOSSARY_JSON
 
     report = extract_glossary_from_epub(
-        epub_path=epub,
-        output_path=output_path,
-        translate_fn=mock_translate,
-        max_terms=20,
-        mode="auto",
+        epub_path=epub_path,
+        output_path=tmp_path / "out.json",
+        translate_fn=simple_fn,
     )
-
-    # TOC-only should NOT be treated as Tier 1 success
-    assert report["tier"] == "local-refinement", "TOC-only should fall back to Tier 2"
+    assert report["tier"] == "deep-scan", "TOC-only must fall back to Tier 3 deep-scan"
 
 
 def test_extract_glossary_deep_scan_uses_dedicated_prompt(tmp_path: Path) -> None:
@@ -820,7 +844,7 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
         mode="auto",
     )
     # Tier depends on index signal strength
-    assert report2["tier"] in ("index", "local-refinement")
+    assert report2["tier"] in ("index", "deep-scan")
     assert output2.exists()
 
     # Test fiction-no-index (should hit tier-2 local shortlist)
@@ -832,7 +856,7 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
         max_terms=20,
         mode="auto",
     )
-    assert report3["tier"] == "local-refinement"
+    assert report3["tier"] == "deep-scan"
     assert output3.exists()
 
     # Test low-density-narrative (should hit tier-2 with low candidate count)
@@ -844,12 +868,11 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
         max_terms=20,
         mode="auto",
     )
-    assert report4["tier"] == "local-refinement"
-    assert "candidate_count" in report4
+    assert report4["tier"] == "deep-scan"
     assert output4.exists()
 
 
-def test_deep_scan_prompt_allows_names_and_places():
+def test_deep_scan_prompt_allows_names_and_places() -> None:
     """Tier 3 prompt must NOT exclude names/places — biographies need them."""
     from ai.glossary_extractor import _DEEP_SCAN_PROMPT_TEMPLATE
     assert "不要人名" not in _DEEP_SCAN_PROMPT_TEMPLATE

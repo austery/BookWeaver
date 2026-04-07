@@ -16,10 +16,7 @@ from typing import Callable
 
 from ai.core.glossary import validate_model_output
 from ai.core.index_signal_scorer import IndexSignalScore, IndexSignalScorer
-from ai.core.local_glossary_candidates import (
-    TextBlock,
-    build_local_glossary_candidates,
-)
+from ai.core.local_glossary_candidates import TextBlock
 from ai.epub_package import load_epub_package, resolve_opf_href
 
 
@@ -148,43 +145,6 @@ _EXTRACTION_PROMPT_TEMPLATE = """\
 }}
 
 priority分级：critical（作者原创/核心概念）, high（高频技术术语）, medium（重要但非核心）
-"""
-
-_LOCAL_REFINEMENT_PROMPT_TEMPLATE = """\
-你是技术书籍翻译专家。以下是一本书的元数据和高频术语候选列表。
-
-<BOOK_CONTEXT>
-标题: {book_title}
-总文档数: {doc_count}
-总字符数: {char_count}
-</BOOK_CONTEXT>
-
-<SHORTLIST>
-以下是从全书正文中自动识别的高频术语候选（已按重要性排序）：
-
-{candidate_list}
-</SHORTLIST>
-
-任务：从上述候选中精炼出最容易翻译错误或需要统一翻译的**关键词汇**（最多{max_terms}条）。
-
-提取要求：
-1. 优先选择技术概念、专有名词、作者原创术语
-2. 包含重要人名、机构名、地名（如对翻译一致性有影响）
-3. 标注易混淆的术语对
-4. 按重要性分级：critical（核心概念）, high（高频术语）, medium（次要）
-
-严格输出以下JSON格式，不要包含任何其他文字：
-{{
-  "critical_terminology": [
-    {{
-      "term": "原文术语",
-      "suggested_translation": "建议的中文翻译",
-      "negative_constraint": "NOT 容易混淆的错误翻译（可选）",
-      "reason": "为什么这个术语容易翻译错误或需要统一翻译",
-      "priority": "critical|high|medium"
-    }}
-  ]
-}}
 """
 
 _DEEP_SCAN_PROMPT_TEMPLATE = """\
@@ -516,7 +476,7 @@ def extract_glossary_from_epub(
         full_index: When True, translate ALL top-level index entries instead of
                     selecting the most critical ones. More comprehensive but produces
                     a larger glossary.
-        mode: Extraction mode - "auto" (Tier 1 with Tier 2 fallback), "deep-scan" (Tier 3), or legacy.
+        mode: Extraction mode - "auto" (Tier 1 with Tier 3 fallback), "deep-scan" (Tier 3), or legacy.
 
     Returns:
         A report dict with keys: tier, docs, chars, candidate_count, term_count, skip_reason (optional).
@@ -567,70 +527,9 @@ def extract_glossary_from_epub(
                 "term_count": terms_count,
             }
 
-        # Tier 2 fallback: Local refinement when no strong index signals
-        print(
-            "[glossary] No strong index signals, falling back to Tier 2 (local refinement)",
-            flush=True,
-        )
-
-    # Tier 2: Local refinement (auto fallback or explicit)
-    if mode == "auto":
-        blocks = _collect_spine_blocks(epub_path)
-        if not blocks:
-            raise ValueError("Cannot extract glossary: EPUB has no readable content blocks.")
-
-        # Build local glossary candidates
-        candidates = build_local_glossary_candidates(blocks, max_candidates=300)
-        print(f"[glossary] Built {len(candidates)} local candidates", flush=True)
-
-        # Format candidate list for prompt — send at least 3× max_terms so the model has
-        # enough material to fill the requested quota, capped at 300 (the full build budget).
-        prompt_candidate_limit = min(max(max_terms * 3, 50), len(candidates))
-        candidate_lines = []
-        for i, cand in enumerate(candidates[:prompt_candidate_limit], 1):
-            sources_str = ", ".join(sorted(set(cand.sources)))
-            candidate_lines.append(
-                f"{i}. {cand.term} — {cand.kind} | score: {cand.weighted_score:.1f} | sources: {sources_str}"
-            )
-        candidate_list_text = "\n".join(candidate_lines)
-
-        # Calculate book context stats
-        total_chars = sum(len(block.text) for block in blocks)
-        doc_count = len(blocks)
-
-        # Build local refinement prompt
-        book_title = "Unknown"  # We can extract from OPF metadata if needed
-
-        prompt = _LOCAL_REFINEMENT_PROMPT_TEMPLATE.format(
-            book_title=book_title,
-            doc_count=doc_count,
-            char_count=total_chars,
-            candidate_list=candidate_list_text,
-            max_terms=max_terms,
-        )
-
-        raw_output = translate_fn(prompt)
-        glossary = _validate_and_parse_glossary(raw_output)
-
-        # Trim to max_terms if needed
-        terms = glossary.get("critical_terminology", [])
-        if len(terms) > max_terms:
-            glossary["critical_terminology"] = terms[:max_terms]
-
-        terms_count = len(glossary.get("critical_terminology", []))
-        print(f"[glossary] Extracted {terms_count} terms (Tier 2)", flush=True)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(glossary, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[glossary] Written to: {output_path}", flush=True)
-
-        return {
-            "tier": "local-refinement",
-            "docs": doc_count,
-            "chars": total_chars,
-            "candidate_count": len(candidates),
-            "term_count": terms_count,
-        }
+        # No strong index signals — fall through to Tier 3 deep-scan
+        print("[glossary] No strong index signals, falling back to Tier 3 (deep-scan)", flush=True)
+        mode = "deep-scan"
 
     # Tier 3: Deep-scan (whole-book extraction)
     if mode == "deep-scan":
