@@ -1,11 +1,19 @@
-"""Local glossary candidate extraction and ranking (Tier 2 building blocks).
+"""Local glossary candidate extraction (FUTURE ARCHITECTURE — not used in current pipeline).
 
-Zero-dependency heuristics for extracting high-value terminology from EPUB spine blocks.
-Surfaces repeated title-case entities (fiction) and multiword technical terms (non-fiction)
-while filtering stopwords and noise.
+This module provides zero-dependency heuristics for extracting high-value terminology
+from EPUB spine text using title-case entity detection and multiword phrase matching.
 
-This module provides the local ranking primitives for future Tier 2 integration.
-It does NOT implement Tier 2 orchestration/prompting/deep-scan.
+Status: Retained for future integration with NLP-based Tier 2 (e.g., spaCy NER,
+TF-IDF). The current pipeline uses Tier 1 (index detection) → Tier 3 (whole-book
+AI scan) without this module.
+
+Limitation of current approach: ~90% of "entity" candidates are sentence-initial
+capitalized words (false positives). Completely misses lowercase scientific terms
+(mRNA, pseudouridine, in vitro). Suitable for future upgrade with proper NLP libs.
+
+If you want to re-introduce a lightweight local pre-filter layer between Tier 1 and
+Tier 3, this is the starting point. Pair with scikit-learn TfidfVectorizer or spaCy
+en_core_web_sm for improved recall on scientific/fiction terminology.
 """
 
 from __future__ import annotations
