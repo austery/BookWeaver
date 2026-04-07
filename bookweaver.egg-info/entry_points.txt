@@ -1,0 +1,2 @@
+[console_scripts]
+bookweaver = ai.cli:main
