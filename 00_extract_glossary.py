@@ -36,13 +36,19 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--max-terms",
         type=int,
-        default=20,
-        help="Maximum number of terms to extract (default: 20)",
+        default=50,
+        help="Maximum number of terms to extract (default: 50)",
     )
     parser.add_argument(
         "--full-index",
         action="store_true",
         help="Translate ALL top-level index entries (no filtering). Overrides --max-terms.",
+    )
+    parser.add_argument(
+        "--glossary-mode",
+        default="auto",
+        choices=["auto", "deep-scan"],
+        help="Extraction mode: auto (Tier 1 index, fallback Tier 2) or deep-scan (Tier 3 whole-book). Default: auto.",
     )
     parser.add_argument(
         "--provider",
@@ -170,6 +176,7 @@ def main() -> None:
         translate_fn=translate_fn,
         max_terms=args.max_terms,
         full_index=args.full_index,
+        mode=args.glossary_mode,
     )
 
 
