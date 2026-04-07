@@ -128,10 +128,11 @@ _EXTRACTION_PROMPT_TEMPLATE = """\
 </TOC>
 
 提取要求：
-1. 只提取专业术语和概念（不要人名、地名、机构名）
-2. 优先识别"易混淆"的术语对（拼写相似但含义不同）
-3. 标注作者原创的新概念（本书首次提出的术语）
-4. 最多{max_terms}条术语（聚焦最关键的术语）
+1. 优先选择专业术语、科学概念、作者原创新词
+2. 包含重要人名、机构名、地名（如对翻译一致性有影响）
+3. 优先识别"易混淆"的术语对（拼写相似但含义不同）
+4. 标注作者原创的新概念（本书首次提出的术语）
+5. 最多{max_terms}条术语（聚焦最关键的术语）
 
 严格输出以下JSON格式，不要包含任何其他文字：
 {{
@@ -140,7 +141,7 @@ _EXTRACTION_PROMPT_TEMPLATE = """\
       "term": "原文术语",
       "suggested_translation": "建议的中文翻译",
       "negative_constraint": "NOT 容易混淆的错误翻译（可选，仅在有易混淆对时填写）",
-      "reason": "为什么这个术语容易翻译错误",
+      "reason": "为什么这个术语容易翻译错误或需要统一翻译",
       "priority": "critical"
     }}
   ]
@@ -164,11 +165,11 @@ _LOCAL_REFINEMENT_PROMPT_TEMPLATE = """\
 {candidate_list}
 </SHORTLIST>
 
-任务：从上述候选中精炼出最容易翻译错误的**关键术语**（最多{max_terms}条）。
+任务：从上述候选中精炼出最容易翻译错误或需要统一翻译的**关键词汇**（最多{max_terms}条）。
 
 提取要求：
 1. 优先选择技术概念、专有名词、作者原创术语
-2. 剔除常见单词、人名、地名
+2. 包含重要人名、机构名、地名（如对翻译一致性有影响）
 3. 标注易混淆的术语对
 4. 按重要性分级：critical（核心概念）, high（高频术语）, medium（次要）
 
@@ -179,7 +180,7 @@ _LOCAL_REFINEMENT_PROMPT_TEMPLATE = """\
       "term": "原文术语",
       "suggested_translation": "建议的中文翻译",
       "negative_constraint": "NOT 容易混淆的错误翻译（可选）",
-      "reason": "为什么这个术语容易翻译错误",
+      "reason": "为什么这个术语容易翻译错误或需要统一翻译",
       "priority": "critical|high|medium"
     }}
   ]
@@ -202,10 +203,11 @@ _DEEP_SCAN_PROMPT_TEMPLATE = """\
 任务：通读整本书，提取**所有容易翻译错误**的关键术语（最多{max_terms}条）。
 
 提取要求：
-1. 只提取专业术语和概念（不要人名、地名、机构名）
-2. 优先识别"易混淆"的术语对（拼写相似但含义不同）
-3. 标注作者原创的新概念（本书首次提出的术语）
-4. 按重要性分级：critical（核心概念）, high（高频术语）, medium（次要）
+1. 优先选择专业术语、科学概念、作者原创新词
+2. 包含重要人名、机构名、地名（如对翻译一致性有影响）
+3. 优先识别"易混淆"的术语对（拼写相似但含义不同）
+4. 标注作者原创的新概念（本书首次提出的术语）
+5. 按重要性分级：critical（核心概念）, high（高频术语）, medium（次要）
 
 严格输出以下JSON格式，不要包含任何其他文字：
 {{
@@ -214,7 +216,7 @@ _DEEP_SCAN_PROMPT_TEMPLATE = """\
       "term": "原文术语",
       "suggested_translation": "建议的中文翻译",
       "negative_constraint": "NOT 容易混淆的错误翻译（可选）",
-      "reason": "为什么这个术语容易翻译错误",
+      "reason": "为什么这个术语容易翻译错误或需要统一翻译",
       "priority": "critical|high|medium"
     }}
   ]
@@ -499,7 +501,7 @@ def extract_glossary_from_epub(
     epub_path: Path,
     output_path: Path,
     translate_fn: Callable[[str], str],
-    max_terms: int = 20,
+    max_terms: int = 50,
     full_index: bool = False,
     mode: str = "auto",
 ) -> dict[str, object]:
@@ -581,9 +583,11 @@ def extract_glossary_from_epub(
         candidates = build_local_glossary_candidates(blocks, max_candidates=300)
         print(f"[glossary] Built {len(candidates)} local candidates", flush=True)
 
-        # Format candidate list for prompt
+        # Format candidate list for prompt — send at least 3× max_terms so the model has
+        # enough material to fill the requested quota, capped at 300 (the full build budget).
+        prompt_candidate_limit = min(max(max_terms * 3, 50), len(candidates))
         candidate_lines = []
-        for i, cand in enumerate(candidates[:50], 1):  # Top 50 for prompt brevity
+        for i, cand in enumerate(candidates[:prompt_candidate_limit], 1):
             sources_str = ", ".join(sorted(set(cand.sources)))
             candidate_lines.append(
                 f"{i}. {cand.term} — {cand.kind} | score: {cand.weighted_score:.1f} | sources: {sources_str}"

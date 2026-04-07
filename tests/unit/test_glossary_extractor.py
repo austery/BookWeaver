@@ -847,3 +847,10 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
     assert report4["tier"] == "local-refinement"
     assert "candidate_count" in report4
     assert output4.exists()
+
+
+def test_deep_scan_prompt_allows_names_and_places():
+    """Tier 3 prompt must NOT exclude names/places — biographies need them."""
+    from ai.glossary_extractor import _DEEP_SCAN_PROMPT_TEMPLATE
+    assert "不要人名" not in _DEEP_SCAN_PROMPT_TEMPLATE
+    assert "不要地名" not in _DEEP_SCAN_PROMPT_TEMPLATE
