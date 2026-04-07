@@ -155,7 +155,13 @@ class TestTranslateHappyPath:
         all_translated = [t.translated for t in source.applied or []]
         assert all_translated == ["翻译:aaa", "翻译:bbb", "翻译:ccc"]
 
-    def test_batches_do_not_cross_doc_path_boundaries(self) -> None:
+    def test_small_docs_merge_across_doc_boundaries(self) -> None:
+        """Tiny files well below max_batch_chars must be merged into one batch.
+
+        Calibre-split EPUBs produce 400+ tiny HTML files (one diary entry each).
+        With max_batch_chars=60 000 the optimal batch count is ~10, not 400.
+        Segment doc_path metadata is preserved so the patcher routes correctly.
+        """
         provider = FakeProvider()
         segments = [
             Segment(id="ch1::0", text="a" * 4, metadata={"doc_path": "ch1.xhtml"}),
@@ -170,10 +176,31 @@ class TestTranslateHappyPath:
 
         result = engine.translate(source, "/tmp/out.epub")
 
+        # All 3 segments (12 chars total) fit in one batch (limit=20)
+        assert result.total_batches == 1
+        assert len(provider.calls) == 1
+        assert provider.calls[0][0] == ["aaaa", "bbbb", "cccc"]
+
+    def test_large_docs_still_split_at_char_limit(self) -> None:
+        """When content exceeds max_batch_chars, TextBatcher still splits it correctly."""
+        provider = FakeProvider()
+        segments = [
+            Segment(id="ch1::0", text="a" * 12, metadata={"doc_path": "ch1.xhtml"}),
+            Segment(id="ch1::1", text="b" * 12, metadata={"doc_path": "ch1.xhtml"}),
+            Segment(id="ch2::0", text="c" * 4, metadata={"doc_path": "ch2.xhtml"}),
+        ]
+        source = FakeSource(segments)
+        engine = TranslationEngine(
+            provider,
+            _default_config(max_batch_chars=20, separator_overhead=0),
+        )
+
+        result = engine.translate(source, "/tmp/out.epub")
+
+        # ch1::0 (12) fills batch 1; ch1::1 (12) + ch2::0 (4) = 16 → batch 2
         assert result.total_batches == 2
-        assert len(provider.calls) == 2
-        assert provider.calls[0][0] == ["aaaa", "bbbb"]
-        assert provider.calls[1][0] == ["cccc"]
+        assert provider.calls[0][0] == ["a" * 12]
+        assert provider.calls[1][0] == ["b" * 12, "c" * 4]
 
     def test_empty_source(self) -> None:
         provider = FakeProvider()
