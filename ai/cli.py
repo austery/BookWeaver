@@ -500,7 +500,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--force-resume",
         action="store_true",
-        help="Resume even when model/config changed (EPUB workflow)",
+        help="Resume despite model/config mismatches; input/signature mismatches still restart fresh (EPUB workflow)",
     )
     p.add_argument(
         "--checkpoint-dir",

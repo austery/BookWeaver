@@ -162,10 +162,11 @@ text_batches = batcher.plan_batches([seg.text for seg in all_pending_segments])
 - `d00fa11` — Hard-fail stale checkpoints
 
 **Changes**:
-- `ai/epub_source_adapter.py`:
-  - Compute segmenter signature based on extraction heuristics and configuration
-  - When loading checkpoint, verify signature matches current state
-  - Hard-fail on mismatch with human-readable error message
+- `ai/cli.py`:
+  - Persist EPUB `segmenter_signature` in checkpoint state (`state.json`)
+  - Resolve expected signature via `_segmenter_signature_for_format("epub")`
+  - Invalidate resume state on signature mismatch (or missing signature)
+  - Keep mismatch handling as fail-closed: start fresh instead of reusing stale translations
 
 **Acceptance**:
 - Stale checkpoint detected and rejected: ✅
@@ -273,14 +274,11 @@ Total: ~10 API calls
 
 When resuming translation:
 
-1. Load checkpoint from `{temp_dir}/.epub_checkpoint/`
-2. Compute current segmenter signature = hash of:
-   - Div extraction heuristic thresholds (`_MAX_HEADING_LIKE_DIV_TEXT_LEN`)
-   - Structural/TOC/heading skip rules
-   - Configuration (`use_div_extraction: true|false`)
-3. Compare saved signature (from checkpoint) vs current
-4. **If mismatch**: Delete checkpoint, restart segmentation
-5. **Rationale**: Content set changed → old segment IDs don't align with new layout → corruption risk
+1. Load checkpoint from `<output-dir>/.bookweaver_checkpoints/epub/<input-stem>/`
+2. Resolve current segmenter signature via `ai.cli::_segmenter_signature_for_format("epub")`
+3. Compare saved signature (from `state.json`) vs current expected signature
+4. **If mismatch (or missing field)**: invalidate checkpoint and start fresh
+5. **Rationale**: content set changed → old segment IDs may no longer align with new extraction layout
 
 ## 7. Performance Characteristics
 
@@ -326,7 +324,7 @@ Total: 517 tests passed, 1 skipped
 
 - [x] Div content extraction looks reasonable (prose, not navigation)
 - [x] TOC pages remain source-only
-- [x] Index pages remain source-only
+- [x] TOC/nav content remains source-only where TOC heuristics apply
 - [x] Chapter headings (emphasized divs) not translated
 - [x] Cross-doc batches produce correct translations
 - [x] Patcher routes segments to correct documents
@@ -335,9 +333,9 @@ Total: 517 tests passed, 1 skipped
 
 1. **Conservative Bias**: Some prose divs with unusual styling may be skipped as "heading-like". Acceptable tradeoff: false negatives (missed content) are better than false positives (corrupted layout).
 
-2. **Heuristic Brittleness**: If an EPUB uses non-standard emphasis signals (e.g., `<span class="highlight">` instead of `<b>`), heading detection may fail. Mitigation: users can disable div extraction via config or extract divs manually.
+2. **Heuristic Brittleness**: If an EPUB uses non-standard emphasis signals (e.g., `<span class="highlight">` instead of `<b>`), heading detection may fail. Mitigation: extend emphasis hints and keep regression fixtures for the affected title.
 
-3. **Checkpoint Migration**: Toggling `use_div_extraction` requires full restart (checkpoint invalidation). This is intentional — prevents silent data corruption.
+3. **Checkpoint Migration**: Any extraction-rule change must bump EPUB segmenter signature and restart from fresh checkpoint. This is intentional — prevents silent data corruption.
 
 ## 10. Future Extensions (Out of Scope)
 
@@ -357,7 +355,8 @@ Total: 517 tests passed, 1 skipped
 - **Code**:
   - `ai/epub_package.py` — Div extraction heuristics
   - `ai/core/engine.py` — Cross-doc batch merging
-  - `ai/adapters/sources/epub_adapter.py` — Checkpoint invalidation
+  - `ai/adapters/sources/epub_adapter.py` — Segment metadata routing (`doc_path`)
+  - `ai/cli.py` — Checkpoint signature persistence and validation
   
 - **Tests**:
   - `tests/unit/test_epub_translate_patcher.py` — 40+ div extraction tests
@@ -398,4 +397,3 @@ Alternative: Soft resume with segment remapping.
 - User can always restart; data loss is permanent
 
 **Accepted**: Hard-fail with clear message + instructions to restart.
-

@@ -217,6 +217,12 @@ def _is_heading_suffix_text(text: str) -> bool:
         return True
     if not any(ch.isalnum() for ch in compact):
         return True
+    has_alpha = any(ch.isalpha() for ch in compact)
+    if not has_alpha:
+        return True
+    has_cased_alpha = any(ch.isalpha() and ch.lower() != ch.upper() for ch in compact)
+    if not has_cased_alpha:
+        return False
     return compact.upper() == compact
 
 

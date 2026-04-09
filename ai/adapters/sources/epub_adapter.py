@@ -6,6 +6,7 @@ patching) internally.  The engine sees only flat ``Segment`` objects.
 
 from __future__ import annotations
 
+import inspect
 import posixpath
 import zipfile
 from collections.abc import Callable
@@ -29,6 +30,26 @@ class _ExtractSegmentsFn(Protocol):
     """Signature for segment extractors used by :class:`EpubSourceAdapter`."""
 
     def __call__(self, xhtml: str, document_path: str | None = None) -> list[Any]: ...
+
+
+def _supports_document_path_argument(extract_fn: Callable[..., list[Any]]) -> bool:
+    """Return whether *extract_fn* accepts a ``document_path`` keyword argument."""
+    try:
+        signature = inspect.signature(extract_fn)
+    except (TypeError, ValueError):
+        return False
+
+    document_path = signature.parameters.get("document_path")
+    if document_path is not None and document_path.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    ):
+        return True
+
+    return any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
 
 
 # ── Default operation loaders (import legacy at call time) ────
@@ -96,6 +117,7 @@ class EpubSourceAdapter(IBookSource):
         self._epub_path = Path(epub_path)
         self._load_fn = _load_package or _default_load_package
         self._extract_fn = _extract_segments or _default_extract_segments
+        self._extract_supports_document_path = _supports_document_path_argument(self._extract_fn)
         self._patch_fn = _patch_xhtml or _default_patch_xhtml
         self._repack_fn = _repack_epub or _default_repack
 
@@ -113,7 +135,10 @@ class EpubSourceAdapter(IBookSource):
         result: list[Segment] = []
         for doc_path in self._doc_order:
             xhtml = self._doc_xhtml[doc_path]
-            raw_segments = self._extract_fn(xhtml, document_path=doc_path)
+            if self._extract_supports_document_path:
+                raw_segments = self._extract_fn(xhtml, document_path=doc_path)
+            else:
+                raw_segments = self._extract_fn(xhtml)
 
             coerced: list[_RawSegment] = []
             for i, raw in enumerate(raw_segments):

@@ -250,6 +250,34 @@ class TestGetSegments:
         assert extract_calls == [("<p>Hello</p>", "OEBPS/chapter1.xhtml")]
         epub_path.unlink()
 
+    def test_get_segments_supports_legacy_single_argument_extractor(self) -> None:
+        epub_path = _make_test_epub({"OEBPS/chapter1.xhtml": "<p>Hello</p>"})
+        model = FakeModel(
+            epub_path=epub_path,
+            opf_path="OEBPS/content.opf",
+            spine_itemrefs=["ch1"],
+            manifest_items={
+                "ch1": FakeManifestItem(id="ch1", href="chapter1.xhtml"),
+            },
+        )
+        extract_calls: list[str] = []
+
+        def fake_extract(xhtml: str) -> list[FakeRawSegment]:
+            extract_calls.append(xhtml)
+            return [FakeRawSegment("Hello", (0,), "p")]
+
+        adapter = EpubSourceAdapter(
+            epub_path,
+            _load_package=lambda _: model,
+            _extract_segments=fake_extract,
+        )
+
+        segments = adapter.get_segments()
+
+        assert len(segments) == 1
+        assert extract_calls == ["<p>Hello</p>"]
+        epub_path.unlink()
+
 
 # ── apply_translations ────────────────────────────────────────
 
