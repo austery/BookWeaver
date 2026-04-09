@@ -47,9 +47,7 @@ def _make_opf(spine_items: list[str]) -> str:
         f'<item id="item{i}" href="{item}" media-type="application/xhtml+xml"/>'
         for i, item in enumerate(spine_items)
     )
-    spine_entries = "".join(
-        f'<itemref idref="item{i}"/>' for i, _ in enumerate(spine_items)
-    )
+    spine_entries = "".join(f'<itemref idref="item{i}"/>' for i, _ in enumerate(spine_items))
     return (
         '<?xml version="1.0" encoding="utf-8"?>'
         '<package xmlns="http://www.idpf.org/2007/opf" version="3.0">'
@@ -875,5 +873,6 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
 def test_deep_scan_prompt_allows_names_and_places() -> None:
     """Tier 3 prompt must NOT exclude names/places — biographies need them."""
     from ai.glossary_extractor import _DEEP_SCAN_PROMPT_TEMPLATE
+
     assert "不要人名" not in _DEEP_SCAN_PROMPT_TEMPLATE
     assert "不要地名" not in _DEEP_SCAN_PROMPT_TEMPLATE
