@@ -762,7 +762,7 @@ def run_translate_roundtrip(
                 )
                 continue
             source_xhtml = _read_zip_text(source_zip, doc_path)
-            segments = extract_translatable_segments(source_xhtml)
+            segments = extract_translatable_segments(source_xhtml, document_path=doc_path)
             if not segments:
                 print(
                     f"[INFO] [{doc_index}/{len(spine_docs)}] Skip {doc_path} (no translatable segments)",
