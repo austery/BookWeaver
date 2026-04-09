@@ -335,11 +335,19 @@ def _has_skip_ancestor(node: ET.Element, parent_map: dict[ET.Element, ET.Element
 
 
 def _append_visible_text_parts(node: ET.Element, parts: list[str]) -> None:
+    if _local_name(node.tag).lower() in _SKIP_TEXT_TAGS:
+        return
+
     if node.text:
         parts.append(node.text)
 
     for child in node:
-        if _local_name(child.tag).lower() == "br":
+        child_tag = _local_name(child.tag).lower()
+        if child_tag in _SKIP_TEXT_TAGS:
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        if child_tag == "br":
             parts.append("\n")
             if child.tail:
                 parts.append(child.tail.lstrip())
@@ -370,12 +378,20 @@ def _append_non_emphasized_text_parts(
     *,
     inside_emphasis: bool = False,
 ) -> None:
+    if _local_name(node.tag).lower() in _SKIP_TEXT_TAGS:
+        return
+
     current_inside_emphasis = inside_emphasis or _node_has_emphasis_signal(node)
     if not current_inside_emphasis and node.text:
         parts.append(node.text)
 
     for child in node:
-        if _local_name(child.tag).lower() == "br":
+        child_tag = _local_name(child.tag).lower()
+        if child_tag in _SKIP_TEXT_TAGS:
+            if not current_inside_emphasis and child.tail:
+                parts.append(child.tail)
+            continue
+        if child_tag == "br":
             if not current_inside_emphasis:
                 parts.append("\n")
                 if child.tail:

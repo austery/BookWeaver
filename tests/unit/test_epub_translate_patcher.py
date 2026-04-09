@@ -209,6 +209,20 @@ def test_extract_translatable_segments_keeps_cjk_prose_div_with_inline_emphasis(
     assert segments[0].text == "这是重点内容。"
 
 
+def test_extract_translatable_segments_ignores_script_and_style_inside_div() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div>Hello <script>window.x = 1</script>world <style>.x{color:red;}</style>again.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world again."
+
+
 def test_extract_translatable_segments_skips_short_numbered_heading_div() -> None:
     from ai.epub_package import extract_translatable_segments
 

@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.egg-info/
 .python-version
 
 # Virtual env / tooling
@@ -42,4 +43,3 @@ translated_*.md
 test_book.epub
 *_Manager-Letter*.pdf
 generate_test_epub.py
-
