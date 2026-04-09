@@ -57,13 +57,32 @@ def test_patch_xhtml_alternating_skips_toc_doc_translation() -> None:
     )
     patched = patch_xhtml_alternating(
         source,
-        translations=["第一章"],
+        translations=[],
         document_path="OEBPS/xhtml/04_Contents.xhtml",
     )
     assert "Contents" in patched
     assert "Chapter One" in patched
     assert "目录" not in patched
     assert "第一章" not in patched
+
+
+def test_patch_xhtml_alternating_skips_epub3_toc_nav_but_keeps_body_prose() -> None:
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml' xmlns:epub='http://www.idpf.org/2007/ops'>"
+        "<body><nav epub:type='toc'><ol><li><a href='c1.xhtml'>Chapter One</a></li></ol></nav>"
+        "<p>Body text.</p></body></html>"
+    )
+    patched = patch_xhtml_alternating(
+        source,
+        translations=["正文。"],
+        document_path="OEBPS/nav.xhtml",
+    )
+    assert "Chapter One" in patched
+    assert "第一章" not in patched
+    assert "Body text." in patched
+    assert "正文。" in patched
 
 
 def test_extract_translatable_segments_returns_block_level_segments() -> None:
@@ -79,6 +98,185 @@ def test_extract_translatable_segments_returns_block_level_segments() -> None:
     assert len(segments) == 2
     assert segments[0].text == "Hello link world."
     assert segments[1].text == "Second paragraph."
+
+
+def test_extract_translatable_segments_includes_leaf_div_prose() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='intro'>\n  Hello <span>world</span>!\n</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world!"
+
+
+def test_extract_translatable_segments_skips_short_bold_heading_div() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='calibre13'><span class='bold'>PREFACE</span></div>"
+        "<div class='intro'>Normal prose paragraph.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    segment = segments[0]
+    assert segment.tag_name == "div"
+    assert segment.text == "Normal prose paragraph."
+
+
+def test_extract_translatable_segments_skips_toc_documents_when_document_path_is_contents() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div><a href='chapter1.xhtml'>Chapter One</a></div>"
+        "<p><a href='chapter2.xhtml'>Chapter Two</a></p>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source, document_path="OEBPS/text/contents.xhtml")
+    assert segments == []
+
+
+def test_extract_translatable_segments_skips_epub3_nav_toc_documents() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml' xmlns:epub='http://www.idpf.org/2007/ops'>"
+        "<body><nav epub:type='toc'><ol><li><a href='chapter1.xhtml'>Chapter One</a></li></ol></nav>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source, document_path="OEBPS/nav.xhtml")
+    assert segments == []
+
+
+def test_extract_translatable_segments_skips_doc_toc_nav_documents() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'>"
+        "<body><nav role='doc-toc'><ol><li><a href='chapter1.xhtml'>Chapter One</a></li></ol></nav>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source, document_path="OEBPS/nav.xhtml")
+    assert segments == []
+
+
+def test_extract_translatable_segments_keeps_prose_outside_epub3_toc_nav() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml' xmlns:epub='http://www.idpf.org/2007/ops'>"
+        "<body><nav epub:type='toc'><ol><li><a href='chapter1.xhtml'>Chapter One</a></li></ol></nav>"
+        "<p>Body text.</p></body></html>"
+    )
+    segments = extract_translatable_segments(source, document_path="OEBPS/nav.xhtml")
+    assert len(segments) == 1
+    assert segments[0].tag_name == "p"
+    assert segments[0].text == "Body text."
+
+
+def test_extract_translatable_segments_keeps_short_prose_div_with_inline_emphasis() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div>Hello <strong>world</strong>.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world."
+
+
+def test_extract_translatable_segments_keeps_cjk_prose_div_with_inline_emphasis() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div>这是<strong>重点</strong>内容。</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "这是重点内容。"
+
+
+def test_extract_translatable_segments_ignores_script_and_style_inside_div() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div>Hello <script>window.x = 1</script>world <style>.x{color:red;}</style>again.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Hello world again."
+
+
+def test_extract_translatable_segments_skips_short_numbered_heading_div() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div><strong>CHAPTER</strong> <span>1</span></div>"
+        "<div>Normal prose paragraph.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].tag_name == "div"
+    assert segments[0].text == "Normal prose paragraph."
+
+
+def test_extract_translatable_segments_skips_div_with_image_descendant() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='figure'><img src='figure.png' alt='Figure'/>Figure 1.</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert segments == []
+
+
+def test_extract_translatable_segments_skips_outer_div_when_inner_paragraph_exists() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='wrapper'><p>Inner paragraph.</p></div>"
+        "<div class='leaf'>\n Leaf div prose. \n</div>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert [segment.tag_name for segment in segments] == ["p", "div"]
+    assert [segment.text for segment in segments] == ["Inner paragraph.", "Leaf div prose."]
+
+
+def test_extract_translatable_segments_preserves_br_linebreaks() -> None:
+    from ai.epub_package import extract_translatable_segments
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<p><a href='#1'>AAA pattern</a><br/>\n"
+        "    <a href='#2'>avoiding if statements</a><br/>\n"
+        "    <a href='#3'>avoiding multiple AAA sections</a></p>"
+        "</body></html>"
+    )
+    segments = extract_translatable_segments(source)
+    assert len(segments) == 1
+    assert segments[0].text == "AAA pattern\navoiding if statements\navoiding multiple AAA sections"
 
 
 def test_patch_xhtml_alternating_inserts_one_translation_block_per_source_block() -> None:
@@ -135,6 +333,31 @@ def test_patch_xhtml_alternating_keeps_table_cells_source_only() -> None:
     assert "客户姓名" not in patched
     assert "乔·雷斯" not in patched
     assert "表后文本。" in patched
+
+
+def test_patch_xhtml_alternating_inserts_translation_after_prose_div() -> None:
+    import xml.etree.ElementTree as ET
+
+    from ai.epub_package import patch_xhtml_alternating
+
+    source = (
+        "<html xmlns='http://www.w3.org/1999/xhtml'><body>"
+        "<div class='prose'>\n  Leaf div prose. \n</div>"
+        "</body></html>"
+    )
+    translation = "叶子 div 段落。"
+    patched = patch_xhtml_alternating(source, [translation])
+
+    ns = {"x": "http://www.w3.org/1999/xhtml"}
+    root = ET.fromstring(patched)
+    body = root.find(".//x:body", ns)
+    assert body is not None
+    children = list(body)
+    assert len(children) == 2
+    assert children[0].tag == "{http://www.w3.org/1999/xhtml}div"
+    assert children[1].tag == "{http://www.w3.org/1999/xhtml}p"
+    assert children[1].attrib["class"] == "bw-translation"
+    assert children[1].text == translation
 
 
 def test_patch_xhtml_alternating_preserves_ordered_list_item_count() -> None:

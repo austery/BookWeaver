@@ -58,7 +58,26 @@ class TranslatableSegment:
 _SKIP_TEXT_TAGS = {"script", "style"}
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _HEADING_CLASS_HINTS = ("head", "title", "subhead")
+_STRUCTURAL_CONTAINER_TAGS = {
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "caption",
+    "ul",
+    "ol",
+    "dl",
+    "img",
+    "svg",
+    "nav",
+}
+_EMPHASIS_TAGS = {"b", "strong"}
+_EMPHASIS_CLASS_HINTS = ("bold",)
+_MAX_HEADING_LIKE_DIV_TEXT_LEN = 120
 _TOC_DOC_HINTS = ("toc", "contents")
+_TOC_ROLE_HINTS = ("doc-toc",)
 _STYLE_ELEMENT_ID = "bookweaver-bilingual-style"
 _TRANSLATION_CLASS = "bw-translation"
 _CAPTION_COMPAT_CSS = (
@@ -72,7 +91,7 @@ _CAPTION_COMPAT_CSS = (
     "  display: table-caption !important;\n"
     "}"
 )
-_BLOCK_TAGS = {"p", "li", "blockquote", "dd"}
+_BLOCK_TAGS = {"p", "li", "blockquote", "dd", "div"}
 
 ET.register_namespace("", _XHTML_NS)
 
@@ -109,11 +128,32 @@ def _qualified_tag(local_tag: str, namespace: str | None) -> str:
     return local_tag
 
 
-def _is_toc_document(document_path: str | None) -> bool:
+def _has_toc_filename_hint(document_path: str | None) -> bool:
     if not document_path:
         return False
     lowered = posixpath.basename(document_path).lower()
     return any(hint in lowered for hint in _TOC_DOC_HINTS)
+
+
+def _attribute_tokens(node: ET.Element, attr_local_name: str) -> set[str]:
+    tokens: set[str] = set()
+    for key, value in node.attrib.items():
+        if _local_name(key).lower() == attr_local_name:
+            tokens.update(value.lower().split())
+    return tokens
+
+
+def _is_toc_nav_node(node: ET.Element) -> bool:
+    if _local_name(node.tag).lower() != "nav":
+        return False
+    if "toc" in _attribute_tokens(node, "type"):
+        return True
+    role_tokens = _attribute_tokens(node, "role")
+    return any(hint in role_tokens for hint in _TOC_ROLE_HINTS)
+
+
+def _is_toc_document(document_path: str | None) -> bool:
+    return _has_toc_filename_hint(document_path)
 
 
 def _is_heading_like_node(node: ET.Element) -> bool:
@@ -122,11 +162,83 @@ def _is_heading_like_node(node: ET.Element) -> bool:
         return True
 
     class_name = (node.get("class") or "").lower()
-    return any(hint in class_name for hint in _HEADING_CLASS_HINTS)
+    if any(hint in class_name for hint in _HEADING_CLASS_HINTS):
+        return True
+
+    if tag_name != "div":
+        return False
+
+    return _is_emphasized_heading_div(node)
 
 
-def _should_render_translation(*, block_node: ET.Element, document_path: str | None) -> bool:
-    if _is_toc_document(document_path):
+def _has_structural_container_descendant(node: ET.Element) -> bool:
+    return any(
+        descendant is not node and _local_name(descendant.tag).lower() in _STRUCTURAL_CONTAINER_TAGS
+        for descendant in node.iter()
+    )
+
+
+def _has_toc_nav_ancestor(
+    node: ET.Element,
+    parent_map: dict[ET.Element, ET.Element],
+) -> bool:
+    current: ET.Element | None = node
+    while current is not None:
+        if _is_toc_nav_node(current):
+            return True
+        current = parent_map.get(current)
+    return False
+
+
+def _node_has_emphasis_signal(node: ET.Element) -> bool:
+    """Return whether this node itself carries an emphasis signal."""
+    tag = _local_name(node.tag).lower()
+    if tag in _EMPHASIS_TAGS:
+        return True
+    class_name = (node.get("class") or "").lower()
+    return any(hint in class_name for hint in _EMPHASIS_CLASS_HINTS)
+
+
+def _subtree_has_emphasis_signal(node: ET.Element) -> bool:
+    return any(_node_has_emphasis_signal(descendant) for descendant in node.iter())
+
+
+def _has_only_inline_descendants(node: ET.Element) -> bool:
+    disallowed_tags = _BLOCK_TAGS | _STRUCTURAL_CONTAINER_TAGS | _HEADING_TAGS
+    return all(
+        descendant is node or _local_name(descendant.tag).lower() not in disallowed_tags
+        for descendant in node.iter()
+    )
+
+
+def _is_heading_suffix_text(text: str) -> bool:
+    compact = "".join(ch for ch in text if not ch.isspace())
+    if not compact:
+        return True
+    if not any(ch.isalnum() for ch in compact):
+        return True
+    has_alpha = any(ch.isalpha() for ch in compact)
+    if not has_alpha:
+        return True
+    has_cased_alpha = any(ch.isalpha() and ch.lower() != ch.upper() for ch in compact)
+    if not has_cased_alpha:
+        return False
+    return compact.upper() == compact
+
+
+def _is_emphasized_heading_div(node: ET.Element) -> bool:
+    text = _normalize_visible_text(node)
+    if not text or len(text) > _MAX_HEADING_LIKE_DIV_TEXT_LEN:
+        return False
+    if not _subtree_has_emphasis_signal(node):
+        return False
+    if not _has_only_inline_descendants(node):
+        return False
+    return _is_heading_suffix_text(_normalize_non_emphasized_text(node))
+
+
+def _should_render_translation(*, block_node: ET.Element, is_toc_document: bool) -> bool:
+    if is_toc_document:
         return False
     return not _is_heading_like_node(block_node)
 
@@ -222,6 +334,91 @@ def _has_skip_ancestor(node: ET.Element, parent_map: dict[ET.Element, ET.Element
     return False
 
 
+def _append_visible_text_parts(node: ET.Element, parts: list[str]) -> None:
+    if _local_name(node.tag).lower() in _SKIP_TEXT_TAGS:
+        return
+
+    if node.text:
+        parts.append(node.text)
+
+    for child in node:
+        child_tag = _local_name(child.tag).lower()
+        if child_tag in _SKIP_TEXT_TAGS:
+            if child.tail:
+                parts.append(child.tail)
+            continue
+        if child_tag == "br":
+            parts.append("\n")
+            if child.tail:
+                parts.append(child.tail.lstrip())
+        else:
+            _append_visible_text_parts(child, parts)
+            if child.tail:
+                parts.append(child.tail)
+
+
+def _normalize_text_parts(parts: list[str]) -> str:
+    lines = "".join(parts).split("\n")
+
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    normalized_lines: list[str] = []
+    for line in lines:
+        words = line.split()
+        normalized_lines.append(" ".join(words) if words else "")
+    return "\n".join(normalized_lines)
+
+
+def _append_non_emphasized_text_parts(
+    node: ET.Element,
+    parts: list[str],
+    *,
+    inside_emphasis: bool = False,
+) -> None:
+    if _local_name(node.tag).lower() in _SKIP_TEXT_TAGS:
+        return
+
+    current_inside_emphasis = inside_emphasis or _node_has_emphasis_signal(node)
+    if not current_inside_emphasis and node.text:
+        parts.append(node.text)
+
+    for child in node:
+        child_tag = _local_name(child.tag).lower()
+        if child_tag in _SKIP_TEXT_TAGS:
+            if not current_inside_emphasis and child.tail:
+                parts.append(child.tail)
+            continue
+        if child_tag == "br":
+            if not current_inside_emphasis:
+                parts.append("\n")
+                if child.tail:
+                    parts.append(child.tail.lstrip())
+            continue
+
+        _append_non_emphasized_text_parts(
+            child,
+            parts,
+            inside_emphasis=current_inside_emphasis,
+        )
+        if not current_inside_emphasis and child.tail:
+            parts.append(child.tail)
+
+
+def _normalize_non_emphasized_text(node: ET.Element) -> str:
+    parts: list[str] = []
+    _append_non_emphasized_text_parts(node, parts)
+    return _normalize_text_parts(parts)
+
+
+def _normalize_visible_text(node: ET.Element) -> str:
+    parts: list[str] = []
+    _append_visible_text_parts(node, parts)
+    return _normalize_text_parts(parts)
+
+
 def _has_translatable_block_descendant(node: ET.Element) -> bool:
     for descendant in node.iter():
         if descendant is node:
@@ -229,7 +426,7 @@ def _has_translatable_block_descendant(node: ET.Element) -> bool:
         tag = _local_name(descendant.tag).lower()
         if tag not in _BLOCK_TAGS:
             continue
-        if "".join(descendant.itertext()).strip():
+        if _normalize_visible_text(descendant):
             return True
     return False
 
@@ -263,7 +460,14 @@ def _resolve_node_by_path(body: ET.Element, path: tuple[int, ...]) -> ET.Element
     return current
 
 
-def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableSegment]:
+def _collect_translatable_block_segments(
+    body: ET.Element,
+    *,
+    is_toc_document: bool = False,
+) -> list[TranslatableSegment]:
+    if is_toc_document:
+        return []
+
     parent_map = _build_parent_map(body)
     segments: list[TranslatableSegment] = []
     for node in body.iter():
@@ -272,11 +476,15 @@ def _collect_translatable_block_segments(body: ET.Element) -> list[TranslatableS
             continue
         if _has_skip_ancestor(node, parent_map):
             continue
+        if _has_toc_nav_ancestor(node, parent_map):
+            continue
         if _is_heading_like_node(node):
+            continue
+        if tag_name == "div" and _has_structural_container_descendant(node):
             continue
         if _has_translatable_block_descendant(node):
             continue
-        text = "".join(node.itertext()).strip()
+        text = _normalize_visible_text(node)
         if not text:
             continue
         segments.append(
@@ -507,12 +715,15 @@ def resolve_opf_href(opf_path: str, href: str) -> str:
     return posixpath.normpath(posixpath.join(str(opf_dir), href))
 
 
-def extract_translatable_segments(xhtml: str) -> list[TranslatableSegment]:
+def extract_translatable_segments(
+    xhtml: str, document_path: str | None = None
+) -> list[TranslatableSegment]:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
     if body is None:
         return []
-    return _collect_translatable_block_segments(body)
+    is_toc_document = _is_toc_document(document_path)
+    return _collect_translatable_block_segments(body, is_toc_document=is_toc_document)
 
 
 def patch_xhtml_alternating(
@@ -528,7 +739,8 @@ def patch_xhtml_alternating(
             raise ValueError("translation count does not match translatable segments")
         return xhtml
 
-    segments = _collect_translatable_block_segments(body)
+    is_toc_document = _is_toc_document(document_path)
+    segments = _collect_translatable_block_segments(body, is_toc_document=is_toc_document)
     if len(segments) != len(translations):
         raise ValueError(
             f"translation count mismatch: expected {len(segments)}, got {len(translations)}"
@@ -546,7 +758,7 @@ def patch_xhtml_alternating(
     for block_node, translation in zip(block_nodes, translations, strict=True):
         if not _should_render_translation(
             block_node=block_node,
-            document_path=document_path,
+            is_toc_document=is_toc_document,
         ):
             continue
 

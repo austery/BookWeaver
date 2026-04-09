@@ -71,58 +71,31 @@ class TranslationEngine:
             separator_overhead=config.separator_overhead,
         )
 
-    @staticmethod
-    def _doc_path(segment: Segment) -> str | None:
-        doc_path = segment.metadata.get("doc_path")
-        if isinstance(doc_path, str) and doc_path:
-            return doc_path
-        return None
-
     def _plan_pending_segment_batches(
         self,
         pending_segments: list[Segment],
     ) -> list[list[Segment]]:
-        """Plan batches while preserving doc_path boundaries when present.
+        """Plan batches using TextBatcher sizing across all pending segments.
 
-        For EPUB segments (which include ``metadata['doc_path']``), batches
-        never cross document boundaries. Within each document, normal
-        ``TextBatcher`` sizing still applies.
+        Segments from different documents may be merged into the same batch
+        when they fit within *max_batch_chars*.  Each segment's ``doc_path``
+        metadata is preserved so the patcher can route each translated segment
+        back to the correct document regardless of batch boundaries.
+
+        This replaces the former per-document grouping that forced one batch per
+        HTML file.  Calibre-split EPUBs can produce 400+ tiny files; merging
+        them reduces API calls from ~400 to ~10 for a typical novel.
         """
         if not pending_segments:
             return []
 
-        grouped_by_doc_run: list[list[Segment]] = []
-        current_group: list[Segment] = []
-        current_doc: str | None = None
-
-        for seg in pending_segments:
-            seg_doc = self._doc_path(seg)
-            if not current_group:
-                current_group = [seg]
-                current_doc = seg_doc
-                continue
-
-            doc_changed = current_doc is not None and seg_doc is not None and seg_doc != current_doc
-            if doc_changed:
-                grouped_by_doc_run.append(current_group)
-                current_group = [seg]
-                current_doc = seg_doc
-                continue
-
-            current_group.append(seg)
-
-        if current_group:
-            grouped_by_doc_run.append(current_group)
-
+        text_batches = self._batcher.plan_batches([seg.text for seg in pending_segments])
+        cursor = 0
         planned: list[list[Segment]] = []
-        for doc_group in grouped_by_doc_run:
-            text_batches = self._batcher.plan_batches([seg.text for seg in doc_group])
-            cursor = 0
-            for text_batch in text_batches:
-                size = len(text_batch)
-                planned.append(doc_group[cursor : cursor + size])
-                cursor += size
-
+        for text_batch in text_batches:
+            size = len(text_batch)
+            planned.append(pending_segments[cursor : cursor + size])
+            cursor += size
         return planned
 
     def translate(

@@ -258,31 +258,35 @@ check_dependencies() {
     
     # Check for file conversion script and Calibre for all supported formats
     if is_supported_source_file "$INPUT_FILE"; then
-        if [[ ! -f "${SCRIPT_DIR}/01_convert_to_htmlz.py" ]]; then
-            log_error "File converter not found: 01_convert_to_htmlz.py"
-            log_error "This script is required for PDF/DOCX/EPUB file processing"
-            exit 3
-        fi
-        
-        # Check for Calibre ebook-convert
-        local calibre_paths=(
-            "/Applications/calibre.app/Contents/MacOS/ebook-convert"
-            "/usr/bin/ebook-convert"
-            "/usr/local/bin/ebook-convert"
-        )
-        
-        local calibre_found=false
-        for path in "${calibre_paths[@]}"; do
-            if [[ -f "$path" ]]; then
-                calibre_found=true
-                break
+        if [[ "$DRY_RUN" == true ]]; then
+            log_info "[DRY RUN] Skipping converter and Calibre dependency checks"
+        else
+            if [[ ! -f "${SCRIPT_DIR}/01_convert_to_htmlz.py" ]]; then
+                log_error "File converter not found: 01_convert_to_htmlz.py"
+                log_error "This script is required for PDF/DOCX/EPUB file processing"
+                exit 3
             fi
-        done
-        
-        if [[ "$calibre_found" == false ]] && ! command -v ebook-convert &> /dev/null; then
-            log_error "Calibre ebook-convert not found"
-            log_error "Please install Calibre: https://calibre-ebook.com/"
-            exit 3
+
+            # Check for Calibre ebook-convert
+            local calibre_paths=(
+                "/Applications/calibre.app/Contents/MacOS/ebook-convert"
+                "/usr/bin/ebook-convert"
+                "/usr/local/bin/ebook-convert"
+            )
+
+            local calibre_found=false
+            for path in "${calibre_paths[@]}"; do
+                if [[ -f "$path" ]]; then
+                    calibre_found=true
+                    break
+                fi
+            done
+
+            if [[ "$calibre_found" == false ]] && ! command -v ebook-convert &> /dev/null; then
+                log_error "Calibre ebook-convert not found"
+                log_error "Please install Calibre: https://calibre-ebook.com/"
+                exit 3
+            fi
         fi
     fi
     

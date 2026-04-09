@@ -84,7 +84,7 @@ class TestSanityProbeConfig:
         assert cfg.enabled is True
         assert cfg.max_length_ratio == 2.0
         assert cfg.min_length_ratio == 0.15
-        assert cfg.min_source_length == 10
+        assert cfg.min_source_length == 20
         assert cfg.min_cjk_density == 0.30
         assert cfg.min_cjk_source_length == 40
         assert cfg.heartbeat_chars == 60
@@ -201,6 +201,15 @@ class TestSanityCheckBatch:
 
         segs = [self._make_seg("ch1.xhtml::0", "A", "翻译一下这个字母A的中文意思是什么")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+
+    def test_skips_length_ratio_for_short_section_heading(self) -> None:
+        from ai.cli import _sanity_check_batch
+
+        # "Acknowledgements" (16 chars) → "致谢" (2 chars): ratio 0.125 < 0.15.
+        # Short single-word EN headings legitimately translate to 2-char Chinese.
+        # The length-ratio check must be skipped for source < min_source_length.
+        segs = [self._make_seg("split_000.html::16", "Acknowledgements", "致谢")]
+        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=438)
 
     def test_skips_cjk_check_for_non_zh_lang(self) -> None:
         from ai.cli import _sanity_check_batch
@@ -1898,8 +1907,8 @@ class TestRunSanityProbe:
         run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
 
         out = capsys.readouterr().out
-        # _ResumeSource has 3 segments planned into 2 batches
-        assert out.count("[progress:batch_sample]") == 2
+        # _ResumeSource has 3 segments — all fit in one batch with default max_batch_chars
+        assert out.count("[progress:batch_sample]") == 1
 
     def test_run_halts_on_empty_translation(
         self,
@@ -1988,6 +1997,7 @@ class TestRunResumeCheckpoint:
         input_epub: Path,
         output_lang: str = "zh",
         model: str = "gemini-2.5-flash",
+        segmenter_signature: str | None = cli_module._EPUB_SEGMENTER_SIGNATURE,
     ) -> None:
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         system_prompt = build_system_prompt("Chinese", immersive=True)
@@ -2003,6 +2013,8 @@ class TestRunResumeCheckpoint:
             "system_prompt_hash": hashlib.sha256(system_prompt.encode("utf-8")).hexdigest(),
             "translated_segment_count": 1,
         }
+        if segmenter_signature is not None:
+            state["segmenter_signature"] = segmenter_signature
         (checkpoint_dir / "state.json").write_text(
             json.dumps(state, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -2042,8 +2054,8 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B"], ["C"]]
-        assert source.applied is not None
+        # B (chapter1) and C (chapter2) merge into one cross-doc batch
+        assert provider.calls == [["B", "C"]]
         assert [item.translated for item in source.applied] == ["缓存:A", "翻译:B", "翻译:C"]
 
     def test_run_force_resume_allows_model_mismatch_checkpoint(
@@ -2073,7 +2085,7 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["B"], ["C"]]
+        assert provider.calls == [["B", "C"]]
 
     def test_run_resume_rejects_incompatible_checkpoint_without_force(
         self,
@@ -2102,7 +2114,94 @@ class TestRunResumeCheckpoint:
             checkpoint_dir=str(checkpoint_dir),
         )
 
-        assert provider.calls == [["A", "B"], ["C"]]
+        assert provider.calls == [["A", "B", "C"]]
+
+    def test_run_resume_rejects_checkpoint_when_segmenter_signature_missing(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_missing_segmenter_signature"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            segmenter_signature=None,
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["A", "B", "C"]]
+
+    def test_run_resume_rejects_checkpoint_when_segmenter_signature_mismatches(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_mismatched_segmenter_signature"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            segmenter_signature="epub-div-block-v1",
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["A", "B", "C"]]
+
+    def test_run_force_resume_rejects_checkpoint_when_segmenter_signature_mismatches(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        source = _ResumeSource()
+        provider = _ResumeProvider()
+        self._patch_runtime_for_resume(monkeypatch, source, provider)
+
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        out_file = tmp_path / "out.epub"
+        checkpoint_dir = tmp_path / "resume_cp_force_mismatched_segmenter_signature"
+        self._write_partial_checkpoint(
+            checkpoint_dir=checkpoint_dir,
+            input_epub=in_epub,
+            segmenter_signature="epub-div-block-v1",
+        )
+
+        run(
+            input_path=str(in_epub),
+            output=str(out_file),
+            input_format="epub",
+            force_resume=True,
+            checkpoint_dir=str(checkpoint_dir),
+        )
+
+        assert provider.calls == [["A", "B", "C"]]
 
     def test_run_resume_uses_stable_default_checkpoint_layout(
         self,
@@ -2135,6 +2234,7 @@ class TestRunResumeCheckpoint:
         state = json.loads(state_file.read_text(encoding="utf-8"))
         assert state["schema_version"] == 1
         assert state["input_format"] == "epub"
+        assert state["segmenter_signature"] == cli_module._EPUB_SEGMENTER_SIGNATURE
         assert state["translated_segment_count"] == 3
 
         translations = json.loads(translations_file.read_text(encoding="utf-8"))
@@ -2187,16 +2287,14 @@ class TestRunProgressLogging:
             stdout,
         )
         assert re.search(r"\[progress:source\].*segments=3", stdout)
-        assert re.search(r"\[progress:batch\].*index=1/2", stdout)
+        # All 3 segments (A, B from chapter1 + C from chapter2) merge into one batch
+        assert re.search(r"\[progress:batch\].*index=1/1", stdout)
         assert re.search(r"\[progress:batch\].*translated=0/3", stdout)
-        assert re.search(r"\[progress:batch\].*batch_segments=2", stdout)
+        assert re.search(r"\[progress:batch\].*batch_segments=3", stdout)
         assert re.search(r"\[progress:batch\].*docs=chapter1.xhtml", stdout)
-        assert re.search(r"\[progress:batch\].*index=2/2", stdout)
-        assert re.search(r"\[progress:batch\].*translated=2/3", stdout)
-        assert re.search(r"\[progress:batch\].*batch_segments=1", stdout)
-        assert re.search(r"\[progress:batch\].*docs=chapter2.xhtml", stdout)
+        assert re.search(r"\[progress:batch\].*docs=.*chapter2.xhtml", stdout)
         assert re.search(r"\[progress:save\].*segments=3", stdout)
-        assert re.search(r"\[progress:done\].*segments=3.*batches=2.*resumed=0", stdout)
+        assert re.search(r"\[progress:done\].*segments=3.*batches=1.*resumed=0", stdout)
 
     def test_run_logs_resumed_context_when_checkpoint_loaded(
         self,
