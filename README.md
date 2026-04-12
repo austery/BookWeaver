@@ -1,539 +1,82 @@
-BookWeaver
-==========
+# BookWeaver (EPUB-First)
 
-BookWeaver is a document translation pipeline for long books (`.epub`, `.pdf`, `.docx`) using Gemini CLI or Gemini API, with EPUB-first output and bilingual merge support. The codebase has been refactored into a hexagonal architecture: ai.core (domain), ai.ports (interfaces), and ai.adapters (providers/sources). The main runtime entrypoint is ai.cli (python -m ai.cli); translatebook.sh delegates to ai.cli and provides convenient wrappers.
+BookWeaver is a high-performance, **EPUB-centric** translation engine. It leverages the latest **Gemini 2.5** models to deliver professional-grade bilingual (`alternating`) translations while strictly preserving the eBook's structure, navigation (TOC), and metadata.
 
-## What it does
+> **⚠️ Format Notice:** Support for PDF and DOCX is legacy and experimental. Due to the inherent complexity of these formats, BookWeaver is optimized for **EPUB-to-EPUB** workflows. For the best results, convert your sources to EPUB before translating.
 
-- Converts input files to markdown chunks
-- Translates chunks with Gemini models
-- Merges source + translation into bilingual markdown
-- Renders HTML and exports final formats (EPUB/DOCX/PDF or HTML-only)
+---
 
-## Quick start
+## ⚡ Quick Start
 
-### Workflow selection (important)
-
-| Input type | Goal | Command |
-|---|---|---|
-| EPUB | Preserve package structure/navigation | `python -m ai.cli book.epub --output out/translated.epub` |
-| PDF/DOCX | Convert then translate (via shell wrapper) | `./translatebook.sh --workflow markdown /path/to/book.pdf` |
-
-Default: EPUB input auto-detects to EPUB workflow; non-EPUB defaults to markdown workflow.
-
-### 1) Prerequisites
-
-Choose one translation provider:
-
-**Option A: Gemini CLI (recommended, default)**
-- `gemini` CLI (authenticated)
-- `ebook-convert` (Calibre)
-- `pandoc`
+### 1. Requirements & Setup
+- **Python 3.13+** (Modern runtime for high performance)
+- **[uv](https://github.com/astral-sh/uv)** (Recommended package manager)
+- **Gemini CLI** (Authenticated) OR **Gemini API Key**
 
 ```bash
-which gemini
-which ebook-convert
-which pandoc
-```
-
-**Option B: Gemini API (alternative, experimental)**
-- Google AI API key (set via env var, config file, or CLI parameter)
-- `ebook-convert` (Calibre)
-- `pandoc`
-
-```bash
-# Option B1: Use environment variable
-export GEMINI_API_KEY="your-api-key-here"
-
-# Option B2: Use config file (recommended for persistent setup)
-# Edit config/config.json:
-# {
-#   "gemini_api": {
-#     "enabled": true,
-#     "api_key": "your-api-key-here",
-#     "model": "gemini-2.5-flash"
-#   }
-# }
-
-which ebook-convert
-which pandoc
-```
-
-### 2) Setup
-
-```bash
+# Install and synchronize
 uv sync
 ```
 
-### 3) Translate an EPUB
-
-**Direct with `uv run` (recommended — no venv activation needed):**
-
-```bash
-# Basic EPUB translation → Chinese
-uv run bookweaver book.epub --output book_translated.epub
-
-# Disable default resume for this run
-uv run bookweaver book.epub --output book_translated.epub --no-resume
-
-# With automatic glossary extraction (uses Pro model for extraction)
-uv run bookweaver book.epub --output book_translated.epub --extract-glossary --model pro
-
-# With pre-extracted glossary and priority filtering
-uv run bookweaver book.epub --output book_translated.epub \
-  --glossary glossary.json --glossary-min-priority high
-
-# Using flash model (faster, lower quality)
-uv run bookweaver book.epub --output book_translated.epub --model flash
-
-# Using Gemini API instead of CLI
-uv run bookweaver book.epub --output book_translated.epub --provider api
-```
-
-Output is written to the path you specify with `--output`.
-
-**Via shell wrapper (handles venv, needed for PDF/DOCX):**
+### 2. The "Magic" One-Step Command (Recommended)
+This is the most efficient way to use BookWeaver. It automatically extracts key terminology, builds a glossary, and translates the entire book in a single pass.
 
 ```bash
-# EPUB — wrapper constructs output path as <basename>_temp/translated_roundtrip.epub
-./translatebook.sh book.epub
-
-# With glossary extraction + Pro model
-./translatebook.sh --extract-glossary --model pro book.epub
-
-# Dry-run: show config without executing
-./translatebook.sh --dry-run book.epub
-
-# EPUB baseline roundtrip (no translation, zero text mutation)
-./translatebook.sh --epub-baseline book.epub
+uv run bookweaver book.epub --output translated.epub --extract-glossary --model pro
 ```
 
-Shell wrapper output: `<input_basename>_temp/translated_roundtrip.epub`.
-EPUB workflow now enables checkpoint resume by default; pass `--no-resume` to opt out.
+---
 
-### 3.1) Workflow behavior notes
+## 💎 Key Features
 
-**EPUB workflow (default for `.epub` input):**
+### 1. Gemini 2.5 Native Support
+BookWeaver is hardcoded to use the latest Gemini 2.5 series for superior reasoning and translation quality.
 
-`ai.cli` handles the full pipeline — reads EPUB, translates via engine, writes bilingual EPUB directly:
-```
-python -m ai.cli book.epub --output translated.epub [flags]
-```
+| Alias | Target Model | Best For... |
+|---|---|---|
+| `pro` | `gemini-2.5-pro` | Technical manuals, complex literature, and terminology extraction. |
+| `flash` | `gemini-2.5-flash` | Standard fiction, large books, and quick turnarounds. |
+| `lite` | `gemini-2.5-flash-lite` | Extremely fast drafts and high-volume batch processing. |
 
-**Markdown workflow (PDF/DOCX input, via shell only for now):**
+### 2. Advanced Terminology (Glossary)
+BookWeaver's standout feature is its ability to maintain consistency via AI-driven terminology extraction.
 
-The shell orchestrates multiple steps:
-- Steps 1-2: Convert PDF/DOCX → markdown chunks (Calibre)
-- Step 3: `python -m ai.cli` translates chunks
-- Steps 5-7: Render HTML, add TOC, export final format
+- **Unified Flow**: `--extract-glossary` runs both extraction *and* translation in a single session.
+- **Priority Filtering**: Use `--glossary-min-priority high` to only inject the most critical terms, keeping prompts lean.
+- **Extraction Modes** (`--glossary-mode`):
+    - **`auto` (Default)**: Smart and efficient. It targets the book's Index and Table of Contents (TOC). If no index is found (e.g., in a novel), it automatically falls back to `deep-scan`.
+    - **`deep-scan`**: Thorough and intensive. It performs a **whole-book analysis** to extract terms from every page. Use this for books without an index or for maximum consistency.
 
-> **Note (SPEC-013):** Steps 5-7 are not yet absorbed into `ai.cli`. PDF/DOCX-to-EPUB currently requires `translatebook.sh`. See `docs/architecture/specs/SPEC-013-pipeline-completion-shell-replacement.md`.
+### 3. Resilience & Checkpointing
+Built for long-running translations:
+- **Resume**: Automatically resumes from the last successful chapter if interrupted.
+- **Fallback**: Add `--cli-api-fallback` to switch to the direct API backend if the CLI encountered transient errors.
 
-### 3.1a) Runtime progress logs (`ai.cli`)
+---
 
-`ai.cli` emits concise structured progress lines:
+## 🛠 Advanced Usage
 
-- `[progress:model]` — model resolution result (`requested`, `resolved`, `tier`, `explicit`)
-- `[progress:input]` — resolved format and IO paths
-- `[progress:resume]` — checkpoint context (`restored_segments`, checkpoint path, force mode)
-- `[progress:translate]` — translation stage start
-- `[progress:source]` — source load summary (`segments`, `resumed`, `pending`, `batches`)
-- `[progress:batch]` — per-batch progress (`index`, `translated`, `batch_segments`)
-  - EPUB includes `docs=...` when doc identity is available
-- `[progress:batch_sample]` — heartbeat sample after each batch (`batch=N/Total`, `doc=`, `src=`, `tgt=`); disabled by `--no-sanity-probe`
-- `[progress:save]` — save stage before writing output
-- `[progress:done]` — completion summary
-- `[progress:error]` — failure localization with `stage` + error type/message (stderr)
-
-These logs are intentionally operational (not verbose) and designed for quick diagnosis.
-
-### 3.1b) Alternative: Use Gemini API instead of CLI (experimental)
-
-If you encounter persistent `AbortError` or capacity issues with Gemini CLI, you can use the direct Gemini API as an alternative:
-
+### Manual Glossary
+If you want to use a custom terminology file:
 ```bash
-# Set your API key
-export GEMINI_API_KEY="your-api-key-here"
-
-# Use API provider instead of CLI
-uv run bookweaver book.epub --output book_translated.epub --provider api
-
-# Keep CLI as primary but allow fallback to API on CLI failures
-uv run bookweaver book.epub --output book_translated.epub --provider cli --cli-api-fallback
+uv run bookweaver book.epub --output out.epub --glossary my_terms.json
 ```
 
-**Advantages of API provider:**
-- More stable and predictable error handling
-- Better rate limit recovery with explicit retry delays
-- Programmatic control over timeouts and retries
-- Clear distinction between temporary (429) and permanent quota errors
+### Sanity Probe
+The tool includes an experimental "Sanity Probe" to prevent AI hallucinations or language errors. It is currently **disabled by default** in the standard configuration but can be toggled:
+- Enable in `config/config.json` under `sanity_probe.enabled`.
+- Disable at runtime with `--no-sanity-probe`.
 
-**Current status:**
-- Gemini API provider is now available via `--provider api`
-- CLI provider remains the default (`--provider cli`)
-- API provider requires `GEMINI_API_KEY` or `gemini_api.api_key` in config
-- Optional fallback is available via `--cli-api-fallback` (only when `--provider cli`)
-  - Triggered on transient/transport CLI translation failures (for example AbortError/timeouts)
-  - Not used for rate-limit failures (those stay on CLI retry logic)
-  - Requires `GEMINI_API_KEY` or `gemini_api.api_key` for the API provider
-
-Common commands:
-
+### Legacy Workflow
+For PDF/DOCX, the legacy shell orchestrator is still available (requires Calibre):
 ```bash
-# Continue from translation to render/export
-./translatebook.sh --start-step 3 --output-format epub /path/to/book.epub
-
-# Continue from Step 4 bridge (no-op) to render/export if output.md already exists
-./translatebook.sh --start-step 4 --output-format epub /path/to/book.epub
-
-# Re-run translation step with explicit model/prompt overrides
-./translatebook.sh --start-step 3 --output-format epub /path/to/book.epub
+./translatebook.sh --workflow markdown path/to/file.pdf
 ```
 
-### 3.2) EPUB preflight check (optional, recommended)
+---
 
-Before expensive translation runs, check EPUB quality first:
-
+## 🧪 Development & Quality
 ```bash
-# If epubcheck is installed
-epubcheck /path/to/book.epub
+uv run ruff check .      # High-speed linting
+uv run pytest           # Full test suite
 ```
-
-If preflight reports structural/link issues (for example broken `href#fragment`),
-clean the book manually in tools like Sigil/Calibre first, then run BookWeaver.
-
-Note: EPUB workflow now tolerates pre-existing source broken fragments
-(it only blocks newly introduced broken links), but source-quality cleanup is still
-recommended for better reader compatibility.
-
-### 4) Sample workflow (first 3 chunks)
-
-```bash
-python3 01_convert_to_htmlz.py /path/to/book.epub
-# prepare a sample temp dir with page0001~page0003.md
-python3 -u -m ai.cli <sample_temp_dir> --input-format markdown --output <sample_temp_dir>/output.md --model gemini-2.5-flash --output-lang zh
-```
-
-## Pipeline
-
-1. `01_convert_to_htmlz.py` (normalize and split)
-2. `ai.cli` translation step (invoked by `translatebook.sh` step 3)
-3. Step 4 bridge (no-op; merged `output.md` already produced by `ai.cli`)
-4. `05_md_to_html.py` (HTML rendering)
-5. `06_add_toc.py` (TOC)
-6. `07_generate_formats.py` (EPUB/DOCX/PDF generation)
-
-## Quality gate (lint and test)
-
-Run the same checks locally before pushing:
-
-```bash
-uv run ruff check .
-uv run ruff format --check .
-uv run tach check
-uv run pytest -q
-```
-
-CI uses workflow `lint-and-test` with a strict order:
-
-1. lint (`ruff check` + `ruff format --check`)
-2. test (`pytest`) after lint passes
-
-If lint or tests fail, the CI gate is blocking and the change is not merge-ready.
-See `docs/architecture/specs/SPEC-003-lint-quality-gates.md` for the formal policy.
-
-## Troubleshooting
-
-### Gemini CLI AbortError or capacity issues
-
-If you encounter persistent `AbortError: The user aborted a request` or similar capacity errors:
-
-**Immediate solutions:**
-1. **Wait and retry** - Gemini CLI has traffic prioritization limits that vary by time of day
-2. **Use checkpoint resume for EPUB workflow** - continue interrupted runs safely:
-   ```bash
-    # Resume with compatibility checks (recommended)
-    uv run bookweaver book.epub --output book_translated.epub --resume
-
-    # Force resume when model/config changed
-    uv run bookweaver book.epub --output book_translated.epub --force-resume
-   ```
-3. **Switch model and retry**:
-   ```bash
-    # Initial run with flash
-    ./translatebook.sh --workflow epub --model flash book.epub
-
-    # If flash fails, retry with pro
-    ./translatebook.sh --workflow epub --model pro book.epub
-    ```
-4. **Use Gemini API (experimental)** - More stable alternative to CLI:
-   ```bash
-   export GEMINI_API_KEY="your-api-key"
-   ./translatebook.sh --workflow epub --provider api book.epub
-   ```
-5. **Use CLI + API fallback (opt-in)** - Keep CLI first, switch to API on transient CLI failures:
-     ```bash
-     export GEMINI_API_KEY="your-api-key"
-     ./translatebook.sh --workflow epub --provider cli --fallback-provider api book.epub
-     ```
-
-**Root cause:**
-Gemini CLI 0.35.0+ has strict traffic prioritization and internal loop recovery logic that aborts requests if they exceed internal timeout thresholds. This is a known limitation documented in [Gemini CLI updates](https://goo.gle/geminicli-updates).
-
-**Workarounds:**
-- Avoid peak traffic hours (9 AM - 6 PM Pacific time usually has higher limits)
-- Try early morning or late night runs
-- Use `--model pro` if you have higher tier access
-- Consider using Gemini API provider for production workloads
-
-### EPUB resilience tuning (advanced, optional)
-
-You can tune retry/split/circuit-breaker behavior in `config/config.json`:
-
-```json
-{
-  "epub_resilience": {
-    "rate_limit_backoff_seconds": [60, 120],
-    "timeout_backoff_seconds": [60],
-    "transient_backoff_seconds": [45],
-    "max_split_depth": null,
-    "doc_failure_budget": null,
-    "failed_docs_path": null,
-    "cli_api_fallback_enabled": false,
-    "pro_timeout_seconds": 300,
-    "non_pro_timeout_seconds": 180
-  }
-}
-```
-
-Notes:
-- Defaults preserve current behavior.
-- `doc_failure_budget` enables a document-level circuit breaker.
-- `failed_docs_path` writes failed-document diagnostics as JSON.
-- CLI argument `--cli-api-fallback` enables runtime CLI→API transport fallback for that run.
-  Requires API credentials (`GEMINI_API_KEY` or `gemini_api.api_key`).
-
-## Prompt definition
-
-Prompt rendering is profile-driven:
-
-- `config/prompts/default_prompt.txt`
-- `config/prompts/ebook_prompt.txt`
-- selected via `config/config.json.example` (`prompt_profile`, `prompt_templates`)
-- `{GLOSSARY_BLOCK}` placeholder injected with terminology constraints (see glossary section below)
-
-You can append extra instructions with:
-
-```bash
-./translatebook.sh -p "Your custom translation constraints" /path/to/book.epub
-```
-
-## Glossary extraction & injection (SPEC-010)
-
-BookWeaver can automatically extract terminology from EPUB index/TOC and inject it as translation constraints via prompt injection.
-
-### Quick start
-
-**Automatic extraction + injection (single command):**
-```bash
-./translatebook.sh --workflow epub --extract-glossary --output-format epub /path/to/book.epub
-```
-
-Note: `--extract-glossary` is supported for EPUB workflows and is available when invoking `ai.cli` directly (run `python -m ai.cli <book.epub> --extract-glossary --output <out_dir>`). The extractor writes the glossary to `<input_basename>_temp/extracted_glossary.json` and the CLI injects it into the translation prompt. Use `--glossary <file>` to supply a pre-generated glossary JSON file if preferred.
-
-**Manual extraction (pre-run glossary preparation):**
-```bash
-# Extract glossary JSON from EPUB
-uv run python3 00_extract_glossary.py /path/to/book.epub --output glossary.json --model pro
-
-# View extracted terms
-cat glossary.json | jq '.[0:3]'  # First 3 terms
-
-# Translate with glossary
-./translatebook.sh --workflow epub --glossary glossary.json --output-format epub /path/to/book.epub
-```
-
-### Priority-based filtering
-
-By default, glossary injection includes all terms. Use `--glossary-min-priority` to reduce prompt bloat:
-
-```bash
-# Only inject critical + high priority terms (excludes medium, reduces prompt by ~60%)
-./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority high --output-format epub /path/to/book.epub
-
-# Only inject critical terms (most aggressive filtering, ~85% reduction)
-./translatebook.sh --workflow epub --glossary glossary.json --glossary-min-priority critical --output-format epub /path/to/book.epub
-```
-
-**Priority levels** (extracted by AI analysis):
-- `critical` — Core domain concepts essential for accurate translation
-- `high` — Important terms that appear frequently
-- `medium` — Supporting vocabulary with lower frequency (default inclusion, can be filtered)
-
-### Extraction modes
-
-BookWeaver supports multiple glossary extraction strategies via `--glossary-mode`:
-
-**`auto` (default with `--extract-glossary`):**
-- **Tier 1**: If strong index signals detected → extract from index/TOC directly
-- **Tier 2**: If no strong index → build local terminology shortlist, then refine with AI
-- Automatically adapts to EPUB structure (technical books with indexes vs. fiction)
-- Balance of quality and token cost
-
-**`deep-scan` (whole-book AI extraction):**
-- Explicit whole-book terminology extraction using AI analysis
-- Higher token cost, comprehensive coverage
-- Never automatic — requires explicit `--glossary-mode deep-scan`
-
-**Manual glossary (skip extraction):**
-- Use `--glossary <path>` to provide pre-built glossary JSON
-- Skips all extraction, directly injects from file
-
-**Backward compatibility:**
-- `--extract-glossary` is a backward-compatible alias for `--glossary-mode auto`
-- Existing workflows continue working unchanged
-
-**Examples:**
-
-```bash
-# Auto mode (adaptive tier-based extraction)
-uv run bookweaver book.epub --output out.epub --extract-glossary
-uv run bookweaver book.epub --output out.epub --glossary-mode auto
-
-# Deep-scan mode (whole-book AI extraction, higher cost)
-uv run bookweaver book.epub --output out.epub --glossary-mode deep-scan
-
-# Manual glossary (no extraction)
-uv run bookweaver book.epub --output out.epub --glossary glossary.json
-```
-
-### Extraction behavior
-
-- **Index detection**: Two-pass approach (filename hints first, then content heuristics for Kindle-format EPUBs)
-- **Default model**: Pro model (slower but more reliable terminology selection)
-- **CLI→API fallback**: If Gemini CLI unavailable, automatically falls back to Gemini API (requires `GEMINI_API_KEY` or config)
-- **API-only extraction**: Use `--api-key` to force direct API extraction:
-  ```bash
-  export GEMINI_API_KEY="your-api-key"
-  uv run python3 00_extract_glossary.py /path/to/book.epub --output glossary.json --api-key $GEMINI_API_KEY
-  ```
-
-### Chapter-level A/B testing
-
-To test glossary on specific chapters:
-```bash
-# Extract glossary
-uv run python3 00_extract_glossary.py book.epub -o glossary.json
-
-# Translate with glossary
-./translatebook.sh --workflow epub --glossary glossary.json --output-format epub book.epub
-```
-
-
-
-## Important behavior notes
-
-- `--epub-baseline` runs a dedicated roundtrip path and exits early from translation/rendering steps.
-- Baseline output is `<temp_dir>/baseline_roundtrip.epub` and preserves source package content (no text mutation).
-- Baseline parser extracts OPF path, cover metadata pointer, and spine order for structural validation.
-- `--workflow epub` runs the EPUB package-preserving translation workflow and exits early from the legacy markdown pipeline.
-- `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`.
-- EPUB workflow output is `<temp_dir>/translated_roundtrip.epub`.
-- EPUB workflow currently supports only `alternating` bilingual output and enforces strict integrity checks (fail-fast on errors).
-- EPUB workflow uses per-document batch translation (`%%` segment separator) to reduce API call count versus per-segment calls.
-- If batch output segment count mismatches, it automatically falls back to binary split retry for that document.
-- In EPUB workflow, table cells are source-only (no `th/td` bilingual injection) for layout stability.
-- Model fallback chain is intentionally out of scope for this phase.
-- In markdown workflow, Step 3 (`ai.cli`) writes final bilingual `output.md` directly.
-- Step 4 in markdown workflow is a no-op bridge for legacy step numbering.
-- Legacy markdown pipeline scripts (`01_convert_to_htmlz.py`, `05_md_to_html.py`, `06_add_toc.py`, `07_generate_formats.py`) are still required for PDF/DOCX workflow and are **not** safe to remove yet.
-- Legacy pipeline removal is deferred until SPEC-013 parity is complete (ai.cli-owned output rendering for non-EPUB workflows).
-- Step 5 renders markdown image syntax (`![](...)`) into `<img>` and keeps source-side `#` headings as real document headings.
-- `--bilingual-style` currently supports only `alternating`.
-- Step 6 can build TOC from markdown-style heading lines in HTML paragraphs, auto-creates a TOC container when missing, and defaults TOC entries to chapter-level (`h1`) headings.
-- Step 7 resolves HTML input in order: `book_doc.html` -> `book.html` -> newest `*.html` in temp dir.
-- Step 7 format conversion uses Calibre `ebook-convert` directly (no external publish script required).
-- Model selection in Step 3 uses: requested model (or alias) -> `fallback_chain` -> probe availability.
-- Gemini provider no longer uses a hardcoded static allow-list.
-
-## EPUB baseline acceptance checklist
-
-- Cover metadata pointer (`meta name="cover"`) remains resolvable after roundtrip.
-- TOC/nav links stay clickable (no broken fragment links in validated docs).
-- Manifest asset paths remain present (no missing image/css/font files).
-- OPF spine order remains unchanged.
-
-See `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md` for baseline policy and limits.
-
-## EPUB workflow acceptance checklist
-
-- Generated EPUB exists at `<temp_dir>/translated_roundtrip.epub`.
-- Spine XHTML content contains both source and translated text in alternating order.
-- TOC/nav resource files remain unmodified in package-aware translation mode.
-- Cover/toc/spine pointers remain resolvable.
-- Fragment links and manifest asset references pass strict validation.
-
-See `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md` for EPUB workflow scope and limits.
-
-### Translation strategy reference
-
-This mode is kept as a separate feature path and currently translates spine XHTML with per-document batching (`%%` separators), while preserving segment alignment.
-
-Design reference for future prompt/segmentation optimization:
-
-- Immersive Translate `1.26.6` (paragraph-structure-preserving prompt style).
-
-## Config
-
-- Runtime config template: `config/config.json.example`
-- Model aliases: `model_aliases` (`pro|flash|lite`)
-- Probe cache config: `model_probe.cache_path` / `model_probe.cache_ttl_seconds`
-- Ordered fallback: `fallback_chain`
-- Quota DB: `~/.config/translatebook/quota.db`
-- **Batch sanity probe** (`sanity_probe`): runs after every batch; halts on empty output, runaway length ratio, or wrong-language (non-CJK) output:
-  ```json
-  "sanity_probe": {
-    "enabled": true,
-    "max_length_ratio": 2.0,
-    "min_length_ratio": 0.15,
-    "min_source_length": 10,
-    "min_cjk_density": 0.30,
-    "heartbeat_chars": 60
-  }
-  ```
-  Disable via CLI: `--no-sanity-probe`
-
-### Gemini API Configuration (Optional)
-
-For using Gemini API provider instead of CLI, configure in `config/config.json`:
-
-```json
-{
-  "gemini_api": {
-    "enabled": true,
-    "api_key": "your-google-ai-api-key-here",
-    "model": "gemini-2.5-flash"
-  }
-}
-```
-
-**API Key Priority** (highest to lowest):
-1. `api_key` parameter (if passed to GeminiAPIProvider constructor)
-2. `GEMINI_API_KEY` environment variable
-3. `config['gemini_api']['api_key']` in config.json
-
-**Recommended approach:**
-- **Development**: Use `GEMINI_API_KEY` env var for quick testing
-- **Production**: Use config file to persist settings
-- **CI/CD**: Use env var to keep secrets out of version control
-
-## Acknowledgements
-
-This project was forked and reworked from:
-https://github.com/wizlijun/claude_translater
-
-Thanks to the original author and contributors for the foundation.
-
-## License
-
-MIT (see `LICENSE`)
