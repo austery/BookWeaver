@@ -56,8 +56,20 @@ Built for long-running translations:
 
 ## 🛠 Advanced Usage
 
+### Separate Glossary Extraction (Recommended for Troubleshooting)
+If you encounter JSON errors during the one-step process, or if you want to inspect/edit terms first, use the standalone extractor. **Using `--provider api` is more stable for generating long JSON files.**
+
+```bash
+# Extract terms separately (stable API mode)
+export GEMINI_API_KEY="your-key"
+uv run python 00_extract_glossary.py book.epub --output my_terms.json --provider api --model pro
+
+# Then run translation using the saved file
+uv run bookweaver book.epub --output translated.epub --glossary my_terms.json --model pro
+```
+
 ### Manual Glossary
-If you want to use a custom terminology file:
+If you already have a custom terminology file:
 ```bash
 uv run bookweaver book.epub --output out.epub --glossary my_terms.json
 ```
