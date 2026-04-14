@@ -17,7 +17,7 @@ include = ["ai*"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "ruff>=0.12.12",
     "tach>=0.34.0",
 ]
