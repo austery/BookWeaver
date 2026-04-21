@@ -117,8 +117,3 @@ uv run pytest -q
 bash -n translatebook.sh
 uv run python -m py_compile ai/gemini_provider.py ai/model_probe.py 05_md_to_html.py 07_generate_formats.py ai/glossary_injector.py ai/glossary_extractor.py
 ```
-
-## Acknowledgements
-
-BookWeaver is reworked from:
-https://github.com/wizlijun/claude_translater
