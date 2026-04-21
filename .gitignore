@@ -43,3 +43,7 @@ translated_*.md
 test_book.epub
 *_Manager-Letter*.pdf
 generate_test_epub.py
+
+# Misc artifacts
+*.epub
+*.json
