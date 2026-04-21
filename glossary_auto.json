@@ -1,0 +1,367 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Mythos",
+      "suggested_translation": "Mythos模型",
+      "negative_constraint": "NOT 神话（普通名词）",
+      "reason": "文章虚构的Anthropic新一代AI模型名称（设定在2026年），需作为专有名词处理",
+      "priority": "critical"
+    },
+    {
+      "term": "OpenClaw",
+      "suggested_translation": "OpenClaw / 开爪",
+      "reason": "文中虚构的中国AI智能体名称，是文章构建未来场景的新概念，易被当成普通词汇误译",
+      "priority": "critical"
+    },
+    {
+      "term": "Lobster farming",
+      "suggested_translation": "养龙虾（指代疯狂刷AI模型的行为）",
+      "negative_constraint": "NOT 龙虾养殖业",
+      "reason": "作者原创新隐喻，以OpenClaw的吉祥物为名，代指大批用户排队刷AI模型算力或福利的行为，直译会令人极度费解",
+      "priority": "critical"
+    },
+    {
+      "term": "Vibe hacking",
+      "suggested_translation": "氛围黑客 / 语境破解",
+      "reason": "作者提出的网络安全新词，形容业余爱好者利用AI模型基于直觉或特定提示词来寻找软件漏洞的黑客行为",
+      "priority": "critical"
+    },
+    {
+      "term": "Distill / Distillation",
+      "suggested_translation": "模型蒸馏",
+      "negative_constraint": "NOT 蒸馏（化学术语）",
+      "reason": "AI领域的核心专业术语，指将大模型的知识转移到较小模型的技术过程",
+      "priority": "critical"
+    },
+    {
+      "term": "Cap tables (Capitalization tables)",
+      "suggested_translation": "股权结构表",
+      "negative_constraint": "NOT 帽子桌",
+      "reason": "风险投资（VC）和初创企业的金融专业术语，极易因字面意思导致完全误译",
+      "priority": "critical"
+    },
+    {
+      "term": "Crack spreads",
+      "suggested_translation": "裂解价差",
+      "negative_constraint": "NOT 破裂蔓延",
+      "reason": "石油和炼油工业的核心金融术语，指原油和石油产品（如汽油、柴油）之间的价格差",
+      "priority": "critical"
+    },
+    {
+      "term": "Passport bros",
+      "suggested_translation": "护照兄弟",
+      "reason": "新兴互联网亚文化新词，指因对西方现代约会文化不满，转而前往海外寻找传统价值观伴侣的西方男性",
+      "priority": "critical"
+    },
+    {
+      "term": "ecDNA (extra-chromosomal DNA)",
+      "suggested_translation": "染色体外DNA",
+      "reason": "分子生物学和肿瘤学专业术语，是理解癌细胞耐药性机制的关键概念",
+      "priority": "critical"
+    },
+    {
+      "term": "Directional selection",
+      "suggested_translation": "定向选择",
+      "negative_constraint": "NOT 引导选择",
+      "reason": "进化生物学专业术语，指自然选择偏向于某个极端的表型",
+      "priority": "critical"
+    },
+    {
+      "term": "CHORIZO",
+      "suggested_translation": "CHORIZO项目 / 零食物浪费科研计划",
+      "negative_constraint": "NOT 西班牙香肠",
+      "reason": "欧洲关于减少食物浪费的科研项目首字母缩略词缩写，如果不了解背景极易误译为特定食物名称",
+      "priority": "critical"
+    },
+    {
+      "term": "Joint Comprehensive Plan of Action (JCPOA)",
+      "suggested_translation": "联合全面行动计划（伊核协议）",
+      "reason": "国际关系与核不扩散领域核心专有名词",
+      "priority": "critical"
+    },
+    {
+      "term": "Operation Epic Fury",
+      "suggested_translation": "史诗狂怒行动 / 史诗烈怒行动",
+      "reason": "文章虚构的美国对伊朗军事行动代号，需专名化处理",
+      "priority": "high"
+    },
+    {
+      "term": "Project Glasswing",
+      "suggested_translation": "透翅蝶项目 / Glasswing项目",
+      "reason": "文章虚构的Anthropic闭源AI模型白名单共享计划",
+      "priority": "high"
+    },
+    {
+      "term": "Zero-days",
+      "suggested_translation": "零日漏洞",
+      "negative_constraint": "NOT 零天",
+      "reason": "网络安全领域的标准术语，指尚未被公开或修复的安全漏洞",
+      "priority": "high"
+    },
+    {
+      "term": "Soft budget constraint",
+      "suggested_translation": "软预算约束",
+      "reason": "经济学经典术语，由科尔奈提出，用来形容国家对国有或战略企业的无底线财政兜底",
+      "priority": "high"
+    },
+    {
+      "term": "Strategic rents",
+      "suggested_translation": "战略寻租",
+      "negative_constraint": "NOT 战略租金",
+      "reason": "政治经济学与外交术语，指国家利用自身地缘战略地位获取经济援助或政治利益",
+      "priority": "high"
+    },
+    {
+      "term": "Global saving glut",
+      "suggested_translation": "全球储蓄过剩",
+      "negative_constraint": "NOT 全球储蓄暴食",
+      "reason": "宏观经济学专有名词，指本世纪初亚洲等地区的过剩储蓄",
+      "priority": "high"
+    },
+    {
+      "term": "Equity-market neutral",
+      "suggested_translation": "股票市场中性（策略）",
+      "reason": "对冲基金的专业投资策略",
+      "priority": "high"
+    },
+    {
+      "term": "Say on pay",
+      "suggested_translation": "薪酬发言权 / 股东薪酬投票权",
+      "reason": "公司治理专业术语，指股东对高管薪酬方案的表决权",
+      "priority": "high"
+    },
+    {
+      "term": "Proxy season",
+      "suggested_translation": "代理投票季 / 股东大会季",
+      "negative_constraint": "NOT 代理季节",
+      "reason": "公司治理术语，指上市公司集中举行年度股东大会并进行委托投票的时期",
+      "priority": "high"
+    },
+    {
+      "term": "Golden parachute",
+      "suggested_translation": "金降落伞",
+      "reason": "商业术语，指公司高管在公司被收购或解雇时获得的高额离职补偿",
+      "priority": "high"
+    },
+    {
+      "term": "Superannuation",
+      "suggested_translation": "超级年金 / 澳洲养老金体系",
+      "negative_constraint": "NOT 退休金（普通词汇）",
+      "reason": "澳大利亚特有的强制性国民退休储蓄系统，有特定指代",
+      "priority": "high"
+    },
+    {
+      "term": "Tall-poppy syndrome",
+      "suggested_translation": "高罂粟综合征（枪打出头鸟）",
+      "negative_constraint": "NOT 高罂粟病",
+      "reason": "澳大利亚特有文化俚语，指社会对成就突出者的嫉妒和打压现象",
+      "priority": "high"
+    },
+    {
+      "term": "Sharenting",
+      "suggested_translation": "过度分享育儿 / 晒娃",
+      "negative_constraint": "NOT 分享父母",
+      "reason": "share（分享）与parenting（育儿）的混成词，特指父母在社交媒体上过度曝光子女隐私",
+      "priority": "high"
+    },
+    {
+      "term": "Kidfluencers",
+      "suggested_translation": "儿童网红",
+      "reason": "kid与influencers的混成新词",
+      "priority": "high"
+    },
+    {
+      "term": "Momfluencer",
+      "suggested_translation": "妈妈网红 / 育儿博主",
+      "reason": "mom与influencer的混成词",
+      "priority": "high"
+    },
+    {
+      "term": "Manosphere",
+      "suggested_translation": "男性气概圈 / 男权网络社区",
+      "reason": "社会学和互联网文化术语，指宣扬男性权利的在线社群网络",
+      "priority": "high"
+    },
+    {
+      "term": "Deterrence equations",
+      "suggested_translation": "威慑等式 / 威慑平衡",
+      "reason": "地缘政治与军事战略术语，指冲突双方建立的隐性红线和对等报复机制",
+      "priority": "high"
+    },
+    {
+      "term": "Spoilers",
+      "suggested_translation": "破坏者 / 搅局者",
+      "negative_constraint": "NOT 剧透",
+      "reason": "政治学和谈判理论术语，指试图破坏和平进程或停火协议的极端派别",
+      "priority": "high"
+    },
+    {
+      "term": "System of National Co-operation",
+      "suggested_translation": "国家合作体系 (NER)",
+      "reason": "匈牙利总理欧尔班建立的特定国家政治与经济体制专名",
+      "priority": "high"
+    },
+    {
+      "term": "Triple-lock",
+      "suggested_translation": "三重锁定（养老金机制）",
+      "reason": "英国特有的国家养老金年度涨幅保障机制",
+      "priority": "high"
+    },
+    {
+      "term": "ZiG (Zimbabwe gold)",
+      "suggested_translation": "津巴布韦金（ZiG）",
+      "negative_constraint": "NOT 津巴布韦黄金",
+      "reason": "津巴布韦于2024年推出的新官方货币名称",
+      "priority": "high"
+    },
+    {
+      "term": "Deus Vult",
+      "suggested_translation": "上帝的旨意（Deus Vult）",
+      "reason": "拉丁语，原为十字军东征口号，现常被白人民族主义者和极右翼分子作为文化符号使用",
+      "priority": "high"
+    },
+    {
+      "term": "Anchor proteins",
+      "suggested_translation": "锚定蛋白",
+      "negative_constraint": "NOT 锚定物",
+      "reason": "生物遗传学专业术语，指帮助染色体外DNA重新整合的蛋白质",
+      "priority": "high"
+    },
+    {
+      "term": "Red Command (CV)",
+      "suggested_translation": "红色司令部",
+      "negative_constraint": "NOT 红色命令",
+      "reason": "巴西历史最悠久、规模最大的黑帮组织之一（Comando Vermelho）",
+      "priority": "high"
+    },
+    {
+      "term": "IN-SPACe",
+      "suggested_translation": "印度国家空间促进和授权中心",
+      "reason": "印度航天监管和促进私营企业发展的官方机构缩写",
+      "priority": "high"
+    },
+    {
+      "term": "Gaganyaan mission",
+      "suggested_translation": "加甘扬计划 / 印度载人航天计划",
+      "reason": "印度重要航天工程的专有名词",
+      "priority": "high"
+    },
+    {
+      "term": "Tisza party",
+      "suggested_translation": "蒂萨党",
+      "reason": "匈牙利新崛起的政治党派名称",
+      "priority": "high"
+    },
+    {
+      "term": "Fidesz",
+      "suggested_translation": "青年民主主义者联盟 / 青民盟",
+      "reason": "匈牙利老牌执政党，有固定中文官方译名，不可直译",
+      "priority": "high"
+    },
+    {
+      "term": "National Rally (RN)",
+      "suggested_translation": "国民联盟",
+      "negative_constraint": "NOT 国家集会",
+      "reason": "法国极右翼政党名称（原名为国民阵线）",
+      "priority": "high"
+    },
+    {
+      "term": "One Big Beautiful Bill",
+      "suggested_translation": "漂亮大账单 / 美丽大法案",
+      "reason": "特指川普执政期间的税改法案，带有鲜明的川普式语言风格，需保留其修辞特征",
+      "priority": "medium"
+    },
+    {
+      "term": "Buffer funds",
+      "suggested_translation": "缓冲基金",
+      "reason": "投资与金融术语，指利用期权衍生品构建的具有下行保护的基金产品",
+      "priority": "medium"
+    },
+    {
+      "term": "Trend-following",
+      "suggested_translation": "趋势跟踪（策略）",
+      "reason": "量化投资与基金领域的常见交易策略",
+      "priority": "medium"
+    },
+    {
+      "term": "Tit-for-tat",
+      "suggested_translation": "以牙还牙 / 针锋相对",
+      "reason": "博弈论中的经典策略术语，在此特指交战方违反停火协议时的对等报复",
+      "priority": "medium"
+    },
+    {
+      "term": "Plan 2 loans",
+      "suggested_translation": "第二类学生贷款 / 方案2助学贷款",
+      "reason": "英国特定的高等教育学生贷款分类体制",
+      "priority": "medium"
+    },
+    {
+      "term": "Quiet luxury",
+      "suggested_translation": "静奢风 / 低调奢华",
+      "reason": "时尚界流行词汇，指没有明显Logo、注重面料和裁剪质感的奢华风格",
+      "priority": "medium"
+    },
+    {
+      "term": "Jogo do bicho",
+      "suggested_translation": "动物彩票",
+      "negative_constraint": "NOT 虫子游戏",
+      "reason": "巴西特有的非法地下彩票游戏",
+      "priority": "medium"
+    },
+    {
+      "term": "Bicheiros",
+      "suggested_translation": "动物彩票庄家 / 博彩头目",
+      "reason": "衍生自Jogo do bicho，指经营非法彩票的黑帮势力",
+      "priority": "medium"
+    },
+    {
+      "term": "Baile funk",
+      "suggested_translation": "巴西放克舞会",
+      "reason": "巴西里约热内卢贫民窟特有的音乐与派对文化",
+      "priority": "medium"
+    },
+    {
+      "term": "L'Imad",
+      "suggested_translation": "L'Imad主权财富基金",
+      "reason": "阿布扎比新成立的合并主权财富基金专有名称",
+      "priority": "medium"
+    },
+    {
+      "term": "Lakshmir Bhandar",
+      "suggested_translation": "拉克什米·班达尔（女性福利计划）",
+      "reason": "印度西孟加拉邦的一项针对女性的现金转移项目专名",
+      "priority": "medium"
+    },
+    {
+      "term": "The Line",
+      "suggested_translation": "线城 / The Line",
+      "negative_constraint": "NOT 线条",
+      "reason": "沙特NEOM新城项目中的带状城市大型基建工程专名",
+      "priority": "medium"
+    },
+    {
+      "term": "Mukaab",
+      "suggested_translation": "穆卡布（立方体摩天大楼项目）",
+      "reason": "沙特利雅得的大型超现实建筑开发项目名称",
+      "priority": "medium"
+    },
+    {
+      "term": "Trojena",
+      "suggested_translation": "特罗耶纳（沙漠滑雪度假村）",
+      "reason": "沙特NEOM新城规划中的高山度假区名称",
+      "priority": "medium"
+    },
+    {
+      "term": "Sugar alcohols",
+      "suggested_translation": "糖醇",
+      "reason": "食品化学专业术语，代糖家族的一种",
+      "priority": "medium"
+    },
+    {
+      "term": "Erythritol",
+      "suggested_translation": "赤藓糖醇",
+      "reason": "食品化学与添加剂专有名词",
+      "priority": "medium"
+    }
+  ]
+}

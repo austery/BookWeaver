@@ -201,7 +201,12 @@ class EpubSourceAdapter(IBookSource):
 
 
 def _resolve_spine_xhtml_paths(model: object) -> list[str]:
-    """Resolve spine itemrefs to XHTML zip paths."""
+    """Resolve spine itemrefs to XHTML/HTML zip paths.
+    
+    Accepts both 'application/xhtml+xml' and 'text/html' media types.
+    Some EPUB publishers declare content files as text/html even when they are
+    valid XML. This is permitted by the EPUB spec and common in modern EPUBs.
+    """
     opf_dir = posixpath.dirname(model.opf_path)
     paths: list[str] = []
     for itemref in model.spine_itemrefs:
@@ -209,7 +214,8 @@ def _resolve_spine_xhtml_paths(model: object) -> list[str]:
         if item is None:
             continue
         media = getattr(item, "media_type", None)
-        if media != "application/xhtml+xml":
+        # Accept both standard XHTML and HTML media types
+        if media not in ("application/xhtml+xml", "text/html"):
             continue
         resolved = posixpath.normpath(posixpath.join(opf_dir, item.href))
         paths.append(resolved)

@@ -107,6 +107,31 @@ class TestResolveSpinePaths:
         )
         assert _resolve_spine_xhtml_paths(model) == ["OEBPS/chapter1.xhtml"]
 
+    def test_accepts_both_xhtml_and_html_media_types(self) -> None:
+        """Regression test: support EPUBs with text/html media type.
+        
+        Some EPUB publishers (e.g., The Economist) declare content files as
+        text/html instead of application/xhtml+xml, even though they are
+        valid XML. This is permitted by EPUB spec and common in modern EPUBs.
+        """
+        model = FakeModel(
+            epub_path=Path("/fake.epub"),
+            opf_path="OEBPS/content.opf",
+            spine_itemrefs=["ch1_xhtml", "ch2_html", "img1"],
+            manifest_items={
+                "ch1_xhtml": FakeManifestItem(
+                    id="ch1_xhtml", href="chapter1.xhtml", media_type="application/xhtml+xml"
+                ),
+                "ch2_html": FakeManifestItem(
+                    id="ch2_html", href="chapter2.html", media_type="text/html"
+                ),
+                "img1": FakeManifestItem(id="img1", href="cover.png", media_type="image/png"),
+            },
+        )
+        paths = _resolve_spine_xhtml_paths(model)
+        assert paths == ["OEBPS/chapter1.xhtml", "OEBPS/chapter2.html"]
+        assert len(paths) == 2
+
 
 # ── get_segments ──────────────────────────────────────────────
 
