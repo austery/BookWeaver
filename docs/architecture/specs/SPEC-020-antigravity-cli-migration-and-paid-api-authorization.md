@@ -4,7 +4,7 @@ title: Antigravity CLI Migration and Paid API Authorization
 status: 📝 草案 (Draft)
 priority: P1 - Core Feature
 creationDate: 2026-07-16
-lastUpdateDate: 2026-07-16
+lastUpdateDate: 2026-07-17
 owner: User (AI-Assisted)
 relatedSpecs:
   - SPEC-011-model-selection-and-config-abstraction
@@ -29,9 +29,9 @@ Replace the discontinued Gemini CLI translation runtime with Antigravity CLI whi
 
 ## 2. Review Gate
 
-This document records the design approved by the owner on 2026-07-16. It remains a draft pending external AI review.
+This document records the design approved by the owner on 2026-07-16. External review v1 completed on 2026-07-17, and the owner approved its findings for incorporation into this revision.
 
-No implementation plan or runtime change may begin until the owner completes that review and explicitly promotes this SPEC to `🟡 待实施 (Ready for Implementation)`.
+This revision remains a draft pending owner review of the amended contract. No implementation plan or runtime change may begin until the owner explicitly promotes this SPEC to `🟡 待实施 (Ready for Implementation)`.
 
 ## 3. Background
 
@@ -93,7 +93,7 @@ EPUB translation already persists completed segment translations after each succ
 - resumed segments are skipped before new batches are planned;
 - the failed batch is not persisted, while all earlier successful batches remain reusable.
 
-The current schema treats concrete `provider` and `model` values as compatibility keys. That prevents a safe, user-authorized resume from Antigravity `flash` to Gemini API `flash`, even though the logical translation profile, input, prompt, and target language are unchanged.
+The current schema stores concrete `provider` and `model` values as soft compatibility keys. Cross-provider resume is possible only through the coarse `--force-resume` override, which simultaneously accepts unrelated prompt, language, model, and batch-setting mismatches. The schema cannot express the narrower intent that an Antigravity `flash` checkpoint may resume through Gemini API `flash` while all other compatibility constraints remain enforced.
 
 ## 4. Design Decision
 
@@ -149,6 +149,8 @@ The public `--model` value is a logical profile, not a provider-specific model s
 
 The default changes from the concrete Gemini identifier `gemini-2.5-flash` to the logical profile `flash`.
 
+A logical profile represents the same intended quality and workload tier, not model identity or generation equivalence. Antigravity and Gemini API currently map each profile to different model generations. Cross-provider resume therefore preserves completed work at the possible cost of visible differences in voice, register, or terminology; Sections 8 and 9 make that tradeoff explicit and auditable.
+
 `lite`, `gemini-2.5-flash-lite`, arbitrary Antigravity display names, and arbitrary Gemini API model IDs are rejected at argument or model-resolution time. The error must identify the allowed values: `flash` and `pro`.
 
 ### 5.3 Removed Automatic Fallback Flags
@@ -187,7 +189,27 @@ One resolved profile is passed to the provider factory. The factory selects only
 
 Concrete provider strings are provenance. The logical profile is the compatibility contract.
 
-### 6.3 Antigravity Raw Provider
+The registry replaces `ModelResolver`, `ModelRole`, and config-defined aliases. It never accepts an arbitrary provider model string and does not own provider fallback or availability probing.
+
+### 6.3 Legacy Model Configuration Migration
+
+Legacy configuration must never be silently ignored or allowed to weaken the static `flash|pro` allowlist.
+
+| Existing key | v2 disposition |
+|---|---|
+| `default_model` | Retained, but its value must be `flash` or `pro` |
+| `model_thresholds.*.model` | Retained, but every value must be `flash` or `pro`; `lite` is invalid |
+| `terminology_extraction.extraction_model` | Retained, but its value must be `flash` or `pro` |
+| `model_aliases` | Removed; fail with migration guidance |
+| `fallback_chain` | Removed; fail with migration guidance |
+| `enable_fallback` | Removed; fail with migration guidance |
+| `model_probe` | Removed; Antigravity availability is checked through `agy models` |
+| `gemini_api.model` | Removed; the profile registry owns the API model mapping |
+| `epub_resilience.cli_api_fallback_enabled` | Removed; fail with paid-fallback migration guidance |
+
+Configuration validation occurs before provider construction. A removed key, concrete provider model, or `lite` value produces an actionable error naming the accepted profile values and the replacement configuration. The ignored local `config/config.json` remains user-owned and is never rewritten automatically.
+
+### 6.4 Antigravity Raw Provider
 
 The raw Antigravity provider owns process-level behavior:
 
@@ -205,7 +227,7 @@ The per-run `agy models` check supplements rather than replaces the static allow
 
 If model discovery fails or the selected display name is absent, BookWeaver stops before translation. It does not use the current Antigravity session model and does not switch to Gemini API.
 
-### 6.4 Antigravity CLI Adapter
+### 6.5 Antigravity CLI Adapter
 
 `AntigravityCLIAdapter` implements `ITranslationProvider` and owns translation protocol behavior:
 
@@ -216,7 +238,7 @@ If model discovery fails or the selected display name is absent, BookWeaver stop
 
 The existing delimiter/tag helpers remain shared with the Gemini API adapter.
 
-### 6.5 Composition Root
+### 6.6 Composition Root
 
 `ProviderFactory` and `ai/cli.py` become the only runtime construction boundary for both main translation and glossary extraction.
 
@@ -236,19 +258,20 @@ Provider failures must remain distinguishable:
 | Timeout | Antigravity response timeout or outer hard timeout | Kill if needed, persist prior batches, and stop |
 | Capacity error | recognized quota or rate-limit exhaustion | Persist prior batches and stop |
 | Output transport error | empty stdout or local artifact link | Persist prior batches and stop |
-| Protocol error | missing delimiter, wrong segment count | Use the existing bounded split policy where eligible |
+| Protocol error | missing delimiter, wrong segment count | Antigravity may use bounded split-retry; Gemini API stops after the failed request |
 | Quality error | sanity-probe empty, ratio, or target-language failure | Do not persist the failed batch; stop |
 
-Infrastructure, authentication, timeout, and capacity errors are not batch-size problems. `TranslationEngine` must not recursively split and retry them.
+Infrastructure, authentication, timeout, capacity, output-transport, and paid-provider protocol errors are not eligible for recursive split-retry. Antigravity protocol errors may remain eligible when splitting can safely recover a malformed multi-segment response.
 
 ### 7.2 Retry Budgets
 
-No provider adapter may own an unbounded retry loop.
+No provider adapter may own an unbounded retry loop. The composition root injects a provider-appropriate engine retry policy; `TranslationEngine` applies that policy without inspecting provider names.
 
 - Antigravity process execution has one attempt per engine provider call.
-- Existing bounded split behavior remains available only for eligible protocol or batch-capability failures.
-- Gemini API has one request attempt per batch by default.
-- A failed paid request stops the run and preserves the checkpoint; another invocation requires new authorization.
+- Antigravity may retain bounded split behavior only for eligible protocol or batch-capability failures.
+- Gemini API performs exactly one network request attempt for each planned batch: the Google GenAI SDK retry option is explicitly set to one attempt, the raw provider loop is set to one attempt, and the engine split depth is zero.
+- A failed paid request, including timeout, rate-limit, server, empty-output, or protocol failure, produces no retry or split request. It stops the run and preserves the checkpoint.
+- Another paid attempt requires a new process invocation and new authorization.
 - Whole-provider fallback and provider-chain retry do not exist in BookWeaver.
 
 This policy protects both subscription capacity and paid API spend from retry multiplication.
@@ -278,6 +301,10 @@ Provider: Gemini API
 Model: gemini-2.5-flash
 Remaining segments: 1,284
 Estimated source tokens: 286,000
+
+Checkpoint models: Gemini 3.5 Flash (Low) — 416 completed segments
+Resume model: gemini-2.5-flash
+Warning: continuing with a different model generation may change translation voice or terminology.
 
 This execution consumes metered Gemini API tokens and may incur charges.
 Type USE_API to continue:
@@ -317,6 +344,8 @@ uv run bookweaver book.epub \
 
 The interactive prompt still appears. For a reviewed non-interactive run, the user adds `--allow-paid-api`.
 
+When restored segments were produced by a different concrete model, BookWeaver prints the existing model or models, restored segment counts, the newly selected model, and the mixed-generation quality warning before authorization. The warning does not invalidate the checkpoint or add a second confirmation token: accepting `USE_API`, or supplying `--allow-paid-api` non-interactively, explicitly accepts both metered execution and the documented continuity tradeoff for that invocation.
+
 ## 9. Checkpoint Schema v2
 
 ### 9.1 Persistence Granularity
@@ -327,29 +356,47 @@ This is intentionally more precise than chapter recovery. If five chapters and h
 
 Cross-document batching remains compatible because each segment retains a stable ID and document path.
 
-### 9.2 Compatibility Keys
+### 9.2 Compatibility Tiers
 
-The following fields determine whether translations are safe to reuse:
+Checkpoint reuse uses three explicit tiers:
 
-- input file signature;
-- input format;
-- EPUB segmenter signature;
-- target language;
-- logical model profile (`flash` or `pro`);
-- system prompt and glossary hash;
-- batch protocol version.
+| Tier | Fields | Resume behavior |
+|---|---|---|
+| Absolute-hard | input file signature, input format, EPUB segmenter signature | Any mismatch invalidates the checkpoint and cannot be overridden by `--force-resume` |
+| Force-resume-overridable | target language, logical model profile, effective system-prompt hash including glossary content, batch protocol version, maximum batch characters, separator overhead | Any mismatch rejects normal resume; `--force-resume` may accept the documented quality or protocol risk |
+| Audit-only | public provider, concrete backend, concrete provider model, completion timestamp, paid API request and token metadata | Recorded for visibility; never invalidates an otherwise compatible resume |
 
-The following fields are recorded for audit but do not invalidate a same-profile resume:
-
-- public provider (`cli` or `api`);
-- concrete backend (`antigravity` or `gemini_api`);
-- concrete provider model;
-- completion timestamp;
-- paid API request and token metadata when available.
+This preserves the schema-v1 distinction between absolute-hard and force-resume-overridable fields. The intentional behavior change is narrower: concrete `provider` and `model` values stop gating resume when the v2 logical profile matches, so a same-profile provider transition does not require the coarse `--force-resume` override.
 
 ### 9.3 Segment Provenance
 
-Schema v2 stores a structured record per segment:
+Schema v2 preserves the existing two-file checkpoint layout. `state.json` owns compatibility keys and run-level audit summaries:
+
+```json
+{
+  "schema_version": 2,
+  "input_signature": "sha256:...",
+  "input_format": "epub",
+  "segmenter_signature": "epub-div-v1",
+  "output_lang": "zh",
+  "logical_model_profile": "flash",
+  "system_prompt_hash": "sha256:...",
+  "batch_protocol_version": "segment-tags-v1",
+  "max_batch_chars": 60000,
+  "separator_overhead": 6,
+  "translated_segment_count": 420,
+  "providers_used": ["cli", "api"],
+  "backends_used": ["antigravity", "gemini_api"],
+  "models_used": ["Gemini 3.5 Flash (Low)", "gemini-2.5-flash"],
+  "paid_api_usage": {
+    "request_count": 1,
+    "input_tokens": 12450,
+    "output_tokens": 8192
+  }
+}
+```
+
+`translations.json` owns the translated text and actual per-segment provenance:
 
 ```json
 {
@@ -357,6 +404,7 @@ Schema v2 stores a structured record per segment:
   "segments": {
     "EPUB/chapter01.xhtml::0": {
       "translated": "Translated text",
+      "logical_model_profile": "flash",
       "provider": "cli",
       "backend": "antigravity",
       "model": "Gemini 3.5 Flash (Low)",
@@ -364,6 +412,7 @@ Schema v2 stores a structured record per segment:
     },
     "EPUB/chapter06.xhtml::4": {
       "translated": "Translated text",
+      "logical_model_profile": "flash",
       "provider": "api",
       "backend": "gemini_api",
       "model": "gemini-2.5-flash",
@@ -373,22 +422,24 @@ Schema v2 stores a structured record per segment:
 }
 ```
 
-This makes mixed-provider completion visible without treating provider identity as a reason to discard valid prior work.
+Under mixed-provider resume, no single run-level provider or concrete model represents the whole checkpoint. The `state.json` arrays and paid usage fields are derived audit summaries, while `translations.json` is authoritative for the provenance of each completed segment. Compatibility checks read only the tiered compatibility fields from `state.json`; audit summaries and segment provenance cannot grant authorization or invalidate reuse.
 
 ### 9.4 Schema v1 Migration
 
 | v1 model | v2 logical profile | Resume behavior |
 |---|---|---|
-| `gemini-2.5-flash` | `flash` | Reuse automatically when all hard compatibility keys match |
-| `gemini-2.5-pro` | `pro` | Reuse automatically when all hard compatibility keys match |
+| `gemini-2.5-flash` | `flash` | Reuse automatically when absolute-hard and force-resume-overridable keys match |
+| `gemini-2.5-pro` | `pro` | Reuse automatically when absolute-hard and force-resume-overridable keys match |
 | `gemini-2.5-flash-lite` | none | Require `--model flash --force-resume`; never remap silently |
 | Unknown model | none | Reject unless the owner explicitly force-resumes |
 
 Legacy segment strings are imported with the v1 state-level provider and model as provenance. If provenance is incomplete, the backend is recorded as `legacy_unknown`, not guessed.
 
+Schema-v1 fields are migrated without inventing unavailable metadata: the concrete v1 model maps to the logical profile through the table above, the existing `system_prompt_hash` remains the hash of the complete effective prompt including any injected glossary, and the batch protocol version is inferred from the versioned v1 EPUB adapter contract. If that protocol cannot be identified unambiguously, it is a force-resume-overridable mismatch rather than an assumed match.
+
 Reading v1 does not overwrite it immediately. The next successfully sanity-checked batch writes the complete state atomically as schema v2.
 
-`--force-resume` can override profile, prompt, or batch-setting differences, but it cannot override input signature, input format, or segmenter-signature differences.
+`--force-resume` can override target-language, profile, prompt/glossary, protocol, or batch-setting differences, but it cannot override input signature, input format, or segmenter-signature differences. Provider and concrete-model differences require no override when the logical profile and all other compatibility fields match.
 
 ## 10. Removal and Documentation Scope
 
@@ -396,10 +447,11 @@ After the Antigravity path and migration tests pass, remove obsolete Gemini CLI 
 
 - `ai/gemini_provider.py`;
 - `ai/adapters/providers/gemini_cli_adapter.py`;
-- Gemini-specific CLI probing in `ai/model_probe.py`;
+- `ai/model_resolver.py` and `ai/model_probe.py`, replaced by the typed profile registry and live Antigravity model check;
 - Gemini CLI construction in `ai/provider_factory.py`;
 - direct provider construction in `00_extract_glossary.py`;
 - `_CLIAPIFallbackAdapter` and automatic paid fallback wiring;
+- `cli_api_fallback_enabled` wiring in the reference-only `ai/epub_translate_roundtrip.py`, if that module is retained;
 - obsolete tests whose only contract is Gemini CLI behavior.
 
 Keep `ai/gemini_api_provider.py` and `GeminiAPIAdapter` as the separately authorized paid provider.
@@ -423,8 +475,10 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 - [ ] Add failing tests for the two logical model profiles and `lite` rejection.
 - [ ] Add failing tests proving invalid or unavailable Antigravity models stop before translation.
 - [ ] Add failing tests proving every Antigravity failure class makes zero Gemini API calls.
+- [ ] Add failing tests proving each Gemini API batch configures the SDK for one network attempt, invokes the raw provider once, and never split-retries after failure.
 - [ ] Add failing tests for interactive and non-interactive paid authorization.
 - [ ] Add failing tests for same-profile cross-provider checkpoint resume and schema v1 migration.
+- [ ] Add failing tests proving removed model/fallback configuration fails before provider construction.
 
 **Acceptance**: Tests encode the approved provider, cost, model, and checkpoint boundaries before production implementation changes.
 
@@ -434,6 +488,7 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 - [ ] Implement the raw Antigravity subprocess provider.
 - [ ] Implement per-run `agy models` verification.
 - [ ] Implement the Antigravity batch adapter using existing framing helpers.
+- [ ] Inject provider-specific retry policies while keeping `TranslationEngine` provider-agnostic.
 - [ ] Map infrastructure failures so the engine cannot split-retry them.
 - [ ] Prove temporary-file cleanup across success, spawn failure, parse failure, and hard timeout.
 
@@ -443,7 +498,9 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 
 - [ ] Make `cli` construct Antigravity and keep `api` constructing Gemini API.
 - [ ] Add interactive paid authorization and `--allow-paid-api`.
+- [ ] Configure Gemini API for one SDK/network attempt, one raw-provider attempt per planned batch, and zero engine split depth.
 - [ ] Remove automatic fallback flags and wiring with actionable migration errors.
+- [ ] Replace legacy model-resolution configuration with strict profile validation and migration errors.
 - [ ] Route standalone glossary extraction through the same composition root.
 - [ ] Preserve the existing shell entry point and public `cli|api` provider names.
 
@@ -452,6 +509,7 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 ### Phase 4: Checkpoint Schema v2
 
 - [ ] Implement structured segment provenance and provider usage summaries.
+- [ ] Persist the v2 compatibility state and per-segment provenance in separate atomic checkpoint files.
 - [ ] Migrate compatible schema v1 `flash` and `pro` checkpoints.
 - [ ] Require explicit force-resume for legacy `lite` checkpoints.
 - [ ] Allow same-profile Antigravity-to-API resume without retranslation.
@@ -476,14 +534,18 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 - [ ] `lite`, arbitrary provider model strings, and missing live Antigravity model entries fail before translation.
 - [ ] Authentication, timeout, network, capacity, empty-output, and artifact-output failures never invoke Gemini API.
 - [ ] Paid API execution requires `USE_API` interactively or `--allow-paid-api` non-interactively.
+- [ ] Each paid API batch configures `HttpRetryOptions(attempts=1)`, invokes the raw provider once, and uses zero engine split depth; a failed request makes no additional request.
 - [ ] No configuration file, environment variable, or checkpoint can grant paid authorization.
 - [ ] A paid authorization applies to one invocation and is not persisted as reusable consent.
 - [ ] Schema v2 resumes same-profile work across Antigravity and Gemini API without retranslating restored segments.
+- [ ] A cross-generation resume warning identifies prior concrete models, restored segment counts, and the new concrete model before paid authorization.
 - [ ] Schema v1 `flash` and `pro` checkpoints migrate without losing completed translations.
 - [ ] A failed batch is absent from the checkpoint; all prior successful batches remain present.
 - [ ] Segment provenance identifies the actual provider, backend, and model used.
+- [ ] `state.json` owns compatibility fields and audit summaries; `translations.json` owns authoritative per-segment provenance.
 - [ ] Main translation and standalone glossary extraction share the same provider and authorization boundary.
 - [ ] Removed automatic fallback flags fail with actionable migration guidance.
+- [ ] Removed alias, fallback, probe, and concrete-model configuration fails before provider construction with actionable migration guidance.
 - [ ] No production code invokes Gemini CLI after migration.
 - [ ] `uv run ruff check .` passes.
 - [ ] `uv run ruff format --check .` passes.
@@ -514,8 +576,9 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 | Long prompts exceed command-line limits | Temporary prompt file and short wrapper prompt |
 | Prompt files leak source book content | Unique names, restrictive temporary location, cleanup on every path |
 | Infrastructure errors trigger recursive split retries | Typed non-splittable provider failures |
-| Gemini API costs spike after CLI failure | No automatic fallback; per-invocation paid authorization |
+| Gemini API costs spike after CLI failure or hidden retries | No automatic fallback; per-invocation authorization; SDK, provider, and engine retry layers all constrained to one network attempt and zero split-retry |
 | Resume discards already translated chapters after provider change | Logical-profile checkpoint compatibility and schema v2 provenance |
+| Different model generations create inconsistent voice or terminology within one book | Pre-authorization mixed-generation warning plus per-segment concrete-model provenance |
 | Old `lite` checkpoints are silently reinterpreted | Explicit force-resume requirement |
 | Pricing changes make warnings inaccurate | Show estimated tokens, not a hard-coded dollar quote |
 
@@ -524,6 +587,7 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 | Date | Status | Note |
 |---|---|---|
 | 2026-07-16 | 📝 草案 (Draft) | Owner-approved design recorded; awaiting external AI review before implementation planning |
+| 2026-07-17 | 📝 草案 (Draft) | External review v1 findings incorporated; awaiting owner approval of the amended contract |
 
 ## 16. Related
 
@@ -540,6 +604,8 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
   - `ai/adapters/providers/gemini_api_adapter.py` — retained API adapter
   - `00_extract_glossary.py` — standalone provider-construction bypass to remove
   - `translatebook.sh` — legacy shell entry point and flag forwarding
+- **Review**:
+  - `pr-reviews/SPEC-020-review-v1.md` — external design review incorporated on 2026-07-17
 - **Specs**:
   - [SPEC-011](./SPEC-011-model-selection-and-config-abstraction.md)
   - [SPEC-012](./SPEC-012-core-translation-engine-hexagonal.md)
