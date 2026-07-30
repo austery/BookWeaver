@@ -15,3 +15,7 @@ _Avoid_: Supported format, legacy support
 **Legacy Workflow**:
 An older orchestration path retained only until an explicit retirement or archival decision is made. It receives no new feature or compatibility commitments.
 _Avoid_: Alternate pipeline, secondary supported path
+
+**Model Profile**:
+The logical quality-and-workload tier a translation runs at — flash or pro — independent of which concrete provider model realizes it. It is the unit of resume compatibility; concrete provider model strings are provenance, not identity.
+_Avoid_: model, model name, alias, lite
