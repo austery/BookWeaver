@@ -6,10 +6,13 @@ import re
 from html import escape
 from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 
 MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+)$")
 MARKDOWN_IMAGE_PATTERN = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<src>[^)]+)\)(?P<attrs>\{[^}]*\})?")
 ATTR_LIST_SUFFIX_PATTERN = re.compile(r"\s+\{[^{}]*\}\s*$")
+DIV_CONTENT_ID = "html-content"
 
 
 def parse_alternating_segments(markdown_text: str) -> list[tuple[str, str]]:
@@ -134,7 +137,9 @@ def render_alternating_bilingual_html(markdown_text: str) -> str:
   </style>
 </head>
 <body>
+<div id="{DIV_CONTENT_ID}">
 {body}
+</div>
 </body>
 </html>
 """
@@ -174,8 +179,21 @@ def main() -> None:
         raise SystemExit(f"Input markdown not found: {input_path}")
 
     markdown_text = input_path.read_text(encoding="utf-8")
-    html = render_alternating_bilingual_html(markdown_text)
-    output_path.write_text(html, encoding="utf-8")
+    full_html = render_alternating_bilingual_html(markdown_text)
+
+    # Extract only the content within the div with id="html-content"
+    soup = BeautifulSoup(full_html, "html.parser")
+    target_div = soup.find("div", id=DIV_CONTENT_ID)
+
+    if target_div:
+        # Extract the content of the target div, which includes its children, but not the div tag itself
+        html_to_write = "".join(str(child) for child in target_div.children)
+        print(f"Extracted content from <div id='{DIV_CONTENT_ID}'>.")
+    else:
+        html_to_write = full_html
+        print(f"Warning: <div id='{DIV_CONTENT_ID}'> not found. Writing full HTML.")
+
+    output_path.write_text(html_to_write, encoding="utf-8")
     print(f"Generated HTML: {output_path}")
 
 

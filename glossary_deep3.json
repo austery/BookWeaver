@@ -1,0 +1,522 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Index fund",
+      "suggested_translation": "指数基金",
+      "negative_constraint": "NOT 索引基金",
+      "reason": "本书最核心词汇，金融专业术语，切勿按字面直译为索引基金",
+      "priority": "critical"
+    },
+    {
+      "term": "Passive investing",
+      "suggested_translation": "被动投资",
+      "negative_constraint": "NOT 消极投资",
+      "reason": "核心金融概念，与主动投资（Active investing）相对，不能译带贬义的消极投资",
+      "priority": "critical"
+    },
+    {
+      "term": "Active management",
+      "suggested_translation": "主动管理",
+      "negative_constraint": "NOT 活跃管理",
+      "reason": "指依赖基金经理主观判断的投资方式，active在金融中译为主动而非活跃",
+      "priority": "critical"
+    },
+    {
+      "term": "Exchange-traded fund (ETF)",
+      "suggested_translation": "交易所交易基金",
+      "negative_constraint": "NOT 交易型开放式指数基金（除非特指中国国内语境，通常直译即可）",
+      "reason": "本书核心工具，通常保留简称ETF或译为交易所交易基金",
+      "priority": "critical"
+    },
+    {
+      "term": "BlackRock",
+      "suggested_translation": "贝莱德",
+      "negative_constraint": "NOT 黑岩",
+      "reason": "全球最大资产管理公司，官方中文名为贝莱德，直译黑岩是极其常见的翻译错误",
+      "priority": "critical"
+    },
+    {
+      "term": "Vanguard",
+      "suggested_translation": "先锋领航",
+      "negative_constraint": "NOT 先锋集团（为避免与其他公司混淆，官方使用先锋领航）",
+      "reason": "被动投资巨头，创始人Jack Bogle所在机构，需使用官方中文名",
+      "priority": "critical"
+    },
+    {
+      "term": "Dimensional Fund Advisors (DFA)",
+      "suggested_translation": "德明信投资",
+      "negative_constraint": "NOT 维度基金顾问",
+      "reason": "知名量化与因子投资公司，官方中文名为德明信，切勿直译",
+      "priority": "critical"
+    },
+    {
+      "term": "iShares",
+      "suggested_translation": "安硕",
+      "negative_constraint": "NOT i份额/我的份额",
+      "reason": "贝莱德旗下的ETF品牌，官方中文名为安硕",
+      "priority": "critical"
+    },
+    {
+      "term": "State Street Global Advisors (SSGA)",
+      "suggested_translation": "道富环球投资管理",
+      "negative_constraint": "NOT 州街全球顾问",
+      "reason": "金融巨头，SPDR的发行方，State Street固定译为道富",
+      "priority": "critical"
+    },
+    {
+      "term": "Capital asset pricing model (CAPM)",
+      "suggested_translation": "资本资产定价模型",
+      "negative_constraint": "NOT 资本资产价格模型",
+      "reason": "金融学核心理论（夏普提出），有固定的学术译法",
+      "priority": "critical"
+    },
+    {
+      "term": "Efficient-markets hypothesis (EMH)",
+      "suggested_translation": "有效市场假说",
+      "negative_constraint": "NOT 高效市场假设",
+      "reason": "尤金·法玛提出的核心学术理论，固定译名",
+      "priority": "critical"
+    },
+    {
+      "term": "Modern portfolio theory (MPT)",
+      "suggested_translation": "现代投资组合理论",
+      "negative_constraint": "NOT 现代资产组合理论",
+      "reason": "马科维茨提出的核心学术理论，固定译名",
+      "priority": "critical"
+    },
+    {
+      "term": "Jack Bogle / John Clifton Bogle",
+      "suggested_translation": "杰克·博格尔 / 约翰·克利夫顿·博格尔",
+      "negative_constraint": "NOT 鲍格尔",
+      "reason": "Vanguard创始人，指数基金之父，金融界极为重要的人物，译名需统一",
+      "priority": "critical"
+    },
+    {
+      "term": "Larry Fink",
+      "suggested_translation": "拉里·芬克",
+      "negative_constraint": "NOT 劳伦斯·芬克（除非原文为Lawrence）",
+      "reason": "BlackRock创始人兼CEO，业界最具影响力人物之一",
+      "priority": "critical"
+    },
+    {
+      "term": "John McQuown / Mac McQuown",
+      "suggested_translation": "约翰·麦克考恩 / 麦克·麦克考恩",
+      "negative_constraint": "NOT 麦昆",
+      "reason": "富国银行指数基金先驱，重要历史人物，译名需保持一致",
+      "priority": "critical"
+    },
+    {
+      "term": "Eugene Fama / Gene Fama",
+      "suggested_translation": "尤金·法玛 / 吉恩·法玛",
+      "negative_constraint": "NOT 法马",
+      "reason": "诺贝尔经济学奖得主，有效市场假说提出者",
+      "priority": "critical"
+    },
+    {
+      "term": "MSCI",
+      "suggested_translation": "明晟公司",
+      "negative_constraint": "NOT 摩根士丹利资本国际（已独立并更名）",
+      "reason": "全球最大的指数编制公司之一，官方中文名为明晟",
+      "priority": "critical"
+    },
+    {
+      "term": "Standard & Poor's Depositary Receipts (SPDRs / Spiders)",
+      "suggested_translation": "标普存托凭证（常被称为“蜘蛛”基金）",
+      "negative_constraint": "NOT 蜘蛛存托凭证",
+      "reason": "世界上第一只也是最大的ETF，缩写发音类似Spider，原文有双关，需按语境处理",
+      "priority": "critical"
+    },
+    {
+      "term": "Smart beta",
+      "suggested_translation": "聪明贝塔",
+      "negative_constraint": "NOT 智能贝塔",
+      "reason": "因子投资领域的专有名词，业界通用译法为聪明贝塔",
+      "priority": "high"
+    },
+    {
+      "term": "Factor investing",
+      "suggested_translation": "因子投资",
+      "negative_constraint": "NOT 因素投资",
+      "reason": "量化投资核心概念，基于不同风险因子（如价值、规模、动量等）进行投资",
+      "priority": "high"
+    },
+    {
+      "term": "Mutual fund",
+      "suggested_translation": "共同基金",
+      "negative_constraint": "NOT 互助基金",
+      "reason": "美国市场的公募基金，标准专业译名为共同基金",
+      "priority": "high"
+    },
+    {
+      "term": "Fund-of-funds (FOF)",
+      "suggested_translation": "基金中的基金",
+      "negative_constraint": "NOT 资金池",
+      "reason": "专门投资于其他基金的基金，通常直接使用简写FOF或全称",
+      "priority": "high"
+    },
+    {
+      "term": "Capitalization-weighted / Cap-weighted",
+      "suggested_translation": "市值加权",
+      "negative_constraint": "NOT 资本加权",
+      "reason": "指数编制方法，根据公司总市值分配权重，极易误译",
+      "priority": "high"
+    },
+    {
+      "term": "Equal-weighted",
+      "suggested_translation": "等权重",
+      "negative_constraint": "NOT 平等加权",
+      "reason": "指数编制方法，每个成分股权重相同",
+      "priority": "high"
+    },
+    {
+      "term": "Float-adjusted",
+      "suggested_translation": "自由流通市值调整",
+      "negative_constraint": "NOT 浮动调整",
+      "reason": "指数编制专业术语，指只计算市场上可自由交易的股份，极易被字面误译",
+      "priority": "high"
+    },
+    {
+      "term": "Creation/redemption process",
+      "suggested_translation": "申购与赎回机制",
+      "negative_constraint": "NOT 创建与救赎机制",
+      "reason": "ETF独有的实物一级市场交易机制，直译会完全失去金融含义",
+      "priority": "high"
+    },
+    {
+      "term": "Authorized participants (APs)",
+      "suggested_translation": "授权参与人",
+      "negative_constraint": "NOT 授权参与者/被授权人",
+      "reason": "ETF市场中的特许做市商或券商机构，专业名词需准确",
+      "priority": "high"
+    },
+    {
+      "term": "Securities lending",
+      "suggested_translation": "融券 / 证券借贷",
+      "negative_constraint": "NOT 证券贷款",
+      "reason": "基金通过出借持仓股票获利的金融操作，标准译法为融券或证券借贷",
+      "priority": "high"
+    },
+    {
+      "term": "Common ownership",
+      "suggested_translation": "共同所有权 / 交叉持股",
+      "negative_constraint": "NOT 普通所有权",
+      "reason": "反垄断与公司治理领域的专有名词，指同一机构同时持有同行业多家竞争公司股份",
+      "priority": "high"
+    },
+    {
+      "term": "Tracking error",
+      "suggested_translation": "跟踪误差",
+      "negative_constraint": "NOT 追踪错误",
+      "reason": "衡量指数基金表现好坏的核心指标，指基金收益与指数收益的偏差",
+      "priority": "high"
+    },
+    {
+      "term": "Load / No-load",
+      "suggested_translation": "申购费 / 无前端收费（免申购费）",
+      "negative_constraint": "NOT 负载 / 无负载",
+      "reason": "基金销售费用术语，将load译为负载是严重的机器翻译错误",
+      "priority": "high"
+    },
+    {
+      "term": "Proxy advisors",
+      "suggested_translation": "代理投票顾问",
+      "negative_constraint": "NOT 代理咨询师",
+      "reason": "如ISS和Glass Lewis，为机构投资者提供股东大会投票建议的专业机构",
+      "priority": "high"
+    },
+    {
+      "term": "Direct indexing",
+      "suggested_translation": "直接指数化",
+      "negative_constraint": "NOT 直接索引",
+      "reason": "ETF之后的新一代指数投资方式，投资者直接持有指数底层股票",
+      "priority": "high"
+    },
+    {
+      "term": "Exchange-traded notes (ETNs)",
+      "suggested_translation": "交易所交易票据",
+      "negative_constraint": "NOT 交易所交易纸币",
+      "reason": "类似于ETF但实质是无担保债务工具，ETN是固定译名",
+      "priority": "high"
+    },
+    {
+      "term": "Aladdin",
+      "suggested_translation": "阿拉丁系统",
+      "negative_constraint": "NOT 仅译为阿拉丁",
+      "reason": "贝莱德（BlackRock）开发的核心风险管理与投资系统，对公司崛起至关重要",
+      "priority": "high"
+    },
+    {
+      "term": "Center for Research in Security Prices (CRSP)",
+      "suggested_translation": "证券价格研究中心",
+      "negative_constraint": "NOT 安全价格研究中心",
+      "reason": "芝加哥大学的重要金融研究机构，Security在此指证券而非安全",
+      "priority": "high"
+    },
+    {
+      "term": "Barclays Global Investors (BGI)",
+      "suggested_translation": "巴克莱全球投资",
+      "negative_constraint": "NOT 巴克莱银行",
+      "reason": "被贝莱德收购的指数投资巨头，必须与巴克莱银行母公司作区分",
+      "priority": "high"
+    },
+    {
+      "term": "Wells Fargo Investment Advisors (WFIA)",
+      "suggested_translation": "富国银行投资顾问公司",
+      "negative_constraint": "NOT 韦尔斯法戈投资",
+      "reason": "BGI的前身，富国银行旗下早期开拓指数基金的部门",
+      "priority": "high"
+    },
+    {
+      "term": "Nate Most",
+      "suggested_translation": "内特·莫斯特",
+      "negative_constraint": "NOT 莫斯特（最好连名带姓避免歧义）",
+      "reason": "ETF的发明者之一，美国证券交易所高管",
+      "priority": "high"
+    },
+    {
+      "term": "William Sharpe / Bill Sharpe",
+      "suggested_translation": "威廉·夏普 / 比尔·夏普",
+      "negative_constraint": "NOT 锐利",
+      "reason": "CAPM提出者，诺贝尔经济学奖得主，金融界核心人物",
+      "priority": "high"
+    },
+    {
+      "term": "Harry Markowitz",
+      "suggested_translation": "哈里·马科维茨",
+      "negative_constraint": "NOT 马科维兹",
+      "reason": "现代投资组合理论之父，译名需沿用学术界公认翻译",
+      "priority": "high"
+    },
+    {
+      "term": "Patricia Dunn / Pattie Dunn",
+      "suggested_translation": "帕特丽夏·邓恩 / 帕蒂·邓恩",
+      "negative_constraint": "NOT 顿恩",
+      "reason": "BGI前CEO，后任惠普董事长，知名女高管",
+      "priority": "high"
+    },
+    {
+      "term": "Rob Kapito",
+      "suggested_translation": "罗布·卡皮托",
+      "negative_constraint": "NOT 卡皮图",
+      "reason": "贝莱德联合创始人兼总裁，拉里·芬克的副手",
+      "priority": "high"
+    },
+    {
+      "term": "Rex Sinquefield",
+      "suggested_translation": "雷克斯·辛克菲尔德",
+      "negative_constraint": "NOT 辛奎菲尔德",
+      "reason": "DFA联合创始人，指数基金早期先驱之一",
+      "priority": "high"
+    },
+    {
+      "term": "David Booth",
+      "suggested_translation": "大卫·布斯",
+      "negative_constraint": "NOT 展台",
+      "reason": "DFA联合创始人，芝加哥大学商学院冠名捐赠者",
+      "priority": "high"
+    },
+    {
+      "term": "Louis Bachelier",
+      "suggested_translation": "路易·巴舍利耶",
+      "negative_constraint": "NOT 巴切里尔",
+      "reason": "数学金融学之父，提出随机游走概念，法语人名需按规范音译",
+      "priority": "medium"
+    },
+    {
+      "term": "Random walk",
+      "suggested_translation": "随机游走",
+      "negative_constraint": "NOT 随便走",
+      "reason": "金融资产价格变动理论的核心词汇",
+      "priority": "medium"
+    },
+    {
+      "term": "Small cap / Small-cap stocks",
+      "suggested_translation": "小盘股",
+      "negative_constraint": "NOT 小资本股票",
+      "reason": "股票市场风格分类，对应Large cap（大盘股）",
+      "priority": "medium"
+    },
+    {
+      "term": "Micro cap",
+      "suggested_translation": "微盘股",
+      "negative_constraint": "NOT 微资本",
+      "reason": "市值极小的公司股票",
+      "priority": "medium"
+    },
+    {
+      "term": "Value investing",
+      "suggested_translation": "价值投资",
+      "negative_constraint": "NOT 有价值的投资",
+      "reason": "本杰明·格雷厄姆提出的投资流派，与成长投资（Growth investing）相对",
+      "priority": "medium"
+    },
+    {
+      "term": "Leveraged ETF",
+      "suggested_translation": "杠杆ETF",
+      "negative_constraint": "NOT 利用ETF",
+      "reason": "通过衍生品放大收益的ETF品种",
+      "priority": "medium"
+    },
+    {
+      "term": "Inverse ETF",
+      "suggested_translation": "反向ETF",
+      "negative_constraint": "NOT 倒置ETF",
+      "reason": "在指数下跌时获利的ETF品种，做空工具",
+      "priority": "medium"
+    },
+    {
+      "term": "Unit investment trust (UIT)",
+      "suggested_translation": "单位投资信托",
+      "negative_constraint": "NOT 单元信托",
+      "reason": "早期的ETF（如SPDR）采用的具体法律实体结构",
+      "priority": "medium"
+    },
+    {
+      "term": "Bionic betas",
+      "suggested_translation": "仿生贝塔",
+      "negative_constraint": "NOT 生化贝塔",
+      "reason": "Barr Rosenberg提出的早期量化/因子投资概念，本书原文特定概念",
+      "priority": "medium"
+    },
+    {
+      "term": "The Loser's Game",
+      "suggested_translation": "输家的游戏",
+      "negative_constraint": "NOT 失败者的游戏",
+      "reason": "Charles Ellis关于主动管理注定失败的著名文章标题，业内有固定称呼",
+      "priority": "medium"
+    },
+    {
+      "term": "Meme stonk",
+      "suggested_translation": "散户抱团股 / 迷因股",
+      "negative_constraint": "NOT 模因石头",
+      "reason": "金融网络流行语，指在社交媒体上被炒作的股票，stonk是stock的戏谑拼写",
+      "priority": "medium"
+    },
+    {
+      "term": "Go-go era / go-go stock market",
+      "suggested_translation": "狂飙突进时代（牛市） / 沸腾岁月",
+      "negative_constraint": "NOT 走走时代",
+      "reason": "指20世纪60年代华尔街投机盛行的高增长股票牛市时期",
+      "priority": "medium"
+    },
+    {
+      "term": "Nifty Fifty",
+      "suggested_translation": "漂亮50",
+      "negative_constraint": "NOT 敏捷50",
+      "reason": "20世纪六七十年代美国备受追捧的50只蓝筹股，固定历史专有名词",
+      "priority": "medium"
+    },
+    {
+      "term": "Bogle's Folly",
+      "suggested_translation": "博格尔的愚行",
+      "negative_constraint": "NOT 博格尔的荒唐",
+      "reason": "华尔街当年对世界上第一只零售指数基金的嘲笑性绰号",
+      "priority": "medium"
+    },
+    {
+      "term": "First Index Investment Trust (FIIT)",
+      "suggested_translation": "第一指数投资信托",
+      "negative_constraint": "NOT 首次指数信托",
+      "reason": "先锋领航推出的首只指数基金最初的名字，后更名为Vanguard 500",
+      "priority": "medium"
+    },
+    {
+      "term": "Wellington Management Company",
+      "suggested_translation": "威灵顿管理公司",
+      "negative_constraint": "NOT 惠灵顿管理",
+      "reason": "博格尔早期就职的老牌基金公司，业内通常按香港/台湾译法译为威灵顿",
+      "priority": "medium"
+    },
+    {
+      "term": "Batterymarch Financial Management",
+      "suggested_translation": "炮台金融管理公司",
+      "negative_constraint": "NOT 电池进行曲",
+      "reason": "早期尝试指数基金的先驱机构，因位于波士顿Batterymarch街得名，业界常译为炮台",
+      "priority": "medium"
+    },
+    {
+      "term": "Stagecoach Fund",
+      "suggested_translation": "驿马基金",
+      "negative_constraint": "NOT 公共马车基金",
+      "reason": "富国银行早期的指数类基金产品，致敬其历史上的马车Logo",
+      "priority": "medium"
+    },
+    {
+      "term": "SuperShares / SuperTrust",
+      "suggested_translation": "超级份额 / 超级信托",
+      "negative_constraint": "NOT 优异股票",
+      "reason": "早期复杂版交易所交易基金的前身产品，由LOR公司推出",
+      "priority": "medium"
+    },
+    {
+      "term": "Toronto 35 Index Participation Fund (TIPS)",
+      "suggested_translation": "多伦多35指数参与基金",
+      "negative_constraint": "NOT 财政部通胀保值债券",
+      "reason": "世界上第一只真正意义上的ETF（加拿大发行），此处TIPS缩写与美债TIPS极易混淆",
+      "priority": "medium"
+    },
+    {
+      "term": "World Equity Benchmark Shares (WEBS)",
+      "suggested_translation": "世界股票基准份额",
+      "negative_constraint": "NOT 世界股票网络",
+      "reason": "iShares安硕系列ETF的前身，极易按字面意思误译",
+      "priority": "medium"
+    },
+    {
+      "term": "Optimized Portfolios as Listed Securities (OPALS)",
+      "suggested_translation": "优化组合上市证券",
+      "negative_constraint": "NOT 猫眼石",
+      "reason": "摩根士丹利早期的ETN类产品，缩写恰好是猫眼石，须译出金融全称含义",
+      "priority": "medium"
+    },
+    {
+      "term": "The Great Bifurcation",
+      "suggested_translation": "大分家 / 大决裂",
+      "negative_constraint": "NOT 大分叉",
+      "reason": "专指博格尔被Wellington董事会开除并创立Vanguard的历史事件",
+      "priority": "medium"
+    },
+    {
+      "term": "Glass Lewis",
+      "suggested_translation": "格拉斯·刘易斯",
+      "negative_constraint": "NOT 玻璃刘易斯",
+      "reason": "全球第二大代理投票顾问公司，专有公司名称",
+      "priority": "medium"
+    },
+    {
+      "term": "Institutional Shareholder Services (ISS)",
+      "suggested_translation": "机构股东服务公司",
+      "negative_constraint": "NOT 国际空间站",
+      "reason": "全球最大的代理投票顾问公司，缩写ISS在非金融语境极易被误译为国际空间站",
+      "priority": "medium"
+    },
+    {
+      "term": "Active nontransparent ETFs (ANTs)",
+      "suggested_translation": "主动型非透明ETF",
+      "negative_constraint": "NOT 蚂蚁",
+      "reason": "不每日公布持仓的主动ETF，缩写ANTs具有误导性",
+      "priority": "medium"
+    },
+    {
+      "term": "Biblically responsible investing",
+      "suggested_translation": "符合圣经责任的投资",
+      "negative_constraint": "NOT 圣经反应投资",
+      "reason": "本书中提到的Inspire Investing公司首创的概念，属于ESG投资的变种",
+      "priority": "medium"
+    },
+    {
+      "term": "Subprime mortgage crisis",
+      "suggested_translation": "次贷危机",
+      "negative_constraint": "NOT 次级抵押危机",
+      "reason": "2008年金融危机起因，中文固定简称为次贷危机",
+      "priority": "medium"
+    },
+    {
+      "term": "Mortgage-backed bonds",
+      "suggested_translation": "抵押贷款支持债券",
+      "negative_constraint": "NOT 按揭支持债券",
+      "reason": "MBS类固定收益产品，Larry Fink早期在First Boston交易的核心品种",
+      "priority": "medium"
+    }
+  ]
+}

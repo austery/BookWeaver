@@ -1,0 +1,354 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Tiny Experiments",
+      "suggested_translation": "微型实验",
+      "negative_constraint": "NOT 小实验",
+      "reason": "本书书名及核心概念，指代具有明确目的、短周期且注重过程而非结果的个人探索行动，需统一且具有专有名词感。",
+      "priority": "critical"
+    },
+    {
+      "term": "Linear goals",
+      "suggested_translation": "线性目标",
+      "negative_constraint": "NOT 直线目标",
+      "reason": "与本书核心的“实验性心态”相对立的传统目标设定方式，书中反复批判此概念，需保持前后翻译完全一致。",
+      "priority": "critical"
+    },
+    {
+      "term": "Systematic curiosity",
+      "suggested_translation": "系统性好奇心",
+      "negative_constraint": "NOT 随便的好奇",
+      "reason": "本书的核心倡导心态，将好奇心作为一种可被系统化培养和利用的工具，是全书的立论基础。",
+      "priority": "critical"
+    },
+    {
+      "term": "Mindful productivity",
+      "suggested_translation": "正念生产力",
+      "negative_constraint": "NOT 专注生产力",
+      "reason": "作者提出的核心概念，强调在追求效率时保持对内在状态的觉察，有别于传统的“有毒生产力（Toxic productivity）”。",
+      "priority": "critical"
+    },
+    {
+      "term": "PACT",
+      "suggested_translation": "PACT原则/微契约",
+      "negative_constraint": "NOT 简单的“协议”或“条约”",
+      "reason": "在书中这是一个首字母缩略词（Purposeful, Actionable, Continuous, Trackable），是替代SMART目标的新框架，翻译时最好保留英文缩写并加以解释。",
+      "priority": "critical"
+    },
+    {
+      "term": "Cognitive scripts",
+      "suggested_translation": "认知脚本",
+      "negative_constraint": "NOT 认知文字",
+      "reason": "认知科学术语，指大脑中预设的行为模式，书中专门用它来解释为什么人们会被传统的成功路径所困。",
+      "priority": "critical"
+    },
+    {
+      "term": "Sequel script",
+      "suggested_translation": "续集脚本",
+      "negative_constraint": "NOT 结果脚本",
+      "reason": "作者自创的新词，指代三种限制人的认知脚本之一：认为未来必须是过去的延续。",
+      "priority": "high"
+    },
+    {
+      "term": "Crowdpleaser script",
+      "suggested_translation": "取悦者脚本",
+      "negative_constraint": "NOT 群众脚本",
+      "reason": "作者自创的新词，三种限制人的认知脚本之二：基于大众或他人的期望来做决定。",
+      "priority": "high"
+    },
+    {
+      "term": "Epic script",
+      "suggested_translation": "史诗脚本",
+      "negative_constraint": "NOT 伟大脚本",
+      "reason": "作者自创的新词，三种限制人的认知脚本之三：盲目追求“寻找热爱”等宏大叙事。",
+      "priority": "high"
+    },
+    {
+      "term": "Chronos",
+      "suggested_translation": "克罗诺斯（定量时间）",
+      "negative_constraint": "NOT 纯粹音译",
+      "reason": "古希腊语中的时间概念之一，代表物理的、可量化和线性的时间。书中将其与Kairos对比，需在译文中体现其“定量”属性。",
+      "priority": "high"
+    },
+    {
+      "term": "Kairos",
+      "suggested_translation": "凯洛斯（契机时间/质性时间）",
+      "negative_constraint": "NOT 纯粹音译",
+      "reason": "古希腊语中的时间概念之二，代表时机、质量和特殊时刻。正念生产力的核心在于把握Kairos。",
+      "priority": "high"
+    },
+    {
+      "term": "Magic windows",
+      "suggested_translation": "黄金窗口/奇迹时刻",
+      "negative_constraint": "NOT 魔法窗户",
+      "reason": "作者用来比喻人们进入“心流”或效率极高的特定时间段（Kairos时刻），直译容易造成误解。",
+      "priority": "high"
+    },
+    {
+      "term": "Generativity",
+      "suggested_translation": "创生感/生成性",
+      "negative_constraint": "NOT 繁衍/生殖（除非在生物学语境）",
+      "reason": "源自埃里克森的心理学概念，书中专门用于替代“遗产（Legacy）”，强调对当下世界和他人产生的积极、生成性影响。",
+      "priority": "critical"
+    },
+    {
+      "term": "Growth loops",
+      "suggested_translation": "成长循环",
+      "negative_constraint": "NOT 生长圈",
+      "reason": "取代线性“阶梯（Ladder）”的思维模型，强调通过试错和反思不断迭代的成长方式。",
+      "priority": "critical"
+    },
+    {
+      "term": "Plus Minus Next",
+      "suggested_translation": "加减下一步法 (PMN复盘法)",
+      "negative_constraint": "NOT 加减下一个",
+      "reason": "作者在Ness Labs提出的知名元认知复盘工具，分为+、-、->三列，需要有方法论专有名词的质感。",
+      "priority": "critical"
+    },
+    {
+      "term": "Triple Check",
+      "suggested_translation": "三重自检法",
+      "negative_constraint": "NOT 三次检查",
+      "reason": "作者提出的用于诊断拖延症的工具，分为Head（脑）, Heart（心）, Hand（手）三个维度。",
+      "priority": "high"
+    },
+    {
+      "term": "Two-Step Reset",
+      "suggested_translation": "两步重置法",
+      "negative_constraint": "NOT 两次重置",
+      "reason": "作者提出的应对生活意外和干扰（Disruption）的策略工具。",
+      "priority": "high"
+    },
+    {
+      "term": "Steering Sheet",
+      "suggested_translation": "掌舵表/转向决策表",
+      "negative_constraint": "NOT 驾驶纸",
+      "reason": "作者发明的决策工具，用于综合评估内部和外部信号，决定是否坚持、暂停或调整实验。",
+      "priority": "high"
+    },
+    {
+      "term": "Aligned aliveness",
+      "suggested_translation": "知行合一的活力/对齐的生命力",
+      "negative_constraint": "NOT 活着的对齐",
+      "reason": "作者原创词汇，指代Head, Heart, Hand三者完全一致时产生的不费力的工作状态。",
+      "priority": "high"
+    },
+    {
+      "term": "Intentional imperfection",
+      "suggested_translation": "有意识的不完美",
+      "negative_constraint": "NOT 故意的缺陷",
+      "reason": "核心策略之一，指为了在重要领域取得长期卓越，而在次要领域战略性地容忍不完美。",
+      "priority": "critical"
+    },
+    {
+      "term": "Strategic mediocrity",
+      "suggested_translation": "战略性平庸",
+      "negative_constraint": "NOT 战略的普通",
+      "reason": "投资家Ben Trosky提出的概念，指放弃短期的完美表现以追求长期的可持续卓越。与上一个词对应。",
+      "priority": "high"
+    },
+    {
+      "term": "Social flow",
+      "suggested_translation": "社交心流",
+      "negative_constraint": "NOT 社会流动",
+      "reason": "心理学概念，指群体在协作或共享空间中共同进入的高度专注和投入的状态。",
+      "priority": "critical"
+    },
+    {
+      "term": "Learning in public",
+      "suggested_translation": "公开学习/在公共视野中学习",
+      "negative_constraint": "NOT 在公共场所学习",
+      "reason": "知识管理和创作者圈子的专业术语，指将自己不完美的学习过程和中间产物公之于众，以获取反馈和建立连接。",
+      "priority": "critical"
+    },
+    {
+      "term": "Public Pillars",
+      "suggested_translation": "公开学习三支柱",
+      "negative_constraint": "NOT 公共柱子",
+      "reason": "作者总结的实施“公开学习”的三个步骤：公开承诺 (pledge)、公开平台 (platform)、公开实践 (practice)。",
+      "priority": "high"
+    },
+    {
+      "term": "Curiosity circle",
+      "suggested_translation": "好奇心圈子",
+      "negative_constraint": "NOT 好奇圆圈",
+      "reason": "作者提出的社区构建概念，指以好奇心而非专业知识为门槛的同侪学习社群。",
+      "priority": "high"
+    },
+    {
+      "term": "Metacognition",
+      "suggested_translation": "元认知",
+      "negative_constraint": "NOT 高级认知",
+      "reason": "心理学及教育学核心术语，指“对思考的思考”，是成长循环（Growth loops）的关键机制。",
+      "priority": "critical"
+    },
+    {
+      "term": "Affective labeling",
+      "suggested_translation": "情绪标记/情感标注",
+      "negative_constraint": "NOT 感情标签",
+      "reason": "心理学术语，指用语言准确命名感受的过程，能有效降低杏仁核活跃度。",
+      "priority": "high"
+    },
+    {
+      "term": "Field Notes",
+      "suggested_translation": "田野笔记",
+      "negative_constraint": "NOT 现场备忘录",
+      "reason": "人类学研究工具，被作者借用于个人生活记录，需保留其人类学的隐喻感。",
+      "priority": "high"
+    },
+    {
+      "term": "Energy syncing",
+      "suggested_translation": "能量同步",
+      "negative_constraint": "NOT 能源同步",
+      "reason": "时间管理策略，指将任务难度与个人的生理节律和能量高峰相匹配。",
+      "priority": "high"
+    },
+    {
+      "term": "Sequential focus",
+      "suggested_translation": "顺序专注",
+      "negative_constraint": "NOT 连续对焦",
+      "reason": "认知资源管理策略，提倡一次只做一件事，拒绝多任务处理。",
+      "priority": "high"
+    },
+    {
+      "term": "Conscious movement",
+      "suggested_translation": "有觉察的运动",
+      "negative_constraint": "NOT 意识运动",
+      "reason": "情绪资源管理策略，通过感受身体动作来激活副交感神经，调节情绪。",
+      "priority": "high"
+    },
+    {
+      "term": "Kairos ritual",
+      "suggested_translation": "凯洛斯仪式",
+      "negative_constraint": "NOT 时间仪式",
+      "reason": "作者首创术语，指用来迅速将自己拉回当下、开启高效状态的小习惯。",
+      "priority": "high"
+    },
+    {
+      "term": "Transactive memory",
+      "suggested_translation": "交互记忆",
+      "negative_constraint": "NOT 交易记忆",
+      "reason": "心理学/组织行为学术语，指群体成员之间了解“谁知道什么”的分布式记忆系统。",
+      "priority": "high"
+    },
+    {
+      "term": "Lateral roots",
+      "suggested_translation": "侧根能力/横向技能",
+      "negative_constraint": "NOT 仅译为“侧根”",
+      "reason": "植物学隐喻，在书中代指核心专业之外的跨界技能（Lateral skills），翻译时需双关或意译以明晰其在职场中的指代。",
+      "priority": "high"
+    },
+    {
+      "term": "Permissionless apprenticeship",
+      "suggested_translation": "无许可学徒制",
+      "negative_constraint": "NOT 不被允许的学徒",
+      "reason": "由Jack Butcher提出的现代职场理念，指不需等待他人许可或雇佣，主动通过创造价值来学习和展示能力。",
+      "priority": "medium"
+    },
+    {
+      "term": "Surface area of luck",
+      "suggested_translation": "运气的表面积",
+      "negative_constraint": "NOT 幸运的面积",
+      "reason": "科技圈和创投圈流行语，指通过多做公开展示和广泛连接来增加遇到好运的概率。",
+      "priority": "high"
+    },
+    {
+      "term": "Multipotentialites",
+      "suggested_translation": "多重潜力者",
+      "negative_constraint": "NOT 多重能力者",
+      "reason": "指那些拥有许多不同兴趣和创造性追求的人，是描述现代非线性职业者的重要词汇。",
+      "priority": "high"
+    },
+    {
+      "term": "Multihyphenate",
+      "suggested_translation": "多重身份者/多栖职人",
+      "negative_constraint": "NOT 多连字符者",
+      "reason": "指从事多种不同职业（以连字符/斜杠分隔）的人，直译难以被中文读者理解。",
+      "priority": "high"
+    },
+    {
+      "term": "Self-consistency fallacy",
+      "suggested_translation": "自我一致性谬误",
+      "negative_constraint": "NOT 自我连贯错误",
+      "reason": "作者提出的心理学延伸概念，指人们因为“我过去一直这样”而错误地认为“我必须继续这样”。",
+      "priority": "high"
+    },
+    {
+      "term": "Compensatory control",
+      "suggested_translation": "补偿性控制",
+      "negative_constraint": "NOT 赔偿控制",
+      "reason": "心理学术语，指当人们感到不确定或失去控制时，通过寻找秩序和结构来弥补控制感的防御机制。",
+      "priority": "high"
+    },
+    {
+      "term": "Free-floating anxiety",
+      "suggested_translation": "游离性焦虑/自由浮动性焦虑",
+      "negative_constraint": "NOT 自由飘动的焦虑",
+      "reason": "心理学专有名词，指没有明确对象或特定原因的普遍焦虑感。",
+      "priority": "high"
+    },
+    {
+      "term": "Monotropism",
+      "suggested_translation": "单向关注/单峰性注意力",
+      "negative_constraint": "NOT 单一热带主义",
+      "reason": "神经多样性（特别是自闭症研究）领域的专业术语，指将注意力高度集中于极少数兴趣的倾向。",
+      "priority": "high"
+    },
+    {
+      "term": "Eustress",
+      "suggested_translation": "良性压力/积极压力",
+      "negative_constraint": "NOT 优应力",
+      "reason": "心理学术语，指能够提升表现、带来积极影响的适度压力。",
+      "priority": "high"
+    },
+    {
+      "term": "Consequence cascade",
+      "suggested_translation": "后果级联/连锁后果",
+      "negative_constraint": "NOT 后果瀑布",
+      "reason": "科学术语，原指灾难的连锁反应，书中用于分析突发事件的第二层和深层影响。",
+      "priority": "high"
+    },
+    {
+      "term": "Communities of practice",
+      "suggested_translation": "实践社区",
+      "negative_constraint": "NOT 练习社区",
+      "reason": "社会学和知识管理领域的专有名词，指一群关心相同主题并经常互动以相互学习的人。",
+      "priority": "high"
+    },
+    {
+      "term": "Audience effect",
+      "suggested_translation": "观众效应/受众效应",
+      "negative_constraint": "NOT 听众影响",
+      "reason": "心理学术语，指因为意识到有他人在观察，从而改变自己行为的现象。",
+      "priority": "high"
+    },
+    {
+      "term": "Active acceptance",
+      "suggested_translation": "积极接纳",
+      "negative_constraint": "NOT 主动接受",
+      "reason": "心理学应对机制术语，承认负面情况但仍以建设性方式处理。与Resigning acceptance（妥协性接纳）相对。",
+      "priority": "medium"
+    },
+    {
+      "term": "Effort paradox",
+      "suggested_translation": "努力悖论",
+      "negative_constraint": "NOT 费力悖论",
+      "reason": "认知科学概念，指人类既本能地厌恶努力，又倾向于赋予需要努力的事物更高价值的矛盾心理。",
+      "priority": "high"
+    },
+    {
+      "term": "Ness Labs",
+      "suggested_translation": "Ness Labs (内斯实验室)",
+      "negative_constraint": "NOT 尼斯实验室",
+      "reason": "作者创办的公司和知名通讯社区名称，在知识管理圈有一定知名度，通常保留英文或译为内斯实验室。",
+      "priority": "medium"
+    },
+    {
+      "term": "Mind gardening",
+      "suggested_translation": "心灵园艺/思维花园",
+      "negative_constraint": "NOT 脑部种地",
+      "reason": "知识管理领域（如数字花园 Digital Garden）的衍生概念，也是本书附赠资源的名称，指精心培育和修剪个人知识库和想法的过程。",
+      "priority": "medium"
+    }
+  ]
+}

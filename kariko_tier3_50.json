@@ -1,0 +1,214 @@
+{
+  "critical_terminology": [
+    {
+      "term": "double liability",
+      "suggested_translation": "双重责任/双重负债",
+      "negative_constraint": "NOT 双倍债务",
+      "reason": "美国早期银行业法律术语，指银行倒闭时股东不仅损失投资，还要承担与股票面值等额的额外赔偿责任。本书中多次提到银行倒闭带来的这种风险。",
+      "priority": "critical"
+    },
+    {
+      "term": "foreclosure",
+      "suggested_translation": "止赎/丧失抵押品赎回权",
+      "negative_constraint": "NOT 没收",
+      "reason": "大萧条期间极为高频的法律和房地产术语，指因无法偿还抵押贷款，银行强制拍卖房产或农场。",
+      "priority": "critical"
+    },
+    {
+      "term": "deficiency judgment",
+      "suggested_translation": "差额判决/不足额判决",
+      "negative_constraint": "NOT 缺陷判决",
+      "reason": "抵押房产被拍卖后，如果所得款项不足以偿还贷款，法院对债务人下达的补足差额的判决，是导致许多人破产的关键法律概念。",
+      "priority": "critical"
+    },
+    {
+      "term": "receivership",
+      "suggested_translation": "破产接管/接管状态",
+      "negative_constraint": "NOT 接收",
+      "reason": "企业界大萧条时期的常见状态，指企业因资不抵债被法院指定的接管人接管进行重组或清算。",
+      "priority": "critical"
+    },
+    {
+      "term": "margin",
+      "suggested_translation": "保证金/融资（买入）",
+      "negative_constraint": "NOT 利润空间/边缘",
+      "reason": "在此书的金融语境中（bought on margin），特指借钱炒股的保证金交易（融资融券），这是引发1929年股灾的核心原因。",
+      "priority": "critical"
+    },
+    {
+      "term": "scrip",
+      "suggested_translation": "代金券/临时货币",
+      "negative_constraint": "NOT 废纸/纸条",
+      "reason": "银行休假期间由于缺乏现金，地方政府或企业发行的替代货币，带有特定历史背景。",
+      "priority": "critical"
+    },
+    {
+      "term": "bank holiday",
+      "suggested_translation": "银行休假",
+      "negative_constraint": "NOT 银行假日（常规公共假日）",
+      "reason": "特指1933年罗斯福为应对银行挤兑危机而强制全国银行暂停营业的紧急政策。",
+      "priority": "critical"
+    },
+    {
+      "term": "passbook / pass-book",
+      "suggested_translation": "存折",
+      "negative_constraint": "NOT 通行证",
+      "reason": "书中描述了大量冻结存款的“存折”被以折扣价在黑市或券商处买卖的独特现象，需准确翻译。",
+      "priority": "critical"
+    },
+    {
+      "term": "New Deal",
+      "suggested_translation": "新政",
+      "negative_constraint": "NOT 新交易",
+      "reason": "罗斯福总统应对大萧条的一系列经济和社会改革政策的统称。",
+      "priority": "critical"
+    },
+    {
+      "term": "gold standard",
+      "suggested_translation": "金本位制",
+      "negative_constraint": "NOT 黄金标准",
+      "reason": "大萧条期间货币政策的核心争论点，多国在此期间“off the gold standard”（脱离金本位）。",
+      "priority": "critical"
+    },
+    {
+      "term": "bimetalism / bi-metalism",
+      "suggested_translation": "复本位制/金银复本位制",
+      "negative_constraint": "NOT 双金属主义",
+      "reason": "呼吁同时使用金和银作为货币本位的经济主张，是通胀派的政治诉求。",
+      "priority": "high"
+    },
+    {
+      "term": "fiat money",
+      "suggested_translation": "法定货币/不兑现纸币",
+      "negative_constraint": "NOT 菲亚特钱",
+      "reason": "没有黄金等实物支撑，仅靠政府法令流通的货币，常与通货膨胀（printing press money）联系在一起。",
+      "priority": "high"
+    },
+    {
+      "term": "pump priming",
+      "suggested_translation": "刺激经济/政府注资",
+      "negative_constraint": "NOT 泵水/启动水泵",
+      "reason": "比喻政府通过大量公共支出来刺激经济复苏的凯恩斯主义经济手段。",
+      "priority": "high"
+    },
+    {
+      "term": "Little Steel",
+      "suggested_translation": "小钢铁集团/独立钢铁公司",
+      "negative_constraint": "NOT 少量钢铁",
+      "reason": "美国劳工史专有名词，指除美国钢铁公司（Big Steel）之外的几家中大型钢铁企业（如共和钢铁、扬斯敦钢管等）。",
+      "priority": "high"
+    },
+    {
+      "term": "company union",
+      "suggested_translation": "御用工会/资方控制的工会",
+      "negative_constraint": "NOT 公司工会",
+      "reason": "资方为对抗独立工会而自行组织和控制的内部工会，带有贬义。",
+      "priority": "high"
+    },
+    {
+      "term": "closed shop",
+      "suggested_translation": "封闭车间/排他性工会企业",
+      "negative_constraint": "NOT 关门的商店",
+      "reason": "只雇佣工会会员的工厂或企业，是大萧条时期劳资冲突的核心争议点。",
+      "priority": "high"
+    },
+    {
+      "term": "processing tax",
+      "suggested_translation": "加工税",
+      "negative_constraint": "NOT 处理税",
+      "reason": "农业调整法案（AAA）中向农产品加工商征收的税，用于补贴减产的农民，后被判违宪。",
+      "priority": "high"
+    },
+    {
+      "term": "war babies",
+      "suggested_translation": "战争概念股/军工股",
+      "negative_constraint": "NOT 战时婴儿",
+      "reason": "金融界俚语，指在一战和二战初期因生产战争物资而大发横财、股价暴涨的公司股票。",
+      "priority": "high"
+    },
+    {
+      "term": "Bonus Expeditionary Force / B.E.F.",
+      "suggested_translation": "退伍军人请愿军/讨薪远征军",
+      "negative_constraint": "NOT 奖金远征军",
+      "reason": "1932年聚集在华盛顿要求提前发放一战退伍金（Bonus）的退伍军人游行队伍。",
+      "priority": "high"
+    },
+    {
+      "term": "white rabbit",
+      "suggested_translation": "魔术般的经济对策/变戏法政策",
+      "negative_constraint": "NOT 白兔",
+      "reason": "作者借用魔术师从帽子里变出白兔的典故，讽刺罗斯福政府不断推出各种令人眼花缭乱但不切实际的经济刺激花招。",
+      "priority": "medium"
+    },
+    {
+      "term": "cash-and-carry",
+      "suggested_translation": "现购自运（政策）",
+      "negative_constraint": "NOT 现金携带",
+      "reason": "二战初期美国修改中立法案的一项政策，允许交战国以现金购买美国物资并使用非美国船只运输。",
+      "priority": "medium"
+    },
+    {
+      "term": "blue chip stocks",
+      "suggested_translation": "蓝筹股/绩优股",
+      "negative_constraint": "NOT 蓝筹码股票",
+      "reason": "指长期稳定增长、大型且传统的公司股票，如文中的AT&T、GE。",
+      "priority": "medium"
+    },
+    {
+      "term": "shoestring financing",
+      "suggested_translation": "小本经营/空手套白狼式的融资",
+      "negative_constraint": "NOT 鞋带融资",
+      "reason": "指资本极小，高度依赖高杠杆和多重抵押的危险融资方式。",
+      "priority": "medium"
+    },
+    {
+      "term": "technography",
+      "suggested_translation": "技术决定论/专家政治（原文可能笔误应为technocracy）",
+      "negative_constraint": "NOT 科技作图",
+      "reason": "文中所指机器和电力取代人工导致永久失业的社会思潮，对应历史上的技术统制运动（Technocracy movement）。",
+      "priority": "medium"
+    },
+    {
+      "term": "managed economy",
+      "suggested_translation": "统制经济/管制经济",
+      "negative_constraint": "NOT 管理经济",
+      "reason": "指国家通过NRA等法案对物价、工资和生产进行全面干预和计划的经济模式。",
+      "priority": "high"
+    },
+    {
+      "term": "clearing house",
+      "suggested_translation": "票据交换所/清算所",
+      "negative_constraint": "NOT 清理房屋",
+      "reason": "金融机构间进行票据和资金结算的机构，在银行休假期间曾探讨由其发行代金券。",
+      "priority": "medium"
+    },
+    {
+      "term": "Reconstruction Finance Corporation (RFC)",
+      "suggested_translation": "复兴金融公司",
+      "negative_constraint": "NOT 重建金融公司",
+      "reason": "胡佛政府成立、罗斯福政府扩大的重要政府金融机构，向濒临破产的银行和企业提供紧急贷款。",
+      "priority": "high"
+    },
+    {
+      "term": "Home Owners Loan Corporation (HOLC)",
+      "suggested_translation": "房主贷款公司",
+      "negative_constraint": "NOT 房屋所有者借贷公司",
+      "reason": "新政时期成立的关键机构，通过政府发行债券来收购坏账，为面临止赎的房主提供重新融资。",
+      "priority": "high"
+    },
+    {
+      "term": "pegging",
+      "suggested_translation": "钉住汇率/干预维持（汇率或价格）",
+      "negative_constraint": "NOT 钉钉子",
+      "reason": "指政府在国际汇率市场中通过买卖外汇将本国货币维持在特定价值的行为。",
+      "priority": "medium"
+    },
+    {
+      "term": "sweat shop",
+      "suggested_translation": "血汗工厂",
+      "negative_constraint": "NOT 汗水商店",
+      "reason": "工作条件极其恶劣、工资极低、工时极长的工厂或作坊，新政法案试图取缔的对象。",
+      "priority": "medium"
+    }
+  ]
+}

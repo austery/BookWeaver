@@ -1,0 +1,354 @@
+{
+  "critical_terminology": [
+    {
+      "term": "Tiny Experiments",
+      "suggested_translation": "微实验",
+      "negative_constraint": "NOT 小实验/小测验",
+      "reason": "本书核心概念及书名，强调实验的微小性和可执行性，需全书统一",
+      "priority": "critical"
+    },
+    {
+      "term": "Pact",
+      "suggested_translation": "契约",
+      "negative_constraint": "NOT 合同/协议/习惯",
+      "reason": "书中将Pact与Habit（习惯）作为对比概念提出，代表一种有意识的自我约定",
+      "priority": "critical"
+    },
+    {
+      "term": "Growth Loops",
+      "suggested_translation": "成长闭环",
+      "negative_constraint": "NOT 增长循环",
+      "reason": "书中关于个人成长迭代的模型，译为成长闭环更符合个人发展语境",
+      "priority": "critical"
+    },
+    {
+      "term": "Mindful Productivity",
+      "suggested_translation": "正念生产力",
+      "negative_constraint": "NOT 专注生产力/留心生产力",
+      "reason": "作者的核心理念之一，强调在保持觉知和心理健康前提下的生产力",
+      "priority": "critical"
+    },
+    {
+      "term": "Learning in Public",
+      "suggested_translation": "公开学习",
+      "negative_constraint": "NOT 在公共场合学习",
+      "reason": "互联网时代的个人发展概念，指在网络上公开分享学习过程",
+      "priority": "critical"
+    },
+    {
+      "term": "Social Flow",
+      "suggested_translation": "社交心流",
+      "negative_constraint": "NOT 社会流动",
+      "reason": "由心流（Flow）衍生出的概念，指在群体互动中达到的高度沉浸状态",
+      "priority": "critical"
+    },
+    {
+      "term": "Cognitive Script",
+      "suggested_translation": "认知脚本",
+      "negative_constraint": "NOT 认知剧本/思想底稿",
+      "reason": "心理学词汇，指潜意识中指导行为的预设模式（包含以下三种衍生脚本）",
+      "priority": "high"
+    },
+    {
+      "term": "Crowdpleaser script",
+      "suggested_translation": "讨好者脚本",
+      "negative_constraint": "NOT 群众取悦者剧本",
+      "reason": "作者提出的三种负面认知脚本之一，为了取悦他人而行动的模式",
+      "priority": "critical"
+    },
+    {
+      "term": "Epic script",
+      "suggested_translation": "史诗脚本",
+      "negative_constraint": "NOT 史诗剧本",
+      "reason": "作者提出的三种负面认知脚本之一，追求宏大叙事和完美目标的模式",
+      "priority": "critical"
+    },
+    {
+      "term": "Sequel script",
+      "suggested_translation": "续集脚本",
+      "negative_constraint": "NOT 续集剧本",
+      "reason": "作者提出的三种负面认知脚本之一，盲目延续过去路径的模式",
+      "priority": "critical"
+    },
+    {
+      "term": "Chronos",
+      "suggested_translation": "物理时间/克洛诺斯",
+      "negative_constraint": "NOT 计时器",
+      "reason": "古希腊语中的时间概念，代表客观流逝的、可度量的线性时间",
+      "priority": "high"
+    },
+    {
+      "term": "Kairos",
+      "suggested_translation": "契机时间/凯洛斯",
+      "negative_constraint": "NOT 凯洛斯（不要仅音译）",
+      "reason": "古希腊语中的时间概念，代表主观感受到的、有意义的特殊时刻或时机",
+      "priority": "high"
+    },
+    {
+      "term": "Linear goals",
+      "suggested_translation": "线性目标",
+      "negative_constraint": "NOT 直线目标",
+      "reason": "作者批判的一种僵化目标设定方式",
+      "priority": "critical"
+    },
+    {
+      "term": "Experimental mindset",
+      "suggested_translation": "实验者心态",
+      "negative_constraint": "NOT 实验性思维",
+      "reason": "本书提倡的核心心态，与线性思维对立",
+      "priority": "critical"
+    },
+    {
+      "term": "Active acceptance",
+      "suggested_translation": "主动接纳",
+      "negative_constraint": "NOT 积极接受",
+      "reason": "与无奈妥协相对，指带有觉知和主观能动性的接受现实",
+      "priority": "high"
+    },
+    {
+      "term": "Resigning acceptance",
+      "suggested_translation": "无奈妥协",
+      "negative_constraint": "NOT 辞职接受/被动接受",
+      "reason": "与主动接纳相对立的消极状态",
+      "priority": "high"
+    },
+    {
+      "term": "Affective labeling",
+      "suggested_translation": "情绪标记",
+      "negative_constraint": "NOT 情感贴标签",
+      "reason": "心理学概念，指通过用语言准确描述情绪来降低其负面影响",
+      "priority": "high"
+    },
+    {
+      "term": "Aligned aliveness",
+      "suggested_translation": "契合的生命力",
+      "negative_constraint": "NOT 对齐的活跃度",
+      "reason": "作者创造或引用的表达深度内在一致性和活力的词汇",
+      "priority": "high"
+    },
+    {
+      "term": "Busy bragging",
+      "suggested_translation": "忙碌炫耀",
+      "negative_constraint": "NOT 瞎忙/吹牛忙",
+      "reason": "指现代社会中把忙碌当作身份象征来炫耀的社会现象",
+      "priority": "medium"
+    },
+    {
+      "term": "Consequence cascades",
+      "suggested_translation": "后果级联",
+      "negative_constraint": "NOT 后果瀑布",
+      "reason": "描述一个行动引发一连串连锁反应的现象",
+      "priority": "high"
+    },
+    {
+      "term": "Decision frames",
+      "suggested_translation": "决策框架",
+      "negative_constraint": "NOT 决定框",
+      "reason": "指人们在做决定时所采用的视角和参考系",
+      "priority": "high"
+    },
+    {
+      "term": "Effort paradox",
+      "suggested_translation": "努力悖论",
+      "negative_constraint": "NOT 功夫矛盾",
+      "reason": "指有时过度努力反而达不到最佳效果的心理学现象",
+      "priority": "high"
+    },
+    {
+      "term": "Effortless action / wu wei",
+      "suggested_translation": "无为/毫不费力的行动",
+      "negative_constraint": "NOT 不努力的行动",
+      "reason": "源自道家的概念，在西方心理学语境中指顺应事物本性的心流状态",
+      "priority": "high"
+    },
+    {
+      "term": "Eustress",
+      "suggested_translation": "良性压力",
+      "negative_constraint": "NOT 优压力",
+      "reason": "心理学术语，指具有积极意义、能带来动力和成就感的压力",
+      "priority": "high"
+    },
+    {
+      "term": "Free-floating anxiety",
+      "suggested_translation": "游离性焦虑",
+      "negative_constraint": "NOT 自由漂浮焦虑",
+      "reason": "心理学概念，指没有明确对象或原因的持续性焦虑感",
+      "priority": "high"
+    },
+    {
+      "term": "Intentional imperfection",
+      "suggested_translation": "刻意的不完美",
+      "negative_constraint": "NOT 有意缺陷",
+      "reason": "作者提倡的一种对抗完美主义的策略",
+      "priority": "critical"
+    },
+    {
+      "term": "Liminal space",
+      "suggested_translation": "阈限空间",
+      "negative_constraint": "NOT 边缘空间",
+      "reason": "人类学和心理学概念，指新旧状态之间的过渡地带或转变期",
+      "priority": "high"
+    },
+    {
+      "term": "Magic windows",
+      "suggested_translation": "魔法时间窗",
+      "negative_constraint": "NOT 魔法窗户",
+      "reason": "作者用来描述一天中精力最充沛、效率最高的特定时段",
+      "priority": "critical"
+    },
+    {
+      "term": "Mimetic desire",
+      "suggested_translation": "模仿性欲望",
+      "negative_constraint": "NOT 拟态渴望",
+      "reason": "哲学家勒内·基拉尔提出的概念，指人类的欲望往往是模仿他人的欲望",
+      "priority": "high"
+    },
+    {
+      "term": "Mind gardening",
+      "suggested_translation": "心智园艺",
+      "negative_constraint": "NOT 思想种地",
+      "reason": "知识管理领域的流行词，指像打理花园一样培育和管理自己的思想与笔记",
+      "priority": "critical"
+    },
+    {
+      "term": "Monotropism",
+      "suggested_translation": "单一关注倾向",
+      "negative_constraint": "NOT 单向性",
+      "reason": "心理学（常用于自闭症研究）术语，指将所有注意力集中在单一兴趣上的倾向",
+      "priority": "high"
+    },
+    {
+      "term": "Multihyphenate professionals",
+      "suggested_translation": "多重身份专业人士/斜杠青年",
+      "negative_constraint": "NOT 多连字符专业人员",
+      "reason": "指拥有多重职业身份（用连字符连接）的人群",
+      "priority": "high"
+    },
+    {
+      "term": "Nimble resilience",
+      "suggested_translation": "敏捷韧性",
+      "negative_constraint": "NOT 灵活的弹性",
+      "reason": "强调在遭遇挫折时能够快速适应和调整的复原力",
+      "priority": "high"
+    },
+    {
+      "term": "Permissionless apprenticeship",
+      "suggested_translation": "无需许可的学徒制",
+      "negative_constraint": "NOT 未经允许的学徒",
+      "reason": "现代职业发展概念，指不通过正式录用，自主为某人或某项目创造价值以学习",
+      "priority": "high"
+    },
+    {
+      "term": "Plus Minus Next",
+      "suggested_translation": "加减下一步反思法",
+      "negative_constraint": "NOT 加减下一个",
+      "reason": "Ness Labs创始人提出的一种反思框架（做对了什么、做错了什么、下一步怎么做）",
+      "priority": "critical"
+    },
+    {
+      "term": "Portfolio careers",
+      "suggested_translation": "组合式职业",
+      "negative_constraint": "NOT 投资组合职业",
+      "reason": "指不依赖单一全职工作，而是由多个兼职、自由职业或项目组成的职业生涯",
+      "priority": "high"
+    },
+    {
+      "term": "Public Pillars",
+      "suggested_translation": "公开支柱",
+      "negative_constraint": "NOT 公共柱子",
+      "reason": "作者提出的公开学习框架中的核心要素",
+      "priority": "critical"
+    },
+    {
+      "term": "Self-anthropology",
+      "suggested_translation": "自我人类学",
+      "negative_constraint": "NOT 自身人类学",
+      "reason": "作者提出的概念，指像人类学家研究部落一样，客观地观察和记录自己的行为",
+      "priority": "critical"
+    },
+    {
+      "term": "Self-consistency fallacy",
+      "suggested_translation": "自我一致性谬误",
+      "negative_constraint": "NOT 自我矛盾谬误",
+      "reason": "认知偏差，指为了保持与过去自我形象一致而做出不理智坚持的现象",
+      "priority": "high"
+    },
+    {
+      "term": "Steering Sheets",
+      "suggested_translation": "方向罗盘/转向表",
+      "negative_constraint": "NOT 驾驶纸",
+      "reason": "作者发明的一种用于引导实验方向的工具表单",
+      "priority": "critical"
+    },
+    {
+      "term": "Strategic mediocrity",
+      "suggested_translation": "战略性平庸",
+      "negative_constraint": "NOT 战术平庸",
+      "reason": "有意识地在某些不重要的领域接受平庸，以保留精力投入到重要领域",
+      "priority": "critical"
+    },
+    {
+      "term": "Transactive memory",
+      "suggested_translation": "交互记忆",
+      "negative_constraint": "NOT 交易记忆",
+      "reason": "心理学概念，指群体成员之间分配和共享信息的记忆系统",
+      "priority": "high"
+    },
+    {
+      "term": "Triple Check",
+      "suggested_translation": "三重检验",
+      "negative_constraint": "NOT 三倍检查",
+      "reason": "作者提出的一种自我验证框架",
+      "priority": "critical"
+    },
+    {
+      "term": "Two-step reset",
+      "suggested_translation": "两步重置法",
+      "negative_constraint": "NOT 两步复位",
+      "reason": "作者介绍的一种应对干扰和情绪失控的快速恢复方法",
+      "priority": "critical"
+    },
+    {
+      "term": "White-knuckling",
+      "suggested_translation": "死扛/咬牙坚持",
+      "negative_constraint": "NOT 白指节",
+      "reason": "俚语，原指因过度用力握紧而指节泛白，比喻凭借纯粹意志力痛苦地坚持",
+      "priority": "high"
+    },
+    {
+      "term": "Torschlusspanik",
+      "suggested_translation": "时间耗尽恐慌",
+      "negative_constraint": "NOT 关门恐慌",
+      "reason": "德语词汇（字面意关门恐慌），指因感觉时间流逝、错失机会而产生的焦虑",
+      "priority": "high"
+    },
+    {
+      "term": "Toxic productivity",
+      "suggested_translation": "有毒的生产力",
+      "negative_constraint": "NOT 毒性产量",
+      "reason": "指过度追求效率和产出，导致健康受损的极端工作倾向",
+      "priority": "high"
+    },
+    {
+      "term": "Ness Labs",
+      "suggested_translation": "Ness Labs",
+      "negative_constraint": "NOT 尼斯实验室",
+      "reason": "作者创立的在线社区和平台，通常保留英文原名或做统一标注",
+      "priority": "high"
+    },
+    {
+      "term": "Jugaad",
+      "suggested_translation": "凑合创新/权宜之计",
+      "negative_constraint": "NOT 巨型创新",
+      "reason": "印地语词汇，指利用有限资源进行灵活变通、寻找替代解决方案的创新方式",
+      "priority": "high"
+    },
+    {
+      "term": "Kintsugi",
+      "suggested_translation": "金缮",
+      "negative_constraint": "NOT 金继",
+      "reason": "日本用金粉修补破损瓷器的传统工艺，隐喻拥抱不完美和伤痕",
+      "priority": "high"
+    }
+  ]
+}
