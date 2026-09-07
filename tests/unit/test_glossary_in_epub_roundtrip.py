@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.cli import build_system_prompt, load_glossary_block
+from ai.orchestration import build_system_prompt, load_glossary_block
 from ai.glossary_injector import GlossaryInjector
 
 

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import ai.cli as cli_module
+import ai.orchestration as cli_module
 
 
 def test_detect_input_format_epub_and_directory(tmp_path: Path) -> None:

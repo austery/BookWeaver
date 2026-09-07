@@ -1,94 +1,70 @@
-# BookWeaver (EPUB-First)
+# BookWeaver
 
-BookWeaver is a high-performance, **EPUB-centric** translation engine. It leverages the latest **Gemini 2.5** models to deliver professional-grade bilingual (`alternating`) translations while strictly preserving the eBook's structure, navigation (TOC), and metadata.
+BookWeaver translates EPUB publications into alternating bilingual EPUBs. The canonical entry point is `uv run bookweaver`. The subscription runtime is Antigravity CLI (`agy`); Gemini API is a separately authorized paid path.
 
-> **⚠️ Format Notice:** Support for PDF and DOCX is legacy and experimental. Due to the inherent complexity of these formats, BookWeaver is optimized for **EPUB-to-EPUB** workflows. For the best results, convert your sources to EPUB before translating.
+## Setup and translation
 
----
-
-## ⚡ Quick Start
-
-### 1. Requirements & Setup
-- **Python 3.13+** (Modern runtime for high performance)
-- **[uv](https://github.com/astral-sh/uv)** (Recommended package manager)
-- **Gemini CLI** (Authenticated) OR **Gemini API Key**
+Install Python 3.13+, uv, and an authenticated Antigravity CLI, then synchronize the locked environment:
 
 ```bash
-# Install and synchronize
-uv sync
+uv sync --frozen
+uv run bookweaver book.epub --output translated.epub
 ```
 
-### 2. The "Magic" One-Step Command (Recommended)
-This is the most efficient way to use BookWeaver. It automatically extracts key terminology, builds a glossary, and translates the entire book in a single pass.
+The default is Flash 3.8 Low. Model mappings live in `ai/model_profiles.py`; upgrading a model requires changing that registry and verifying the new version. A missing model stops execution rather than silently switching versions.
 
 ```bash
-uv run bookweaver book.epub --output translated.epub --extract-glossary --model pro
+uv run bookweaver book.epub --output translated.epub --model pro --effort low
+uv run bookweaver book.epub --output translated.epub --extract-glossary
 ```
 
----
+The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro 3.1 Low. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
 
-## 💎 Key Features
+## Checkpoints
 
-### 1. Gemini 2.5 Native Support
-BookWeaver is hardcoded to use the latest Gemini 2.5 series for superior reasoning and translation quality.
-
-| Alias | Target Model | Best For... |
-|---|---|---|
-| `pro` | `gemini-2.5-pro` | Technical manuals, complex literature, and terminology extraction. |
-| `flash` | `gemini-2.5-flash` | Standard fiction, large books, and quick turnarounds. |
-| `lite` | `gemini-2.5-flash-lite` | Extremely fast drafts and high-volume batch processing. |
-
-### 2. Advanced Terminology (Glossary)
-BookWeaver's standout feature is its ability to maintain consistency via AI-driven terminology extraction.
-
-- **Unified Flow**: `--extract-glossary` runs both extraction *and* translation in a single session.
-- **Priority Filtering**: Use `--glossary-min-priority high` to only inject the most critical terms, keeping prompts lean.
-- **Extraction Modes** (`--glossary-mode`):
-    - **`auto` (Default)**: Smart and efficient. It targets the book's Index and Table of Contents (TOC). If no index is found (e.g., in a novel), it automatically falls back to `deep-scan`.
-    - **`deep-scan`**: Thorough and intensive. It performs a **whole-book analysis** to extract terms from every page. Use this for books without an index or for maximum consistency.
-
-### 3. Resilience & Checkpointing
-Built for long-running translations:
-- **Resume**: Automatically resumes from the last successful chapter if interrupted.
-- **Fallback**: Add `--cli-api-fallback` to switch to the direct API backend if the CLI encountered transient errors.
-
----
-
-## 🛠 Advanced Usage
-
-### Separate Glossary Extraction (Recommended for Troubleshooting)
-If you encounter JSON errors during the one-step process, or if you want to inspect/edit terms first, use the standalone extractor. **Using `--provider api` is more stable for generating long JSON files.**
+Each successfully validated batch saves accumulated translations and provenance to one atomically replaced `checkpoint.json`. One run owns its checkpoint lock at a time. A failed batch leaves earlier saved work reusable. Resume is enabled by default:
 
 ```bash
-# Extract terms separately (stable API mode)
-export GEMINI_API_KEY="your-key"
-uv run python 00_extract_glossary.py book.epub --output my_terms.json --provider api --model pro
-
-# Then run translation using the saved file
-uv run bookweaver book.epub --output translated.epub --glossary my_terms.json --model pro
+uv run bookweaver book.epub --output translated.epub
 ```
 
-### Manual Glossary
-If you already have a custom terminology file:
+Running that command again restores matching segments. A fully restored book is repackaged without further translation calls. Save progress includes checkpoint bytes and elapsed time. Input or segmenter mismatches cannot be forced; language, effort, profile, prompt, or batching changes require explicit `--force-resume`. Concrete model changes produce a continuity warning. Known schema-v1 checkpoints can be imported without rewriting their original files; incompatible or incomplete state stops clearly.
+
+## Paid API
+
+CLI failure never automatically switches to API. Paid execution requires `--provider api` and either interactive `USE_API` confirmation or an explicit per-invocation capability:
+
 ```bash
-uv run bookweaver book.epub --output out.epub --glossary my_terms.json
+uv run bookweaver book.epub --output translated.epub --provider api --allow-paid-api
 ```
 
-### Sanity Probe
-The tool includes an experimental "Sanity Probe" to prevent AI hallucinations or language errors. It is currently **disabled by default** in the standard configuration but can be toggled:
-- Enable in `config/config.json` under `sanity_probe.enabled`.
-- Disable at runtime with `--no-sanity-probe`.
+This command may incur charges. It requires `GEMINI_API_KEY` or `gemini_api.api_key`. Config files cannot authorize spending. Explicit effort is not supported on the API path. Paid requests have one SDK attempt and no engine split retries. No live paid API test has been performed for this migration.
 
-### Legacy Workflow
-For PDF/DOCX, the legacy shell orchestrator is still available (requires Calibre):
+## Configuration migration
+
+Runtime configuration is read from `config/config.json` and `~/.config/bookweaver/config.json`. The example file is a template, not a runtime default. Configuration is validated against `config/schemas/config_schema.json` before provider construction.
+
+Old model aliases, model probes, fallback settings, output-format settings, and unused legacy controls fail with migration errors. An existing `~/.config/translatebook/config.json` also requires explicit migration. Back up user configuration before changing it. The reference example lists supported settings; model versions belong in the typed registry.
+
+Custom prompt templates are optional. Supply a matching `prompt_profile` and `prompt_templates` mapping; templates may use `{TARGET_LANGUAGE}`, `{GLOSSARY_BLOCK}`, and `{CUSTOM_INSTRUCTIONS_BLOCK}`. Omitting them uses the built-in EPUB prompt.
+
+## Scope and verification status
+
+EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. Markdown/PDF adapters are retained behind `--allow-isolated-format`; EPUB glossary/resume controls do not apply there. DOCX is rejected. Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
+
+The migration is in progress. A small synthetic EPUB has completed through the new application composition with real Flash 3.8 Low and a full checkpoint restore. This is not whole-book acceptance. Large-batch fidelity, selected-book quality/layout checks, interruption recovery, and legacy deletion gates remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md).
+
 ```bash
-./translatebook.sh --workflow markdown path/to/file.pdf
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest -q
+uv run tach check
 ```
 
----
+### Checkpoint identity migration
 
-## 🧪 Development & Quality
-```bash
-uv run ruff check .      # High-speed linting
-uv run pytest           # Full test suite
-```
+New EPUB checkpoints and glossary cache keys use a streamed SHA-256 digest of the input file bytes. Identical bytes can resume through the same checkpoint directory after a move or timestamp change; changed bytes cannot resume, even with `--force-resume`. Checkpoint integrity and hard identity fields are checked before automatic glossary extraction.
+
+Early schema-v2 checkpoints from PR #25's initial commit used metadata fingerprints. They cannot be reused as content-verified checkpoints: preserve the old directory and choose a fresh `--checkpoint-dir`. Legacy v1 imports require a matching legacy metadata fingerprint plus explicit `--force-resume`; imported segment provenance records `source_verification: legacy_metadata_only`. This acknowledges that historical source bytes cannot be verified from v1 metadata. The original v1 files remain intact.
+
+Isolated Markdown input must be a directory containing translatable numbered `page*.md` files. Ordinary Markdown files and empty page directories fail before writing an output.

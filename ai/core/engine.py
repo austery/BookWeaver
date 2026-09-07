@@ -240,8 +240,10 @@ class TranslationEngine:
             )
         except RateLimitError:
             raise
-        except TranslationError:
-            can_split = len(segments) > 1 and _depth < self._config.max_split_depth
+        except TranslationError as exc:
+            can_split = (
+                exc.split_eligible and len(segments) > 1 and _depth < self._config.max_split_depth
+            )
             if not can_split:
                 raise
 
