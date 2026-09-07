@@ -67,6 +67,7 @@ class ProviderSpec:
 class QualityPolicy:
     sanity_probe: bool = True
     max_batch_chars: int | None = None
+    max_batch_segments: int | None = None
 
 
 @dataclass(frozen=True)
@@ -194,6 +195,11 @@ class TranslationOrchestrator:
         )
         if batch_chars <= 0:
             raise ValueError("max_batch_chars must be positive")
+        batch_segments = options.quality.max_batch_segments
+        if batch_segments is None and input_format == "epub":
+            batch_segments = resilience.get("max_batch_segments", 200)
+        if batch_segments is not None and (type(batch_segments) is not int or batch_segments <= 0):
+            raise ValueError("max_batch_segments must be a positive integer")
         content_signature = (
             _compute_content_signature(input_file) if input_format == "epub" else None
         )
@@ -202,7 +208,7 @@ class TranslationOrchestrator:
             CheckpointIdentity(
                 content_signature,
                 input_format,
-                _EPUB_SEGMENTER_SIGNATURE,
+                _ACTIVE_EPUB_SEGMENTER_SIGNATURE,
                 options.spec.output_lang,
                 model.profile,
                 model.effort,
@@ -210,6 +216,7 @@ class TranslationOrchestrator:
                 "segment_tags",
                 batch_chars,
                 SEPARATOR_OVERHEAD,
+                max_batch_segments=batch_segments,
             )
             if content_signature is not None
             else None
@@ -411,6 +418,7 @@ class TranslationOrchestrator:
                 EngineConfig(
                     system_prompt=prompt,
                     max_batch_chars=batch_chars,
+                    max_batch_segments=batch_segments,
                     max_split_depth=0 if model.provider == "api" else split_depth,
                     resume_translations={key: record.translated for key, record in records.items()},
                     on_checkpoint_batch=persist,
@@ -535,7 +543,8 @@ _CHECKPOINT_SCHEMA_VERSION = 1
 _CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _CHECKPOINT_STATE_FILE = "state.json"
 _CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
-_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v3"
+_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v3"  # Historical pipeline only.
+_ACTIVE_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v4-source-only-bibliography"
 _DEFAULT_BATCH_CHARS_PRO_EPUB = 60_000
 _DEFAULT_BATCH_CHARS_PRO = 60_000
 _DEFAULT_BATCH_CHARS_STANDARD = 10_000

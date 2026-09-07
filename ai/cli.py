@@ -76,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Max chars per batch (EPUB default: 60000)",
     )
     p.add_argument(
+        "--max-batch-segments",
+        type=int,
+        default=None,
+        help="Maximum segments per batch (EPUB default: 200)",
+    )
+    p.add_argument(
         "--input-format",
         choices=["auto", "epub"],
         default="auto",
@@ -148,7 +154,9 @@ def main(argv: list[str] | None = None) -> None:
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
     model = orchestration.ModelSpec(args.model, args.effort, _is_model_flag_explicit(tokens))
     provider = orchestration.ProviderSpec(args.provider, args.allow_paid_api)
-    quality = orchestration.QualityPolicy(not args.no_sanity_probe, args.max_batch_chars)
+    quality = orchestration.QualityPolicy(
+        not args.no_sanity_probe, args.max_batch_chars, args.max_batch_segments
+    )
     if fmt == "epub":
         options = orchestration.EpubTranslationOptions(
             spec=spec,

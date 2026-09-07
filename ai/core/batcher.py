@@ -1,7 +1,7 @@
 """Text batching — pure domain logic for grouping segments by size.
 
 This module knows nothing about delimiters, prompts, or transport.
-It only groups text items into batches that respect a character-count limit.
+It groups text items by character count and an optional segment-count limit.
 """
 
 from __future__ import annotations
@@ -10,10 +10,10 @@ from collections.abc import Sequence
 
 
 class TextBatcher:
-    """Groups text segments into batches limited by total character count.
+    """Groups text segments using character and optional segment-count limits.
 
     The algorithm is greedy: segments are packed into the current batch
-    until adding the next segment would exceed ``max_batch_chars``.  A
+    until adding the next segment would exceed either configured limit. A
     single oversized segment is placed alone in its own batch (never
     split at this level — splitting is a transport-level retry concern).
 
@@ -26,11 +26,18 @@ class TextBatcher:
         self,
         max_batch_chars: int,
         separator_overhead: int = 0,
+        *,
+        max_batch_segments: int | None = None,
     ) -> None:
         if max_batch_chars <= 0:
             raise ValueError(f"max_batch_chars must be > 0, got {max_batch_chars}")
         if separator_overhead < 0:
             raise ValueError(f"separator_overhead must be >= 0, got {separator_overhead}")
+        if max_batch_segments is not None and (
+            type(max_batch_segments) is not int or max_batch_segments <= 0
+        ):
+            raise ValueError("max_batch_segments must be a positive integer")
+        self._max_segments = max_batch_segments
         self._max = max_batch_chars
         self._sep = separator_overhead
 
@@ -45,7 +52,7 @@ class TextBatcher:
         return self._sep
 
     def plan_batches(self, segments: Sequence[str]) -> list[list[str]]:
-        """Group *segments* into batches respecting the character limit.
+        """Group *segments* into batches respecting both configured limits.
 
         Args:
             segments: Ordered text segments to batch.
@@ -66,7 +73,10 @@ class TextBatcher:
             sep_len = self._sep if current else 0
             projected = current_chars + sep_len + seg_len
 
-            if current and projected > self._max:
+            if current and (
+                projected > self._max
+                or (self._max_segments is not None and len(current) >= self._max_segments)
+            ):
                 batches.append(current)
                 current = [segment]
                 current_chars = seg_len

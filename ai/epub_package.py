@@ -715,12 +715,40 @@ def resolve_opf_href(opf_path: str, href: str) -> str:
     return posixpath.normpath(posixpath.join(str(opf_dir), href))
 
 
+def _is_bibliography_body(body: ET.Element) -> bool:
+    """Recognize dedicated bibliography pages without classifying prose mentions."""
+    semantics = body.get("{http://www.idpf.org/2007/ops}type", "").split()
+    if "bibliography" in semantics or "doc-bibliography" in body.get("role", "").split():
+        return True
+    titles = {"bibliography", "references", "works cited", "参考文献", "参考书目"}
+    heading_tags = {"h1", "h2", "h3", "h4", "h5", "h6"}
+    if sum(_local_name(node.tag).lower() in heading_tags for node in body.iter()) != 1:
+        return False
+
+    def leading_heading(node: ET.Element) -> bool | None:
+        # Follow visible document order: text, children, then each child's tail.
+        # None means this subtree has neither prose nor a heading.
+        if _local_name(node.tag).lower() in heading_tags:
+            return _normalize_visible_text(node).strip().casefold() in titles
+        if (node.text or "").strip():
+            return False
+        for child in node:
+            found = leading_heading(child)
+            if found is not None:
+                return found
+            if (child.tail or "").strip():
+                return False
+        return None
+
+    return leading_heading(body) is True
+
+
 def extract_translatable_segments(
     xhtml: str, document_path: str | None = None
 ) -> list[TranslatableSegment]:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
-    if body is None:
+    if body is None or _is_bibliography_body(body):
         return []
     is_toc_document = _is_toc_document(document_path)
     return _collect_translatable_block_segments(body, is_toc_document=is_toc_document)
@@ -734,7 +762,7 @@ def patch_xhtml_alternating(
 ) -> str:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
-    if body is None:
+    if body is None or _is_bibliography_body(body):
         if translations:
             raise ValueError("translation count does not match translatable segments")
         return xhtml

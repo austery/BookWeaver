@@ -3,7 +3,8 @@
   "epub_resilience": {
     "pro_epub_max_batch_chars": 60000,
     "standard_epub_max_batch_chars": 60000,
-    "max_split_depth": 10
+    "max_split_depth": 10,
+    "max_batch_segments": 200
   },
   "terminology_extraction": {
     "enabled": false,

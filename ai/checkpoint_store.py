@@ -33,6 +33,7 @@ class CheckpointIdentity:
     protocol: str
     max_batch_chars: int
     separator_overhead: int
+    max_batch_segments: int | None = None
 
 
 @dataclass(frozen=True)
@@ -181,11 +182,16 @@ class CheckpointStore:
             raise CheckpointError("Unsupported checkpoint schema")
         self._usage_by_run = _object(data.get("paid_usage_by_run", {}))
         stored = _object(data.get("identity"))
+        # Earlier identities had no segment-count bound; do not infer today's default.
+        stored.setdefault("max_batch_segments", None)
         expected = asdict(identity)
         if set(stored) != set(expected):
             raise CheckpointError("Incomplete checkpoint identity")
         for key, value in stored.items():
-            if key in ("max_batch_chars", "separator_overhead"):
+            if key == "max_batch_segments":
+                if value is not None and (type(value) is not int or value < 1):
+                    raise CheckpointError("Invalid checkpoint max_batch_segments")
+            elif key in ("max_batch_chars", "separator_overhead"):
                 if type(value) is not int or value < (1 if key == "max_batch_chars" else 0):
                     raise CheckpointError(f"Invalid checkpoint field: {key}")
             elif key == "effort":
