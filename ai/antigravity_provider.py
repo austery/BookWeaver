@@ -59,7 +59,7 @@ def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
         raise ProviderUnavailableError("Antigravity returned empty output")
     if len(response) < 1000 and not response.startswith("<segment"):
         if re.match(
-            r"^(?:error[: ]+)?(?:you are not logged in|authentication required|please sign in)",
+            r"^(?:error[: ]+)?(?:(?:you are )?not logged in|authentication required|please sign in)",
             status,
         ):
             raise ProviderAuthenticationError("Sign in to Antigravity before resuming")

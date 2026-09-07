@@ -15,7 +15,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -163,14 +163,16 @@ class TranslationOrchestrator:
         if input_format == "epub":
             source = EpubSourceAdapter(input_file)
         elif input_format == "markdown":
-            source = MarkdownSourceAdapter(
-                str(input_file if input_file.is_dir() else input_file.parent)
-            )
+            if not input_file.is_dir():
+                raise ValueError("Markdown input must be a directory of numbered page*.md files")
+            source = MarkdownSourceAdapter(str(input_file))
         elif input_format == "pdf":
             source = PdfSourceAdapter(str(input_file))
         else:
             raise ValueError("Unsupported input format")
         segments = source.get_segments()
+        if input_format == "markdown" and not segments:
+            raise ValueError("Markdown directory contains no translatable numbered page*.md files")
         segment_ids = {segment.id for segment in segments}
         if len(segment_ids) != len(segments):
             raise ValueError("Source segment IDs must be unique")
@@ -192,6 +194,26 @@ class TranslationOrchestrator:
         )
         if batch_chars <= 0:
             raise ValueError("max_batch_chars must be positive")
+        content_signature = (
+            _compute_content_signature(input_file) if input_format == "epub" else None
+        )
+        legacy_signature = _compute_input_signature(input_file) if input_format == "epub" else None
+        identity = (
+            CheckpointIdentity(
+                content_signature,
+                input_format,
+                _EPUB_SEGMENTER_SIGNATURE,
+                options.spec.output_lang,
+                model.profile,
+                model.effort,
+                "pending-prompt",
+                "segment_tags",
+                batch_chars,
+                SEPARATOR_OVERHEAD,
+            )
+            if content_signature is not None
+            else None
+        )
         with ExitStack() as stack:
             store = None
             if input_format == "epub" and (resume.enabled or resume.force):
@@ -202,6 +224,15 @@ class TranslationOrchestrator:
                     input_format="epub",
                 )
                 store = stack.enter_context(self._checkpoint_factory.create(directory))
+                if identity is not None:
+                    # Validate the complete document and known hard fields before any external work.
+                    store.load(
+                        identity,
+                        segment_ids=segment_ids,
+                        force=resume.force,
+                        hard_only=True,
+                        legacy_input_signature=legacy_signature,
+                    )
             glossary_path = glossary.path
             request = resolve_glossary_request(
                 glossary=str(glossary_path) if glossary_path else None,
@@ -223,7 +254,7 @@ class TranslationOrchestrator:
                 extraction_selection = resolve_profile(extraction_model, provider=model.provider)
                 cache_identity = json.dumps(
                     {
-                        "source": _compute_input_signature(input_file),
+                        "source": content_signature,
                         "mode": request.mode,
                         "max_terms": term_limit,
                         "model": extraction_selection.model_id,
@@ -286,24 +317,17 @@ class TranslationOrchestrator:
                     .replace("{GLOSSARY_BLOCK}", glossary_block or "")
                     .replace("{CUSTOM_INSTRUCTIONS_BLOCK}", options.spec.custom_prompt or "")
                 )
-            identity = (
-                CheckpointIdentity(
-                    _compute_input_signature(input_file),
-                    input_format,
-                    _EPUB_SEGMENTER_SIGNATURE,
-                    options.spec.output_lang,
-                    model.profile,
-                    model.effort,
-                    hashlib.sha256(prompt.encode()).hexdigest(),
-                    "segment_tags" if input_format == "epub" else "delimiter",
-                    batch_chars,
-                    SEPARATOR_OVERHEAD,
+            if identity is not None:
+                identity = replace(
+                    identity, system_prompt_hash=hashlib.sha256(prompt.encode()).hexdigest()
                 )
-                if input_format == "epub"
-                else None
-            )
             records = (
-                store.load(identity, segment_ids=segment_ids, force=resume.force)
+                store.load(
+                    identity,
+                    segment_ids=segment_ids,
+                    force=resume.force,
+                    legacy_input_signature=legacy_signature,
+                )
                 if store is not None and identity is not None
                 else {}
             )
@@ -670,7 +694,13 @@ class CheckpointMetadata:
     segmenter_signature: str | None
 
 
+def _compute_content_signature(input_file: Path) -> str:
+    with input_file.open("rb") as stream:
+        return "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 def _compute_input_signature(input_file: Path) -> str:
+    """Legacy metadata fingerprint; never use as a content digest."""
     stat = input_file.stat()
     payload = f"{input_file.resolve()}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
     return hashlib.sha256(payload).hexdigest()

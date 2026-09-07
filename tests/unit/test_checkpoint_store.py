@@ -90,7 +90,7 @@ def test_corrupt_canonical_document_does_not_fall_back(tmp_path: Path) -> None:
 def test_legacy_import_preserves_files_until_new_batch(tmp_path: Path) -> None:
     state = {
         "schema_version": 1,
-        "input_signature": "sha256:book",
+        "input_signature": "legacy-fingerprint",
         "input_format": "epub",
         "segmenter_signature": "epub-leaf-block-v3",
         "output_lang": "zh",
@@ -108,7 +108,12 @@ def test_legacy_import_preserves_files_until_new_batch(tmp_path: Path) -> None:
     )
     selected = replace(identity(), segmenter_signature="epub-leaf-block-v3", effort=None)
     with CheckpointStore(tmp_path) as store:
-        loaded = store.load(selected, segment_ids={"a"})
+        with pytest.raises(CheckpointMismatchError, match="metadata fingerprints"):
+            store.load(selected, segment_ids={"a"}, legacy_input_signature="legacy-fingerprint")
+        loaded = store.load(
+            selected, segment_ids={"a"}, force=True, legacy_input_signature="legacy-fingerprint"
+        )
+        assert loaded["a"].source_verification == "legacy_metadata_only"
         assert loaded["a"].model == "gemini-2.5-flash"
         assert loaded["a"].backend == "gemini_cli"
         assert not (tmp_path / "checkpoint.json").exists()
@@ -135,3 +140,41 @@ def test_blank_restored_translation_is_rejected(tmp_path: Path) -> None:
         )
         with pytest.raises(CheckpointError, match="empty"):
             store.load(identity(), segment_ids={"a"})
+
+
+def test_directory_sync_failure_leaves_complete_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import stat
+
+    record = SegmentRecord("译文", "flash", "cli", "antigravity", "model", "low", None)
+    real_fsync = os.fsync
+
+    def fail_directory_sync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("simulated post-replacement directory sync failure")
+        real_fsync(descriptor)
+
+    with CheckpointStore(tmp_path) as store:
+        store.save(identity(), {"a": record})
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "fsync", fail_directory_sync)
+            with pytest.raises(CheckpointError, match="persistence failed"):
+                store.save(identity(), {"a": record, "b": record})
+    # Ordinary process recovery sees the entire new document; power-loss durability
+    # cannot be claimed after the failed directory sync.
+    with CheckpointStore(tmp_path) as store:
+        assert store.load(identity(), segment_ids={"a", "b"}) == {"a": record, "b": record}
+    assert not list(tmp_path.glob(".checkpoint-*"))
+
+
+def test_old_v2_metadata_identity_is_not_relabelled_as_content(tmp_path: Path) -> None:
+    with CheckpointStore(tmp_path) as store:
+        store.save(replace(identity(), input_signature="old-metadata-fingerprint"), {})
+        with pytest.raises(CheckpointMismatchError, match="input_signature"):
+            store.load(
+                identity(),
+                segment_ids=set(),
+                force=True,
+                legacy_input_signature="old-metadata-fingerprint",
+            )

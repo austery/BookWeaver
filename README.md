@@ -60,3 +60,11 @@ uv run ruff format --check .
 uv run pytest -q
 uv run tach check
 ```
+
+### Checkpoint identity migration
+
+New EPUB checkpoints and glossary cache keys use a streamed SHA-256 digest of the input file bytes. Identical bytes can resume through the same checkpoint directory after a move or timestamp change; changed bytes cannot resume, even with `--force-resume`. Checkpoint integrity and hard identity fields are checked before automatic glossary extraction.
+
+Early schema-v2 checkpoints from PR #25's initial commit used metadata fingerprints. They cannot be reused as content-verified checkpoints: preserve the old directory and choose a fresh `--checkpoint-dir`. Legacy v1 imports require a matching legacy metadata fingerprint plus explicit `--force-resume`; imported segment provenance records `source_verification: legacy_metadata_only`. This acknowledges that historical source bytes cannot be verified from v1 metadata. The original v1 files remain intact.
+
+Isolated Markdown input must be a directory containing translatable numbered `page*.md` files. Ordinary Markdown files and empty page directories fail before writing an output.

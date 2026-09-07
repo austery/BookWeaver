@@ -46,6 +46,7 @@ class SegmentRecord:
     completed_at: str | None
     runtime_version: str | None = None
     requested_effort: str | None = None
+    source_verification: str | None = None
 
 
 class ICheckpointStore(Protocol):
@@ -62,7 +63,13 @@ class ICheckpointStore(Protocol):
     ) -> None: ...
 
     def load(
-        self, identity: CheckpointIdentity, *, segment_ids: set[str], force: bool = False
+        self,
+        identity: CheckpointIdentity,
+        *,
+        segment_ids: set[str],
+        force: bool = False,
+        hard_only: bool = False,
+        legacy_input_signature: str | None = None,
     ) -> dict[str, SegmentRecord]: ...
 
     def save(
@@ -149,7 +156,13 @@ class CheckpointStore:
             raise CheckpointError("Open the checkpoint store before use")
 
     def load(
-        self, identity: CheckpointIdentity, *, segment_ids: set[str], force: bool = False
+        self,
+        identity: CheckpointIdentity,
+        *,
+        segment_ids: set[str],
+        force: bool = False,
+        hard_only: bool = False,
+        legacy_input_signature: str | None = None,
     ) -> dict[str, SegmentRecord]:
         self._require_lock()
         path = self.directory / "checkpoint.json"
@@ -157,7 +170,9 @@ class CheckpointStore:
             if (self.directory / "state.json").exists() or (
                 self.directory / "translations.json"
             ).exists():
-                data = self._import_legacy(identity, force=force)
+                data = self._import_legacy(
+                    identity, force=force, legacy_input_signature=legacy_input_signature
+                )
             else:
                 return {}
         else:
@@ -180,7 +195,7 @@ class CheckpointStore:
                 raise CheckpointError(f"Invalid checkpoint field: {key}")
         hard = ("input_signature", "input_format", "segmenter_signature")
         mismatches = [key for key in expected if stored[key] != expected[key]]
-        if any(key in hard for key in mismatches) or (mismatches and not force):
+        if any(key in hard for key in mismatches) or (mismatches and not force and not hard_only):
             raise CheckpointMismatchError("Checkpoint mismatch: " + ", ".join(mismatches))
         records: dict[str, SegmentRecord] = {}
         for segment_id, raw in _object(data.get("segments")).items():
@@ -197,6 +212,9 @@ class CheckpointStore:
                 _optional_text(item, "completed_at"),
                 _optional_text(item, "runtime_version") if "runtime_version" in item else None,
                 _optional_text(item, "requested_effort") if "requested_effort" in item else None,
+                _optional_text(item, "source_verification")
+                if "source_verification" in item
+                else None,
             )
             record = records[segment_id]
             if not record.translated.strip():
@@ -214,7 +232,9 @@ class CheckpointStore:
             raise CheckpointError("Checkpoint segment count does not match its content")
         return records
 
-    def _import_legacy(self, identity: CheckpointIdentity, *, force: bool) -> dict[str, object]:
+    def _import_legacy(
+        self, identity: CheckpointIdentity, *, force: bool, legacy_input_signature: str | None
+    ) -> dict[str, object]:
         state = _read(self.directory / "state.json")
         translations = _read(self.directory / "translations.json")
         if state.get("schema_version") != 1 or translations.get("schema_version") != 1:
@@ -242,6 +262,17 @@ class CheckpointStore:
             if type(value) is not int:
                 raise CheckpointError(f"Missing legacy compatibility field: {key}")
             stored[key] = value
+        if legacy_input_signature is None or stored["input_signature"] != legacy_input_signature:
+            raise CheckpointMismatchError(
+                "Legacy metadata fingerprint mismatch; start with a fresh checkpoint"
+            )
+        if not force:
+            raise CheckpointMismatchError(
+                "Legacy checkpoints contain metadata fingerprints, not content hashes; force resume explicitly to accept unverified source content"
+            )
+        # Explicit import binds future checks to current bytes, without claiming that
+        # historical translations were verified against those bytes.
+        stored["input_signature"] = identity.input_signature
         stored.update(profile=profile, effort=None)
         stored["protocol"] = (
             "segment_tags"
@@ -254,7 +285,16 @@ class CheckpointStore:
             if not isinstance(value, str):
                 raise CheckpointError("Invalid legacy translation")
             segments[key] = asdict(
-                SegmentRecord(value, profile, provider, backend, model, None, None)
+                SegmentRecord(
+                    value,
+                    profile,
+                    provider,
+                    backend,
+                    model,
+                    None,
+                    None,
+                    source_verification="legacy_metadata_only",
+                )
             )
         if type(state.get("translated_segment_count")) is not int or state[
             "translated_segment_count"
