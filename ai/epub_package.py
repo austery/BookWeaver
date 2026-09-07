@@ -724,12 +724,23 @@ def _is_bibliography_body(body: ET.Element) -> bool:
     heading_tags = {"h1", "h2", "h3", "h4", "h5", "h6"}
     if sum(_local_name(node.tag).lower() in heading_tags for node in body.iter()) != 1:
         return False
-    for node in body.iter():
+
+    def leading_heading(node: ET.Element) -> bool | None:
+        # Follow visible document order: text, children, then each child's tail.
+        # None means this subtree has neither prose nor a heading.
         if _local_name(node.tag).lower() in heading_tags:
             return _normalize_visible_text(node).strip().casefold() in titles
         if (node.text or "").strip():
             return False
-    return False
+        for child in node:
+            found = leading_heading(child)
+            if found is not None:
+                return found
+            if (child.tail or "").strip():
+                return False
+        return None
+
+    return leading_heading(body) is True
 
 
 def extract_translatable_segments(

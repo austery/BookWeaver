@@ -150,3 +150,35 @@ def test_epub_adapter_leaves_bibliography_bytes_untouched(tmp_path: Path) -> Non
     adapter.save(str(output))
     with zipfile.ZipFile(output) as archive:
         assert archive.read(bibliography_path) == bibliography
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["", '<a id="intro"/>', '<span role="doc-pagebreak"/>', '<span><a id="nested"/></span>'],
+)
+def test_leading_prose_in_tails_remains_translatable(marker: str, tmp_path: Path) -> None:
+    import zipfile
+    from ai.orchestration import TranslationOrchestrator, EpubTranslationOptions
+    from tests.unit.test_orchestration import make_epub
+    from tests.unit.test_review_regressions import OfflineFactory
+
+    xhtml = f'<html xmlns="http://www.w3.org/1999/xhtml"><body><p>{marker}This is substantive chapter prose.</p><h2>References</h2><p>A cited book.</p></body></html>'
+    assert len(extract_translatable_segments(xhtml)) == 2
+    patched = patch_xhtml_alternating(xhtml, ["这是正文。", "引用书籍。"])
+    assert "这是正文。" in patched
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    with zipfile.ZipFile(source) as archive:
+        entries = [(info, archive.read(info.filename)) for info in archive.infolist()]
+    with zipfile.ZipFile(source, "w") as archive:
+        for info, data in entries:
+            archive.writestr(info, xhtml.encode() if info.filename == "chapter.xhtml" else data)
+    factory = OfflineFactory()
+    output = tmp_path / "out.epub"
+    result = TranslationOrchestrator(provider_factory=factory).translate(
+        source, output, EpubTranslationOptions(config={}), input_format="epub"
+    )
+    assert result.total_segments == 2
+    assert factory.calls == ["segment_tags"]
+    with zipfile.ZipFile(output) as archive:
+        assert archive.read("chapter.xhtml").count(b'class="bw-translation"') == 2

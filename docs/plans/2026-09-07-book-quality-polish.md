@@ -46,3 +46,16 @@ The complete suite passed with **584 passed, 1 skipped**. Two additional checkpo
 README, contributor notes, and SPEC-021 now distinguish delivered book evidence from aggregate acceptance. The original full-book report remains historical evidence; this report supersedes its selected-chapter defects and bibliography duplication for the revised artifact only. Other passages remain inherited from the initial run. Additional titles, full reader/layout acceptance, full configuration/CLI coverage, and legacy retirement remain open. Codex comparison stays deferred.
 
 PR preparation verification: the final complete suite passed with **586 passed, 1 skipped** in 166.59 seconds. The skipped test is the opt-in external-book fixture regression. Ruff lint/format, Tach, changed-module compilation, shell syntax, and whitespace checks passed again.
+
+## PR #26 review remediation
+
+| Review item | Evidence | Decision | Action |
+| --- | --- | --- | --- |
+| F1: leading element-tail prose misclassified as bibliography | Plain-text control extracted two segments; anchor, page-break, and nested-marker variants extracted zero before the fix | Accept | Traverse text, child subtrees, and child tails in visible document order; retain exact heading matching and explicit body semantics |
+| Initial output hash differs from the historical record | Preserved temporary original matches the historical hash; delivered file adds only `META-INF/calibre_bookmarks.txt`, with all original entry bytes and relative order unchanged | Accept evidence clarification | Preserve both versions and add a pristine output copy; append reconciliation to the initial report without rewriting its historical hash |
+
+Four public-behavior regressions cover plain, anchor-tail, page-break-tail, and nested-marker-tail prose through extraction, patching, and the offline application. They check two source segments, actual provider invocation, and two translation blocks in the output. Before the fix, the three marked variants failed; afterward the focused policy suite passed 17 tests. No live model call or book retranslation was needed.
+
+The active v4 segmenter identity remains unchanged: this repairs its intended leading-heading boundary. Affected old checkpoints containing unexpected source IDs still fail normal checkpoint membership validation; previously omitted prose is now included as pending work. Dedicated bibliography behavior and batch-cap policy are unchanged.
+
+Remediation verification: **590 passed, 1 skipped** in 166.46 seconds; Ruff lint/format, Tach, compilation, shell syntax, and whitespace checks passed. The existing external-fixture test remains opt-in. The selected book still extracts 2,001 segments; revised EPUB and newly copied pristine baseline hashes match their documented originals. A separate self-review of traversal ordering found no remaining issue; external re-review is pending.
