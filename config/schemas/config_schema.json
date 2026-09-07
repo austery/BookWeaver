@@ -1,0 +1,101 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "prompt_profile": {
+      "type": "string"
+    },
+    "prompt_templates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "gemini_api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "api_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "epub_resilience": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pro_epub_max_batch_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "standard_epub_max_batch_chars": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_split_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "terminology_extraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extraction_model": {
+          "type": "string",
+          "enum": [
+            "flash",
+            "pro"
+          ]
+        },
+        "max_terms": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "sanity_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "max_length_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "min_length_ratio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "min_source_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "min_cjk_density": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_cjk_source_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "heartbeat_chars": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

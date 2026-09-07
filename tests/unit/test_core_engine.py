@@ -12,11 +12,34 @@ from collections.abc import Sequence
 import pytest
 
 from ai.core.engine import EngineConfig, TranslationEngine
-from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
+from ai.ports.provider import (
+    ITranslationProvider,
+    ProviderUnavailableError,
+    RateLimitError,
+    TranslationError,
+)
 from ai.ports.source import IBookSource, Segment, TranslatedSegment
 
 
 # ── Test Doubles ──────────────────────────────────────────────
+
+
+def test_infrastructure_failure_does_not_split_or_save() -> None:
+    class Unavailable(ITranslationProvider):
+        calls = 0
+
+        def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+            self.calls += 1
+            raise ProviderUnavailableError("offline")
+
+    provider = Unavailable()
+    source = FakeSource([Segment("a", "garden"), Segment("b", "moon")])
+    with pytest.raises(ProviderUnavailableError):
+        TranslationEngine(provider, EngineConfig(system_prompt="Translate")).translate(
+            source, "out"
+        )
+    assert provider.calls == 1
+    assert source.saved_to is None
 
 
 class FakeProvider(ITranslationProvider):

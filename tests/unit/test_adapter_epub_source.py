@@ -109,7 +109,7 @@ class TestResolveSpinePaths:
 
     def test_accepts_both_xhtml_and_html_media_types(self) -> None:
         """Regression test: support EPUBs with text/html media type.
-        
+
         Some EPUB publishers (e.g., The Economist) declare content files as
         text/html instead of application/xhtml+xml, even though they are
         valid XML. This is permitted by EPUB spec and common in modern EPUBs.

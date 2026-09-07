@@ -14,17 +14,18 @@ from types import SimpleNamespace
 
 import pytest
 
-import ai.cli as cli_module
+import ai.orchestration as cli_module
+import ai.cli as entry_module
+from ai.cli import build_parser
 from ai.ports.provider import TranslationError
 from ai.ports.source import Segment, TranslatedSegment
-from ai.cli import (
-    build_parser,
+from ai.orchestration import (
     build_system_prompt,
     create_provider,
     detect_input_format,
     load_config,
     load_glossary_block,
-    run,
+    _run_pipeline as run,
     _get_language_name,
     _SanityProbeConfig,
 )
@@ -78,7 +79,7 @@ class TestBuildSystemPrompt:
 
 class TestSanityProbeConfig:
     def test_load_probe_config_defaults(self) -> None:
-        from ai.cli import _load_probe_config
+        from ai.orchestration import _load_probe_config
 
         cfg = _load_probe_config({})
         assert cfg.enabled is True
@@ -90,7 +91,7 @@ class TestSanityProbeConfig:
         assert cfg.heartbeat_chars == 60
 
     def test_load_probe_config_from_dict(self) -> None:
-        from ai.cli import _load_probe_config
+        from ai.orchestration import _load_probe_config
 
         cfg = _load_probe_config(
             {
@@ -114,7 +115,7 @@ class TestSanityProbeConfig:
         assert cfg.heartbeat_chars == 80
 
     def test_load_probe_config_partial_dict_merges_with_defaults(self) -> None:
-        from ai.cli import _load_probe_config
+        from ai.orchestration import _load_probe_config
 
         cfg = _load_probe_config({"sanity_probe": {"enabled": False}})
         assert cfg.enabled is False
@@ -122,7 +123,7 @@ class TestSanityProbeConfig:
         assert cfg.min_cjk_density == 0.30  # default preserved
 
     def test_load_probe_config_ignores_bad_type(self) -> None:
-        from ai.cli import _load_probe_config
+        from ai.orchestration import _load_probe_config
 
         cfg = _load_probe_config({"sanity_probe": "not-a-dict"})
         assert cfg.enabled is True  # falls back to defaults
@@ -130,7 +131,7 @@ class TestSanityProbeConfig:
     def test_load_probe_config_falls_back_on_bad_field_value(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from ai.cli import _load_probe_config
+        from ai.orchestration import _load_probe_config
 
         cfg = _load_probe_config({"sanity_probe": {"max_length_ratio": "not-a-number"}})
         assert cfg.enabled is True  # falls back to defaults
@@ -142,12 +143,12 @@ class TestSanityCheckBatch:
         return TranslatedSegment(id=seg_id, original=original, translated=translated)
 
     def _default_probe(self) -> _SanityProbeConfig:
-        from ai.cli import _SanityProbeConfig
+        from ai.orchestration import _SanityProbeConfig
 
         return _SanityProbeConfig()
 
     def test_passes_normal_en_to_zh(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         segs = [
             self._make_seg(
@@ -157,7 +158,7 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
 
     def test_raises_on_empty_output(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world", "")]
@@ -165,7 +166,7 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
 
     def test_raises_on_length_ratio_too_high(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "你" * 200)]
@@ -173,7 +174,7 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_raises_on_length_ratio_too_low(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         # Source 100 chars, translated 5 chars (ratio=0.05 < min=0.15)
@@ -182,7 +183,7 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_raises_on_cjk_density_too_low(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         # Source >= min_cjk_source_length (40) so CJK check fires.
@@ -197,13 +198,13 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=5)
 
     def test_skips_length_ratio_for_short_source(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         segs = [self._make_seg("ch1.xhtml::0", "A", "翻译一下这个字母A的中文意思是什么")]
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_skips_length_ratio_for_short_section_heading(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # "Acknowledgements" (16 chars) → "致谢" (2 chars): ratio 0.125 < 0.15.
         # Short single-word EN headings legitimately translate to 2-char Chinese.
@@ -212,13 +213,13 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=438)
 
     def test_skips_cjk_check_for_non_zh_lang(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hallo Welt Beispiel.")]
         _sanity_check_batch(segs, "de", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_error_message_includes_batch_position(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::5", "Hello world.", "")]
@@ -226,7 +227,7 @@ class TestSanityCheckBatch:
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
 
     def test_cjk_density_uses_stripped_length(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # Source >= min_cjk_source_length (40) to actually trigger the CJK density check.
         # After stripping: 2 CJK / 2 effective chars = 1.0 > threshold — should pass.
@@ -234,7 +235,7 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
 
     def test_cjk_density_subtracts_ascii_letters_for_proper_nouns(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # Stock ticker "Sheet & Tube" is preserved in Latin in the translation.
         # Naïve formula: 5 CJK / 24 total = 0.21 < 0.30 → false positive.
@@ -249,7 +250,7 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=26, total_batches=98)
 
     def test_cjk_check_skips_equation_length_source(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # Standalone math equation (19 chars, below min_cjk_source_length=40).
         # Model correctly preserves it as-is (0 CJK) — must not raise.
@@ -257,7 +258,7 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
 
     def test_cjk_check_skips_source_with_url(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # Source contains a URL — CJK density check is bypassed entirely.
         # Density of translation would be ≈ 0.125, well below the 0.30 threshold,
@@ -272,7 +273,7 @@ class TestSanityCheckBatch:
         _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=7, total_batches=9)
 
     def test_cjk_check_skips_copyright_markers_in_source(self) -> None:
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
 
         # © and "First published" are universal copyright-page markers.
         # Translations keep publisher names / foreign titles in Latin — low CJK density —
@@ -295,7 +296,7 @@ class TestSanityCheckBatch:
         for seg_id, src, tgt in cases:
             segs = [self._make_seg(seg_id, src, tgt)]
             _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=2)
-        from ai.cli import _sanity_check_batch
+        from ai.orchestration import _sanity_check_batch
         from ai.ports.provider import TranslationError
 
         # Pure prose (>= 40 chars, no URL, no copyright marker) — check fires.
@@ -312,7 +313,7 @@ class TestSanityCheckBatch:
 
 class TestEmitBatchSample:
     def test_emits_batch_sample_line(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        from ai.orchestration import _emit_batch_sample, _SanityProbeConfig
 
         segs = [
             TranslatedSegment(
@@ -329,7 +330,7 @@ class TestEmitBatchSample:
         assert "核心原则" in out
 
     def test_truncates_long_source(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        from ai.orchestration import _emit_batch_sample, _SanityProbeConfig
 
         long_src = "A" * 200
         long_tgt = "中" * 200
@@ -341,14 +342,14 @@ class TestEmitBatchSample:
         assert "..." in out
 
     def test_no_output_for_empty_batch(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        from ai.orchestration import _emit_batch_sample, _SanityProbeConfig
 
         _emit_batch_sample([], _SanityProbeConfig(), batch_index=0, total_batches=1)
         out = capsys.readouterr().out
         assert "[progress:batch_sample]" not in out
 
     def test_omits_doc_for_non_epub_segment(self, capsys: pytest.CaptureFixture[str]) -> None:
-        from ai.cli import _emit_batch_sample, _SanityProbeConfig
+        from ai.orchestration import _emit_batch_sample, _SanityProbeConfig
 
         segs = [TranslatedSegment(id="plain-segment-id", original="Hello.", translated="你好。")]
         _emit_batch_sample(segs, _SanityProbeConfig(), batch_index=0, total_batches=1)
@@ -401,7 +402,7 @@ class TestGlossaryProgressLog:
 
         This is a unit test of _log_progress; integration test would mock run() call.
         """
-        from ai.cli import _log_progress
+        from ai.orchestration import _log_progress
 
         # Simulate glossary resolution log (as emitted by ai/cli.py line 979-987)
         _log_progress(
@@ -784,7 +785,7 @@ class TestBuildParser:
         assert args.input_path == "input.epub"
         assert args.output == "out.epub"
         assert args.output_lang == "zh"
-        assert args.model == "gemini-2.5-flash"
+        assert args.model == "flash"
         assert args.provider == "cli"
         assert args.prompt is None
         assert args.glossary is None
@@ -802,7 +803,7 @@ class TestBuildParser:
                 "--output-lang",
                 "ja",
                 "--model",
-                "gemini-2.5-pro",
+                "pro",
                 "--provider",
                 "api",
                 "-p",
@@ -823,7 +824,7 @@ class TestBuildParser:
             ]
         )
         assert args.output_lang == "ja"
-        assert args.model == "gemini-2.5-pro"
+        assert args.model == "pro"
         assert args.provider == "api"
         assert args.prompt == "Use formal tone"
         assert args.glossary == "/path/to/glossary.json"
@@ -868,9 +869,17 @@ class TestMainModelExplicitness:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+        monkeypatch.setattr(
+            cli_module,
+            "translate_epub",
+            lambda source, output, options: captured.update(
+                model=options.model.requested,
+                model_explicit=options.model.explicit,
+                glossary_mode=options.glossary.mode,
+            ),
+        )
 
-        cli_module.main(["book.epub", "--output", "translated.epub", "--model", "pro"])
+        entry_module.main(["book.epub", "--output", "translated.epub", "--model", "pro"])
 
         assert captured["model"] == "pro"
         assert captured["model_explicit"] is True
@@ -879,11 +888,19 @@ class TestMainModelExplicitness:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+        monkeypatch.setattr(
+            cli_module,
+            "translate_epub",
+            lambda source, output, options: captured.update(
+                model=options.model.requested,
+                model_explicit=options.model.explicit,
+                glossary_mode=options.glossary.mode,
+            ),
+        )
 
-        cli_module.main(["book.epub", "--output", "translated.epub"])
+        entry_module.main(["book.epub", "--output", "translated.epub"])
 
-        assert captured["model"] == "gemini-2.5-flash"
+        assert captured["model"] == "flash"
         assert captured["model_explicit"] is False
 
 
@@ -920,9 +937,17 @@ class TestGlossaryModeMainForwarding:
 
     def test_main_forwards_glossary_mode_deep_scan(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+        monkeypatch.setattr(
+            cli_module,
+            "translate_epub",
+            lambda source, output, options: captured.update(
+                model=options.model.requested,
+                model_explicit=options.model.explicit,
+                glossary_mode=options.glossary.mode,
+            ),
+        )
 
-        cli_module.main(
+        entry_module.main(
             ["book.epub", "--output", "translated.epub", "--glossary-mode", "deep-scan"]
         )
 
@@ -930,9 +955,17 @@ class TestGlossaryModeMainForwarding:
 
     def test_main_forwards_glossary_mode_auto(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+        monkeypatch.setattr(
+            cli_module,
+            "translate_epub",
+            lambda source, output, options: captured.update(
+                model=options.model.requested,
+                model_explicit=options.model.explicit,
+                glossary_mode=options.glossary.mode,
+            ),
+        )
 
-        cli_module.main(["book.epub", "--output", "translated.epub", "--glossary-mode", "auto"])
+        entry_module.main(["book.epub", "--output", "translated.epub", "--glossary-mode", "auto"])
 
         assert captured["glossary_mode"] == "auto"
 
@@ -940,9 +973,17 @@ class TestGlossaryModeMainForwarding:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured: dict[str, object] = {}
-        monkeypatch.setattr(cli_module, "run", lambda **kwargs: captured.update(kwargs))
+        monkeypatch.setattr(
+            cli_module,
+            "translate_epub",
+            lambda source, output, options: captured.update(
+                model=options.model.requested,
+                model_explicit=options.model.explicit,
+                glossary_mode=options.glossary.mode,
+            ),
+        )
 
-        cli_module.main(["book.epub", "--output", "translated.epub"])
+        entry_module.main(["book.epub", "--output", "translated.epub"])
 
         assert captured["glossary_mode"] is None
 
@@ -963,11 +1004,11 @@ class TestBuildParserFormatRouting:
                 "./pages_dir",
                 "--output",
                 "out.md",
-                "--input-format",
-                "markdown",
+                "--allow-isolated-format",
             ]
         )
-        assert args.input_format == "markdown"
+        assert args.input_format == "auto"
+        assert args.allow_isolated_format is True
         assert args.input_path == "./pages_dir"
 
     def test_input_format_epub(self) -> None:
@@ -1068,7 +1109,7 @@ class _NoopEngine:
         on_before_save: object | None = None,
     ) -> object:
         Path(output_path).write_text("", encoding="utf-8")
-        return SimpleNamespace(translated_segments=0, total_batches=0)
+        return SimpleNamespace(total_segments=0, translated_segments=0, total_batches=0)
 
 
 class TestRunModelResolutionSemantics:

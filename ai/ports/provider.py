@@ -9,9 +9,27 @@ from collections.abc import Sequence
 class TranslationError(Exception):
     """Raised when translation fails after adapter-level retries."""
 
+    split_eligible = True
+
 
 class RateLimitError(TranslationError):
     """Raised when the provider hits a rate limit."""
+
+    split_eligible = False
+
+
+class ProviderUnavailableError(TranslationError):
+    """Infrastructure failure that must halt rather than split a content batch."""
+
+    split_eligible = False
+
+
+class ProviderAuthenticationError(ProviderUnavailableError):
+    """The selected subscription runtime requires user authentication."""
+
+
+class ProviderTimeoutError(ProviderUnavailableError):
+    """The owned provider process exceeded its deadline."""
 
 
 class ITranslationProvider(ABC):

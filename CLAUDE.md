@@ -1,119 +1,29 @@
-# CLAUDE.md (BookWeaver contributor notes)
+# BookWeaver contributor notes
 
-This is a concise contributor guide. User-facing usage is in `README.md`.
+## Current product boundary
 
-## Scope
+- Canonical command: `uv run bookweaver`, entry point `ai/cli.py`.
+- Application composition: `ai/orchestration.py` and format-specific translation functions.
+- Supported format: EPUB-to-EPUB, alternating bilingual text. Table cells remain source-only.
+- Default runtime: Antigravity through `ai/antigravity_provider.py`; model versions are centralized in `ai/model_profiles.py`.
+- Default selection: Flash 3.8 Low. Model and effort are separate user axes; unsupported combinations fail loudly.
+- Paid API construction is authorization-gated by `ai/runtime_factory.py`. No automatic paid fallback. No live API tests without separate authorization.
+- Runtime JSON validation: `ai/runtime_config.py`, `config/schemas/config_schema.json`. Never automatically overwrite ignored user configuration.
+- Checkpoint: `ai/checkpoint_store.py`, single atomic schema-v2 document, exclusive run lock, explicit mismatch failures, legacy import without rewriting v1 files.
 
-- Runtime backend: Gemini CLI
-- Preferred final output: EPUB
-- Bilingual style support in current code: `alternating` only
+## Migration status
 
-## Key entrypoints
+SPEC-021 is approved for implementation. The new application path and CLI wiring exist, but the migration is not yet fully accepted. Whole-book acceptance, additional fault/architecture gates, and legacy retirement remain outstanding. Historical helper functions still in `ai/orchestration.py` serve legacy tests and are pending deletion; do not extend them or mistake them for the new application path.
 
-- `translatebook.sh` — main orchestrator
-- `ai/cli.py` — unified translation entry point (EPUB, Markdown, PDF via `python -m ai.cli`)
-- `00_extract_glossary.py` — optional pre-step: extract terminology glossary from EPUB index/toc
-- `01_convert_to_htmlz.py` — convert input to markdown chunks (legacy markdown workflow)
-- `05_md_to_html.py` — render bilingual alternating HTML (legacy markdown workflow)
-- `07_generate_formats.py` — export requested final formats (legacy markdown workflow)
-- `08_epub_roundtrip_baseline.py` — EPUB baseline roundtrip (zero text mutation)
+`translatebook.sh`, numbered Markdown scripts, Gemini CLI modules, and the orphaned `ai/epub_translate_roundtrip.py` remain retirement candidates. Do not resurrect or route the new application through them. Keep `08_epub_roundtrip_baseline.py`, EPUB package handling, isolated Markdown/PDF adapters, and evaluation assets.
 
-## Prompt source
-
-Translation prompt is loaded by profile from:
-
-- `config/prompts/default_prompt.txt`
-- `config/prompts/ebook_prompt.txt`
-- selected via `config/config.json.example` (`prompt_profile`, `prompt_templates`)
-
-Extra user constraints are appended by `-p/--prompt`.
-
-## Current behavior to remember
-
-- Step 3 output is translation-only (`output_pageXXXX.md`)
-- Bilingual merged content is produced at Step 4 (`output.md`)
-- `--epub-baseline` triggers a dedicated baseline path and exits after generating `baseline_roundtrip.epub`
-- `--workflow epub` triggers package-preserving EPUB translation and exits after generating `translated_roundtrip.epub`
-- `--epub-translate-roundtrip` is a deprecated alias for `--workflow epub`
-- default workflow resolution: EPUB input -> `epub`, non-EPUB input -> `markdown`
-- `--output-format` is handled in Step 7 (`html` skips conversion)
-- `--extract-glossary` triggers `00_extract_glossary.py` before EPUB translation; writes `{temp_dir}/extracted_glossary.json`
-- `--glossary <path>` passes a pre-extracted glossary directly to the EPUB translation step
-- `--glossary-min-priority` (default: all) filters glossary terms: `critical`, `high`, or `all` (excludes lower priorities to reduce prompt bloat)
-- `--only-docs <indices>` is **not yet implemented** in `ai.cli` / `EpubSourceAdapter`; the flag is accepted by `translatebook.sh` but has no effect
-- Glossary block injected via `{GLOSSARY_BLOCK}` placeholder in prompt templates (before `{CUSTOM_INSTRUCTIONS_BLOCK}`); empty string when no glossary
-- Glossary extraction uses Pro model by default (reliable terminology selection), supports `--full-index` for comprehensive extraction without AI filtering
-- `--model` accepts aliases (`pro|flash|lite`) and full model names
-- Step 3 model selection:
-  1. Chunk size (if thresholds configured) → ModelSelector
-  2. CLI --model parameter override
-  3. Alias resolution (pro → gemini-2.5-pro)
-  4. Probe availability check (test if model accessible)
-  5. Fallback chain (try alternatives if requested unavailable)
-- CI quality gate uses workflow `lint-and-test` with blocking lint -> test sequencing (see `docs/architecture/specs/SPEC-003-lint-quality-gates.md`)
-- Baseline quality contract and limits are defined in `docs/architecture/specs/SPEC-005-epub-roundtrip-baseline.md`
-- Translate roundtrip quality contract and limits are defined in `docs/architecture/specs/SPEC-006-epub-translate-roundtrip.md`
-- EPUB workflow keeps table cells source-only for layout stability (no `th/td` bilingual injection)
-- Pro model in EPUB workflow pre-batches large chapter requests with a char-only limit (60K chars per batch) before recursive split-retry
-- SPEC-010 provides terminology extraction & glossary injection (Strategy A MVP) with priority-based filtering
-- SPEC-011 provides ModelResolver + ProviderFactory for model routing and API fallback
-- SPEC-016 provides per-batch sanity probe: halts pipeline on empty output, length ratio violation, or wrong-language (non-CJK) output; configurable via `sanity_probe` in config.json; disable with `--no-sanity-probe`
-- `[progress:batch_sample]` line emitted after every successfully-checked batch — shows first segment source/target snippet (heartbeat for long runs)
-- Sanity probe checks run in order: empty → length ratio (skipped if source < 10 chars) → CJK density (zh only); CJK density uses `tgt.strip()` denominator to avoid false positives on whitespace-padded EPUB headings
-- SPEC-016 provides per-batch sanity probe: halts pipeline on empty output, length ratio violation, or wrong-language (non-CJK) output; configurable via `sanity_probe` in config.json; disable with `--no-sanity-probe`
-- `[progress:batch_sample]` line emitted after every successfully-checked batch — shows first segment source/target snippet (heartbeat for long runs)
-- Sanity probe checks run in order: empty → length ratio (skipped if source < 10 chars) → CJK density (zh only); CJK density uses `tgt.strip()` denominator to avoid false positives on whitespace-padded EPUB headings
-
-## SPEC-010 & SPEC-011 Architecture
-
-### SPEC-010: Terminology Extraction & Glossary Injection
-
-**Strategy A MVP (implemented)**:
-
-1. **Extraction Stage** (offline, single-run):
-   - `00_extract_glossary.py` uses Pro model to analyze EPUB index/TOC
-   - Two-pass EPUB index detection: filename hints (fast) → content heuristics (Kindle fallback)
-   - Outputs JSON glossary with priority labels (`critical`, `high`, `medium`)
-   - CLI→API fallback: uses Gemini API if CLI unavailable (config-based api_key resolution)
-   - Timeout: 600 seconds for large prompts
-
-2. **Injection Stage** (runtime, per-chunk):
-   - `GlossaryInjector.format_block(min_priority=)` loads glossary and filters by priority
-   - Injects via `{GLOSSARY_BLOCK}` placeholder in prompt (before `{CUSTOM_INSTRUCTIONS_BLOCK}`)
-   - Priority filtering reduces prompt bloat by 60-85% without losing core constraints
-
-**Key Files**:
-- `ai/glossary_injector.py` — Priority-based filtering and formatting
-- `ai/glossary_extractor.py` — Two-pass index detection (Kindle-aware)
-- `00_extract_glossary.py` — CLI entry with CLI→API fallback
-- `config/schemas/glossary_schema.json` — JSON validation schema
-- `ai/epub_translate_roundtrip.py` — Legacy EPUB translation (pre-SPEC-012). Not called by `ai.cli`; retained for reference only.
-
-### SPEC-011: Model Routing & Provider Factory
-
-**Implemented**:
-
-1. **ModelResolver**: Centralizes model alias resolution + availability probing
-   - Alias resolution: `pro|flash|lite` → full model name
-   - Availability probing: Tests model accessibility before use
-   - Fallback chain support
-
-2. **ProviderFactory**: Abstracts provider selection (CLI vs API)
-   - CLI provider (default)
-   - API provider (Gemini API, requires api_key)
-   - Fallback-capable: CLI → API on failures
-
-**Key Files**:
-- `ai/model_resolver.py` — Model alias + probe logic
-- `ai/provider_factory.py` — Provider selection and instantiation
-- `ai/gemini_api_provider.py` — Google Gemini API client (uses new `genai.Client` SDK)
-
-## Dev verification
+## Verification
 
 ```bash
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
-bash -n translatebook.sh
-uv run python -m py_compile ai/gemini_provider.py ai/model_probe.py 05_md_to_html.py 07_generate_formats.py ai/glossary_injector.py ai/glossary_extractor.py
+uv run tach check
 ```
+
+Test behavior through the application, provider, and checkpoint boundaries. Record live probes separately from mocked tests. A tiny EPUB or a passing registry test is not proof of whole-book translation quality. See `docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md` and `docs/plans/2026-09-07-antigravity-protocol-probe.md`.
