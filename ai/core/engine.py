@@ -37,6 +37,7 @@ class EngineConfig:
     max_split_depth: int = 10
     resume_translations: dict[str, str] | None = None
     on_checkpoint_batch: Callable[[int, list[TranslatedSegment]], None] | None = None
+    max_batch_segments: int | None = None
 
 
 @dataclass
@@ -69,6 +70,7 @@ class TranslationEngine:
         self._batcher = TextBatcher(
             max_batch_chars=config.max_batch_chars,
             separator_overhead=config.separator_overhead,
+            max_batch_segments=config.max_batch_segments,
         )
 
     def _plan_pending_segment_batches(

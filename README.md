@@ -20,6 +20,20 @@ uv run bookweaver book.epub --output translated.epub --extract-glossary
 
 The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro 3.1 Low. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
 
+## Batch size and fidelity
+
+Active EPUB runs default to at most 200 segments and 60,000 source characters per batch. The first reached limit closes a batch; an individually oversized segment remains alone for the existing split-retry policy. The segment cap avoids sending hundreds of short notes in one request. Smaller caps add request overhead but reduce work exposed to a failed batch; 200 is an initial operational setting, not a measured optimum.
+
+```bash
+uv run bookweaver book.epub --output translated.epub --max-batch-segments 150
+```
+
+The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. Legacy and isolated-format batchers have no segment cap unless explicitly supplied.
+
+Dedicated bibliography pages remain source-only, including their headings. Detection uses bibliography semantics on the XHTML body, or a sole leading heading exactly matching Bibliography, References, Works Cited, or their supported Chinese equivalents. Filenames and prose mentions do not trigger exclusion. Mixed pages with additional headings stay translatable; bibliographies with subsection headings may require future section-level support. Table cells also remain source-only.
+
+For focused review, add instructions with `-p` to preserve numerical ranges, negation scope, possibility versus certainty, and only explicitly stated causes. These are prompting and editorial-review practices, not an automatic semantic correctness guarantee. See the [selected-chapter review and revision ledger](docs/plans/2026-09-07-book-quality-polish.md).
+
 ## Checkpoints
 
 Each successfully validated batch saves accumulated translations and provenance to one atomically replaced `checkpoint.json`. One run owns its checkpoint lock at a time. A failed batch leaves earlier saved work reusable. Resume is enabled by default:
@@ -52,7 +66,7 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. Markdown/PDF adapters are retained behind `--allow-isolated-format`; EPUB glossary/resume controls do not apply there. DOCX is rejected. Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
 
-The migration is in progress. A small synthetic EPUB has completed through the new application composition with real Flash 3.8 Low and a full checkpoint restore. This is not whole-book acceptance. Large-batch fidelity, selected-book quality/layout checks, interruption recovery, and legacy deletion gates remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md).
+The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex integration/comparison is deferred.
 
 ```bash
 uv run ruff check .
@@ -64,6 +78,8 @@ uv run tach check
 ### Checkpoint identity migration
 
 New EPUB checkpoints and glossary cache keys use a streamed SHA-256 digest of the input file bytes. Identical bytes can resume through the same checkpoint directory after a move or timestamp change; changed bytes cannot resume, even with `--force-resume`. Checkpoint integrity and hard identity fields are checked before automatic glossary extraction.
+
+The source-only bibliography policy uses segmenter `epub-leaf-block-v4-source-only-bibliography`. Older v3 checkpoints, including v1 imports, cannot resume into this policy even with force; preserve them and use a fresh `--checkpoint-dir`. A missing segment-cap field in an otherwise matching checkpoint means the historical unbounded policy; selecting a cap requires explicit force. Changing only the cap is a soft mismatch. The reviewed book is a separately documented reconstruction, not an automatic v3-to-v4 checkpoint migration.
 
 Early schema-v2 checkpoints from PR #25's initial commit used metadata fingerprints. They cannot be reused as content-verified checkpoints: preserve the old directory and choose a fresh `--checkpoint-dir`. Legacy v1 imports require a matching legacy metadata fingerprint plus explicit `--force-resume`; imported segment provenance records `source_verification: legacy_metadata_only`. This acknowledges that historical source bytes cannot be verified from v1 metadata. The original v1 files remain intact.
 

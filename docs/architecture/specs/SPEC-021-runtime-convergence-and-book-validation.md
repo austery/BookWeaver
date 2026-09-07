@@ -139,3 +139,13 @@ These criteria prove the tested books and configurations, not universal translat
 - [Live probe and baseline evidence](../../plans/2026-09-07-antigravity-protocol-probe.md)
 - [Historical SPEC-020](SPEC-020-antigravity-cli-migration-and-paid-api-authorization.md)
 - Current code: `ai/cli.py`, `ai/core/engine.py`, `ai/provider_factory.py`, `ai/quota_tracker.py`, `ai/adapters/providers/_delimiter.py`.
+
+
+## 8. Approved quality increment and current acceptance (2026-09-07)
+
+PR #25 delivered the runtime/checkpoint increment; migration acceptance remains **Partial**. The phase checkboxes above describe the original aggregate gates and are not evidence that every delivered component is absent. Current book evidence is recorded in the [initial full-book report](../../plans/2026-09-07-stoic-joy-book-validation.md) and [quality revision](../../plans/2026-09-07-book-quality-polish.md).
+
+- Dedicated bibliography documents remain source-only, detected by explicit body semantics or a sole leading bibliography heading. Mixed documents are not excluded by heading heuristics. This changes active EPUB segmentation to `epub-leaf-block-v4-source-only-bibliography`; v3-to-v4 resume is an unforceable hard mismatch.
+- Active EPUB batching defaults to 200 segments alongside 60,000 characters. `--max-batch-segments` overrides `epub_resilience.max_batch_segments`. Positive integers only; smaller batches trade request overhead for smaller retry exposure. This is an initial policy, not a throughput optimum. Segment-cap changes are soft checkpoint mismatches. Missing historical fields mean unbounded.
+- Chapters 5, 17, and 18 of the selected narrative title were retranslated with Flash 3.8 Low and a fidelity instruction, then sampled for numerical ranges, negations, and causal/modality strength. Derived publication provenance distinguishes old translations, fresh model output, and editorial corrections; old checkpoints remain untouched.
+- This increment does not introduce a universal semantic validator. Complete reader/layout acceptance, the additional book matrix, full CLI/config and retirement gates remain open. Codex integration/comparison is deferred; paid API remains unauthorized for these book runs.
