@@ -1,6 +1,6 @@
 # BookWeaver Hexagonal Architecture Boundaries
 # Enforces Ports & Adapters dependency rules for ai/ sub-packages.
-# Legacy ai/*.py files are NOT constrained (incremental adoption).
+# Current application Modules are explicit; remaining legacy Modules are incremental adoption.
 
 exclude = [
   "**/__pycache__",
@@ -29,9 +29,54 @@ depends_on = ["ai.ports"]
 # ── Adapters: depend ONLY on ports ───────────────────────────
 [[modules]]
 path = "ai.adapters"
-depends_on = ["ai.ports"]
+depends_on = ["ai.ports", "ai.epub_package"]
 
 # ── Shared utilities: importable from anywhere ───────────────
 [[modules]]
 path = "ai.shared"
 utility = true
+
+# Current invocation composition. Historical helpers remain in this file until retirement.
+[[modules]]
+path = "ai.orchestration"
+depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.glossary_extractor", "ai.provider_factory", "ai.model_resolver"]
+
+[[modules]]
+path = "ai.runtime_factory"
+depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles", "ai.antigravity_provider"]
+
+[[modules]]
+path = "ai.runtime_config"
+depends_on = ["ai.core"]
+
+[[modules]]
+path = "ai.checkpoint_store"
+depends_on = []
+
+[[modules]]
+path = "ai.model_profiles"
+depends_on = []
+
+[[modules]]
+path = "ai.antigravity_provider"
+depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles"]
+
+[[modules]]
+path = "ai.prompt_preparation"
+depends_on = ["ai.glossary_injector"]
+
+[[modules]]
+path = "ai.epub_package"
+depends_on = []
+
+[[modules]]
+path = "ai.glossary_extractor"
+depends_on = ["ai.core", "ai.epub_package"]
+
+[[modules]]
+path = "ai.glossary_injector"
+depends_on = ["ai.core"]
+
+[[modules]]
+path = "ai.cli"
+depends_on = ["ai.orchestration"]
