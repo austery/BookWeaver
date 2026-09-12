@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_fakes import NoAuditFactory
+
 from ai.orchestration import (
     EpubTranslationOptions,
     TranslationOrchestrator,
@@ -43,7 +45,7 @@ def test_epub_application_resumes_without_constructing_provider(tmp_path: Path) 
         def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
             return ["花园大门敞开着。", "月亮从山丘上升起。"]
 
-    class Factory:
+    class Factory(NoAuditFactory):
         calls = 0
 
         def create(
@@ -118,7 +120,7 @@ def test_interrupted_epub_restores_only_committed_batches(tmp_path: Path) -> Non
                 for source in segments
             ]
 
-    class Factory:
+    class Factory(NoAuditFactory):
         def create(
             self,
             model: ResolvedModel,

@@ -7,6 +7,8 @@ from collections.abc import Sequence
 
 import pytest
 
+from tests.runtime_fakes import NoAuditFactory
+
 from ai.antigravity_provider import AntigravityProvider
 from ai.checkpoint_store import CheckpointError, CheckpointMismatchError
 from ai.model_profiles import ResolvedModel
@@ -22,7 +24,7 @@ from ai.ports.provider import ITranslationProvider, ProviderAuthenticationError
 from tests.unit.test_orchestration import make_epub
 
 
-class OfflineFactory:
+class OfflineFactory(NoAuditFactory):
     def __init__(self, executable: Path | None = None) -> None:
         self.calls: list[str] = []
         self.executable = executable

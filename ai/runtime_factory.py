@@ -41,6 +41,14 @@ class IProviderFactory(Protocol):
         remaining_chars: int,
     ) -> ITranslationProvider: ...
 
+    def usage_snapshot(self) -> tuple[str, dict[str, int | None]] | None:
+        """Return invocation usage, or None when this Adapter cannot report it."""
+        ...
+
+    def persist_audit(self, runtime: dict[str, object] | None = None) -> None:
+        """Persist current invocation evidence, including on failed execution."""
+        ...
+
 
 class _PaidProvider(ITranslationProvider):
     def __init__(
@@ -91,7 +99,10 @@ class _PaidProvider(ITranslationProvider):
             )
         except BaseException as exc:
             request_usage.state = "failed"
-            self._on_usage()
+            try:
+                self._on_usage()
+            except Exception as audit_error:
+                exc.add_note(f"Usage audit also failed: {type(audit_error).__name__}")
             if not isinstance(exc, Exception):
                 raise
             raise ProviderUnavailableError(
@@ -124,11 +135,13 @@ class DefaultProviderFactory:
         if self._audit_directory is None:
             return
         self._audit_directory.mkdir(parents=True, exist_ok=True)
+        usage = self.usage_snapshot()
         payload = {
             "run_id": self._run_id,
             "runtime": self._runtime,
             "requests": [asdict(request) for request in self._usage],
-            "summary": self.usage_snapshot()[1],
+            "summary": usage[1] if usage is not None else None,
+            "usage_scope": "paid_api_requests",
         }
         temporary: Path | None = None
         try:
@@ -149,7 +162,9 @@ class DefaultProviderFactory:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def usage_snapshot(self) -> tuple[str, dict[str, int | None]]:
+    def usage_snapshot(self) -> tuple[str, dict[str, int | None]] | None:
+        if self._runtime.get("provider") != "api":
+            return None
         counts: dict[str, int | None] = {"request_count": len(self._usage)}
         for key in ("input_tokens", "output_tokens"):
             values = [
