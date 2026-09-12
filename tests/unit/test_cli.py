@@ -1,4 +1,8 @@
-"""Unit tests for ai.cli — the composition root.
+"""Historical orchestration tests plus retained CLI parser/helper coverage.
+
+Current application acceptance lives in test_application_contract.py,
+test_orchestration.py, and test_review_regressions.py. Legacy run/fallback/v1
+expectations below are retirement evidence, not the current runtime contract.
 
 Tests prompt assembly, argument parsing, and model resolution.
 Does NOT test actual translation (that's covered by engine + adapter tests).
