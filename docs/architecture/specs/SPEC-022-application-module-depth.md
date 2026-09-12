@@ -2,6 +2,7 @@
 specId: SPEC-022
 title: Application Module Depth
 status: Ready for Implementation
+implementationStatus: Verified locally; pending PR merge
 priority: P2 - Enhancement
 creationDate: 2026-09-12
 lastUpdateDate: 2026-09-12
@@ -49,19 +50,24 @@ T1 establishes baseline evidence before T2-T4. Each implementation slice has its
 
 ## 5. Acceptance
 
-- [ ] Every historical CLI test class is classified in the ticket ledger; current application tests cover input rejection, profile/batch selection, glossary selection/injection, sanity-before-persistence, and resume behavior.
-- [ ] Orchestration contains no concrete Antigravity/DefaultProviderFactory type checks; an injected factory can contribute usage and audit evidence through its declared Interface.
-- [ ] Full resume constructs zero providers and leaves checkpoint bytes unchanged; mixed-provider provenance and single-attempt paid behavior remain covered offline.
-- [ ] Glossary/translation failures finalize audit; unavailable runtime/version/usage stays explicit; an audit failure cannot mask an original execution failure.
-- [ ] Invalid/missing/incompatible templates fail before provider creation, including extraction requests; existing effective prompts and cache keys retain compatibility.
-- [ ] Prompt hash matches the exact text passed to the provider; changed prompt triggers existing soft-mismatch behavior.
-- [ ] EPUB source has no `Any`, reflection, or injectable extraction/patching functions; real-package behavior tests replace those implementation mocks.
-- [ ] Tach explicitly covers application, runtime factory, runtime config, checkpoint, provider, prompt preparation, and EPUB package Modules. A forbidden dependency probe fails.
-- [ ] Ruff lint/format, full pytest, Tach, and package build pass. No live runtime calls are part of acceptance.
-- [ ] Independent Standards and Spec reviews resolve all actionable findings; PR records any remaining limitations.
+- [x] Every historical CLI test class is classified in the ticket ledger; current application tests cover input rejection, profile/batch selection, glossary selection/injection, sanity-before-persistence, and resume behavior.
+- [x] Orchestration contains no concrete Antigravity/DefaultProviderFactory type checks; an injected factory can contribute usage and audit evidence through its declared Interface.
+- [x] Full resume constructs zero providers and leaves checkpoint bytes unchanged; mixed-provider provenance and single-attempt paid behavior remain covered offline.
+- [x] Glossary/translation failures finalize audit; unavailable runtime/version/usage stays explicit; an audit failure cannot mask an original execution failure.
+- [x] Invalid/missing/incompatible templates fail before provider creation, including extraction requests; existing effective prompts and cache keys retain compatibility.
+- [x] Prompt hash matches the exact text passed to the provider; changed prompt triggers existing soft-mismatch behavior.
+- [x] EPUB source has no `Any`, reflection, or injectable extraction/patching functions; real-package behavior tests replace those implementation mocks.
+- [x] Tach explicitly covers application, runtime factory, runtime config, checkpoint, provider, prompt preparation, and EPUB package Modules. A forbidden dependency probe fails.
+- [x] Ruff lint/format, full pytest, Tach, and package build pass. No live runtime calls are part of acceptance.
+- [x] Independent Standards and Spec reviews resolve all actionable findings; PR records any remaining limitations.
 
 ## 6. Status history
 
 | Date | Status | Evidence |
 | --- | --- | --- |
 | 2026-09-12 | Ready for Implementation | Owner authorized ordered autonomous delivery; original acceptance gaps retained. |
+
+
+## 7. Implementation evidence
+
+Implementation and independent review are complete; the status above does not claim production acceptance or merge. Delivery is split into runtime/prompt and EPUB/dependency PRs. See the [delivery ledger](../../plans/2026-09-12-module-depth-tickets.md) and versioned review reports for exact source commits, test counts, corrections, and retained limitations.
