@@ -132,11 +132,13 @@ class DefaultProviderFactory:
         if self._audit_directory is None:
             return
         self._audit_directory.mkdir(parents=True, exist_ok=True)
+        usage = self.usage_snapshot()
         payload = {
             "run_id": self._run_id,
             "runtime": self._runtime,
             "requests": [asdict(request) for request in self._usage],
-            "summary": self.usage_snapshot()[1],
+            "summary": usage[1] if usage is not None else None,
+            "usage_scope": "paid_api_requests",
         }
         temporary: Path | None = None
         try:
@@ -157,7 +159,9 @@ class DefaultProviderFactory:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def usage_snapshot(self) -> tuple[str, dict[str, int | None]]:
+    def usage_snapshot(self) -> tuple[str, dict[str, int | None]] | None:
+        if self._runtime.get("provider") != "api":
+            return None
         counts: dict[str, int | None] = {"request_count": len(self._usage)}
         for key in ("input_tokens", "output_tokens"):
             values = [

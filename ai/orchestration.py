@@ -237,6 +237,7 @@ class TranslationOrchestrator:
         with ExitStack() as stack:
             active_provider: ITranslationProvider | None = None
             active_model = model
+            active_requested_effort = options.model.effort
 
             def finalize_audit(
                 exc_type: type[BaseException] | None,
@@ -248,7 +249,7 @@ class TranslationOrchestrator:
                         {
                             "model": active_model.model_id,
                             "profile": active_model.profile,
-                            "requested_effort": options.model.effort,
+                            "requested_effort": active_requested_effort,
                             "effective_effort": active_model.effort,
                             "provider": active_model.provider,
                             "runtime_version": active_provider.runtime_version
@@ -310,6 +311,8 @@ class TranslationOrchestrator:
                 # Cache identity includes the input and extraction request, not the output basename.
                 if store is None or not glossary_path.exists():
                     active_model = extraction_selection
+                    active_requested_effort = None
+                    active_provider = None
                     extractor = factory.create(
                         extraction_selection,
                         protocol="delimiter",
@@ -357,9 +360,11 @@ class TranslationOrchestrator:
                 def translate_batch(
                     self, segments: Sequence[str], *, system_prompt: str
                 ) -> list[str]:
-                    nonlocal active_model, active_provider
+                    nonlocal active_model, active_provider, active_requested_effort
                     if self.delegate is None:
                         active_model = model
+                        active_requested_effort = options.model.effort
+                        active_provider = None
                         self.delegate = factory.create(
                             model,
                             protocol="segment_tags" if input_format == "epub" else "delimiter",
@@ -428,22 +433,22 @@ class TranslationOrchestrator:
                 ),
             )
             result = engine.translate(source, str(output_file), on_source_loaded=loaded)
-            _log_progress(
-                "done",
-                output=output_file,
-                model=model.model_id,
-                effort=model.effort,
-                resumed=result.resumed_segments,
-            )
-            return TranslationSummary(
-                output_file,
-                result.total_segments,
-                result.translated_segments,
-                result.resumed_segments,
-                result.total_batches,
-                model.model_id,
-                glossary_path,
-            )
+        _log_progress(
+            "done",
+            output=output_file,
+            model=model.model_id,
+            effort=model.effort,
+            resumed=result.resumed_segments,
+        )
+        return TranslationSummary(
+            output_file,
+            result.total_segments,
+            result.translated_segments,
+            result.resumed_segments,
+            result.total_batches,
+            model.model_id,
+            glossary_path,
+        )
 
 
 def translate_epub(

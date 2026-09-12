@@ -10,6 +10,7 @@ from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
     EpubTranslationOptions,
     GlossarySpec,
+    ModelSpec,
     ProviderSpec,
     TranslationOrchestrator,
 )
@@ -84,7 +85,7 @@ def test_factory_audit_finalizes_glossary_and_translation(
 
 @pytest.mark.parametrize("fail_execution", [False, True])
 def test_audit_failure_is_visible_without_masking_execution(
-    tmp_path: Path, fail_execution: bool
+    tmp_path: Path, fail_execution: bool, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "book.epub"
     make_epub(source)
@@ -98,6 +99,7 @@ def test_audit_failure_is_visible_without_masking_execution(
     if fail_execution:
         assert "Invocation audit also failed: OSError" in caught.value.__notes__
     assert len(factory.audits) == 1
+    assert "[progress:done]" not in capsys.readouterr().out
 
 
 def test_injected_usage_and_version_reach_checkpoint_and_full_resume(tmp_path: Path) -> None:
@@ -121,3 +123,47 @@ def test_injected_usage_and_version_reach_checkpoint_and_full_resume(tmp_path: P
     assert len(factory.created) == created
     assert checkpoint.read_bytes() == before
     assert factory.audits[-1]["runtime_version"] is None
+
+
+@pytest.mark.parametrize("construction_failure", [False, True])
+def test_audit_never_borrows_identity_from_another_request(
+    tmp_path: Path, construction_failure: bool
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+
+    class Factory(AuditedFactory):
+        def create(
+            self,
+            model: ResolvedModel,
+            *,
+            protocol: str,
+            config: dict[str, object],
+            allow_paid_api: bool,
+            remaining_chars: int,
+        ) -> ITranslationProvider:
+            if protocol == "segment_tags":
+                raise ProviderUnavailableError("translation construction failed")
+            return super().create(
+                model,
+                protocol=protocol,
+                config=config,
+                allow_paid_api=allow_paid_api,
+                remaining_chars=remaining_chars,
+            )
+
+    factory = Factory(fail_protocol=None if construction_failure else "delimiter")
+    with pytest.raises(ProviderUnavailableError):
+        TranslationOrchestrator(provider_factory=factory).translate(
+            source,
+            tmp_path / "out.epub",
+            EpubTranslationOptions(
+                config={}, model=ModelSpec(effort="high"), glossary=GlossarySpec(extract=True)
+            ),
+            input_format="epub",
+        )
+    audit = factory.audits[-1]
+    assert audit["profile"] == ("flash" if construction_failure else "pro")
+    assert audit["runtime_version"] == (None if construction_failure else "offline-runtime-1")
+    assert audit["requested_effort"] == ("high" if construction_failure else None)
+    assert audit["effective_effort"] == ("high" if construction_failure else "low")
