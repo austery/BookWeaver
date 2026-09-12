@@ -7,6 +7,8 @@ import json
 
 import pytest
 
+from tests.runtime_fakes import NoAuditFactory
+
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
     EpubTranslationOptions,
@@ -27,7 +29,7 @@ class Request:
     prompt: str
 
 
-class RecordingFactory:
+class RecordingFactory(NoAuditFactory):
     def __init__(self, *, translation: str = "花园大门敞开着。") -> None:
         self.requests: list[Request] = []
         self.created: list[ResolvedModel] = []

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from contextlib import ExitStack
 from datetime import datetime, timezone
+from types import TracebackType
 from ai.checkpoint_store import (
     CheckpointIdentity,
     FileSystemCheckpointStoreFactory,
@@ -27,7 +28,6 @@ from ai.checkpoint_store import (
 )
 from ai.model_profiles import resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
-from ai.antigravity_provider import AntigravityProvider
 from ai.runtime_config import load_runtime_config, validate_config
 from ai.ports.source import IBookSource
 
@@ -222,6 +222,33 @@ class TranslationOrchestrator:
             else None
         )
         with ExitStack() as stack:
+            active_provider: ITranslationProvider | None = None
+            active_model = model
+
+            def finalize_audit(
+                exc_type: type[BaseException] | None,
+                exc: BaseException | None,
+                traceback: TracebackType | None,
+            ) -> None:
+                try:
+                    factory.persist_audit(
+                        {
+                            "model": active_model.model_id,
+                            "profile": active_model.profile,
+                            "requested_effort": options.model.effort,
+                            "effective_effort": active_model.effort,
+                            "provider": active_model.provider,
+                            "runtime_version": active_provider.runtime_version
+                            if active_provider is not None
+                            else None,
+                        }
+                    )
+                except Exception as audit_error:
+                    if exc is None:
+                        raise
+                    exc.add_note(f"Invocation audit also failed: {type(audit_error).__name__}")
+
+            stack.push(finalize_audit)
             store = None
             if input_format == "epub" and (resume.enabled or resume.force):
                 directory = _resolve_checkpoint_dir(
@@ -274,6 +301,7 @@ class TranslationOrchestrator:
                 glossary_path = output_file.parent / ".bookweaver_glossaries" / f"{cache_key}.json"
                 # Cache identity includes the input and extraction request, not the output basename.
                 if store is None or not glossary_path.exists():
+                    active_model = extraction_selection
                     extractor = factory.create(
                         extraction_selection,
                         protocol="delimiter",
@@ -281,6 +309,7 @@ class TranslationOrchestrator:
                         allow_paid_api=options.provider.allow_paid_api,
                         remaining_chars=source_chars,
                     )
+                    active_provider = extractor
                     glossary_path.parent.mkdir(parents=True, exist_ok=True)
                     _extract_glossary_to_path(
                         epub_path=input_file,
@@ -353,7 +382,9 @@ class TranslationOrchestrator:
                 def translate_batch(
                     self, segments: Sequence[str], *, system_prompt: str
                 ) -> list[str]:
+                    nonlocal active_model, active_provider
                     if self.delegate is None:
+                        active_model = model
                         self.delegate = factory.create(
                             model,
                             protocol="segment_tags" if input_format == "epub" else "delimiter",
@@ -361,6 +392,7 @@ class TranslationOrchestrator:
                             allow_paid_api=options.provider.allow_paid_api,
                             remaining_chars=remaining_chars,
                         )
+                    active_provider = self.delegate
                     return self.delegate.translate_batch(segments, system_prompt=system_prompt)
 
             probe = (
@@ -395,15 +427,11 @@ class TranslationOrchestrator:
                             model.effort,
                             completed,
                             deferred_provider.delegate.runtime_version
-                            if isinstance(deferred_provider.delegate, AntigravityProvider)
+                            if deferred_provider.delegate is not None
                             else None,
                             options.model.effort,
                         )
-                    usage = (
-                        factory.usage_snapshot()
-                        if isinstance(factory, DefaultProviderFactory) and model.provider == "api"
-                        else None
-                    )
+                    usage = factory.usage_snapshot() if model.provider == "api" else None
                     store.save(identity, updated, usage=usage)
                     records.update(updated)
                     _log_progress(
@@ -424,23 +452,7 @@ class TranslationOrchestrator:
                     on_checkpoint_batch=persist,
                 ),
             )
-            try:
-                result = engine.translate(source, str(output_file), on_source_loaded=loaded)
-            finally:
-                if isinstance(factory, DefaultProviderFactory):
-                    delegate = deferred_provider.delegate
-                    factory.persist_audit(
-                        {
-                            "model": model.model_id,
-                            "profile": model.profile,
-                            "requested_effort": options.model.effort,
-                            "effective_effort": model.effort,
-                            "provider": model.provider,
-                            "runtime_version": delegate.runtime_version
-                            if isinstance(delegate, AntigravityProvider)
-                            else None,
-                        }
-                    )
+            result = engine.translate(source, str(output_file), on_source_loaded=loaded)
             _log_progress(
                 "done",
                 output=output_file,

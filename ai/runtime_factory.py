@@ -41,6 +41,14 @@ class IProviderFactory(Protocol):
         remaining_chars: int,
     ) -> ITranslationProvider: ...
 
+    def usage_snapshot(self) -> tuple[str, dict[str, int | None]] | None:
+        """Return invocation usage, or None when this Adapter cannot report it."""
+        ...
+
+    def persist_audit(self, runtime: dict[str, object] | None = None) -> None:
+        """Persist current invocation evidence, including on failed execution."""
+        ...
+
 
 class _PaidProvider(ITranslationProvider):
     def __init__(

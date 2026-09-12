@@ -43,6 +43,9 @@ class ITranslationProvider(ABC):
     The core engine never touches ``%%`` delimiters or raw API payloads.
     """
 
+    # Unavailable until discovery, or for transports without a runtime version.
+    runtime_version: str | None = None
+
     @abstractmethod
     def translate_batch(
         self,
