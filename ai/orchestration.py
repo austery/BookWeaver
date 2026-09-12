@@ -29,6 +29,13 @@ from ai.checkpoint_store import (
 from ai.model_profiles import resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
+from ai.prompt_preparation import (
+    PromptPreparation,
+    glossary_cache_path,
+    build_system_prompt as build_system_prompt,
+    load_glossary_block as load_glossary_block,
+    _get_language_name as _get_language_name,
+)
 from ai.ports.source import IBookSource
 
 from ai.adapters.providers._delimiter import SEPARATOR_OVERHEAD
@@ -149,6 +156,12 @@ class TranslationOrchestrator:
             raise ValueError("--allow-paid-api requires --provider api")
         config = (
             validate_config(options.config) if options.config is not None else load_runtime_config()
+        )
+        prompt_preparation = PromptPreparation.from_config(
+            config,
+            output_lang=options.spec.output_lang,
+            custom_prompt=options.spec.custom_prompt,
+            immersive=input_format == "epub",
         )
         extraction_config = config.get("terminology_extraction", {})
         extraction = extraction_config if isinstance(extraction_config, dict) else {}
@@ -286,19 +299,14 @@ class TranslationOrchestrator:
                 if not isinstance(extraction_model, str) or not isinstance(term_limit, int):
                     raise ValueError("Invalid terminology extraction configuration")
                 extraction_selection = resolve_profile(extraction_model, provider=model.provider)
-                cache_identity = json.dumps(
-                    {
-                        "source": content_signature,
-                        "mode": request.mode,
-                        "max_terms": term_limit,
-                        "model": extraction_selection.model_id,
-                        "effort": extraction_selection.effort,
-                        "extractor_version": 1,
-                    },
-                    sort_keys=True,
+                glossary_path = glossary_cache_path(
+                    output_file.parent,
+                    source_signature=content_signature,
+                    mode=request.mode,
+                    max_terms=term_limit,
+                    model_id=extraction_selection.model_id,
+                    effort=extraction_selection.effort,
                 )
-                cache_key = hashlib.sha256(cache_identity.encode()).hexdigest()
-                glossary_path = output_file.parent / ".bookweaver_glossaries" / f"{cache_key}.json"
                 # Cache identity includes the input and extraction request, not the output basename.
                 if store is None or not glossary_path.exists():
                     active_model = extraction_selection
@@ -318,45 +326,12 @@ class TranslationOrchestrator:
                         max_terms=term_limit,
                         mode=request.mode,
                     )
-            glossary_block = load_glossary_block(
-                str(glossary_path) if glossary_path else None, min_priority=glossary.min_priority
+            effective_prompt = prompt_preparation.render(
+                glossary_path, min_priority=glossary.min_priority
             )
-            prompt = build_system_prompt(
-                _get_language_name(options.spec.output_lang),
-                glossary_block=glossary_block,
-                custom_prompt=options.spec.custom_prompt,
-                immersive=input_format == "epub",
-            )
-            if "prompt_profile" in config or "prompt_templates" in config:
-                profile = config.get("prompt_profile", "default")
-                templates = config.get("prompt_templates", {})
-                template = (
-                    templates.get(profile)
-                    if isinstance(templates, dict) and isinstance(profile, str)
-                    else None
-                )
-                if not isinstance(template, str):
-                    raise ValueError(
-                        "Selected prompt_profile requires a matching prompt_templates entry"
-                    )
-                template_text = Path(template).expanduser().read_text(encoding="utf-8")
-                if input_format == "epub" and any(
-                    marker in template_text for marker in ("<!-- START -->", "<!-- END -->")
-                ):
-                    raise ValueError(
-                        "Legacy START/END prompt wrappers conflict with EPUB segment output; use an EPUB-compatible template or omit prompt_profile/templates"
-                    )
-                prompt = (
-                    template_text.replace(
-                        "{TARGET_LANGUAGE}", _get_language_name(options.spec.output_lang)
-                    )
-                    .replace("{GLOSSARY_BLOCK}", glossary_block or "")
-                    .replace("{CUSTOM_INSTRUCTIONS_BLOCK}", options.spec.custom_prompt or "")
-                )
+            prompt = effective_prompt.text
             if identity is not None:
-                identity = replace(
-                    identity, system_prompt_hash=hashlib.sha256(prompt.encode()).hexdigest()
-                )
+                identity = replace(identity, system_prompt_hash=effective_prompt.sha256)
             records = (
                 store.load(
                     identity,
@@ -502,46 +477,6 @@ def translate_pdf(
 
 
 # ── Language mapping ──────────────────────────────────────────
-
-_LANG_NAMES: dict[str, str] = {
-    "zh": "Chinese",
-    "en": "English",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "ar": "Arabic",
-    "it": "Italian",
-}
-
-# ── System prompt template ────────────────────────────────────
-# NOTE: This prompt does NOT mention %% delimiters — that's the
-# adapter's job (see augment_prompt_for_batch).
-
-_SYSTEM_PROMPT_TEMPLATE = """\
-You are a professional {target_language} native translator \
-who needs to fluently translate text into {target_language}.
-
-## Translation Rules
-1. Output only the translated content, without explanations \
-or additional content (such as "Here's the translation:")
-2. The returned translation must maintain exactly the same \
-number of paragraphs and format as the original text
-3. If the text contains HTML tags, consider where the tags \
-should be placed in the translation while maintaining fluency
-4. For content that should not be translated (such as proper \
-nouns, code, URLs), keep the original text"""
-
-_EPUB_IMMERSIVE_PROMPT_ADDENDUM = """\
-5. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output
-
-## OUTPUT FORMAT:
-- Single paragraph input -> Output translation directly (no separators, no extra text)
-- Multi-paragraph input -> Use %% as paragraph separator between translations"""
-
 
 # ── Format detection ──────────────────────────────────────────
 
@@ -899,44 +834,6 @@ def _load_checkpoint_translations(
 
 
 # ── Wiring helpers ────────────────────────────────────────────
-
-
-def _get_language_name(lang_code: str) -> str:
-    """Resolve language code to full name."""
-    return _LANG_NAMES.get(lang_code, lang_code)
-
-
-def build_system_prompt(
-    target_language: str,
-    *,
-    glossary_block: str | None = None,
-    custom_prompt: str | None = None,
-    immersive: bool = False,
-) -> str:
-    """Assemble the system prompt from components."""
-    prompt = _SYSTEM_PROMPT_TEMPLATE.format(target_language=target_language)
-    if immersive:
-        prompt = f"{prompt}\n\n{_EPUB_IMMERSIVE_PROMPT_ADDENDUM}"
-    if glossary_block:
-        prompt = f"{prompt}\n\n{glossary_block}"
-    if custom_prompt:
-        prompt = f"{prompt}\n\nADDITIONAL INSTRUCTIONS:\n{custom_prompt}"
-    if immersive:
-        prompt = f"{prompt}\n\nTranslate to {target_language}:"
-    return prompt
-
-
-def load_glossary_block(
-    glossary_path: str | None,
-    *,
-    min_priority: str | None = None,
-) -> str | None:
-    """Load and format glossary block if path is provided."""
-    if glossary_path is None:
-        return None
-    from ai.glossary_injector import GlossaryInjector
-
-    return GlossaryInjector(Path(glossary_path)).format_block(min_priority=min_priority) or None
 
 
 def _resolve_extraction_temp_dir(input_path: str) -> Path:
