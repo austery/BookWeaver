@@ -56,7 +56,7 @@ This command may incur charges. It requires `GEMINI_API_KEY` or `gemini_api.api_
 
 ## Configuration migration
 
-Runtime configuration is read from `config/config.json` and `~/.config/bookweaver/config.json`. The example file is a template, not a runtime default. Configuration is validated against `config/schemas/config_schema.json` before provider construction.
+In a source checkout, runtime configuration is read from checkout `config/config.json`, then `~/.config/bookweaver/config.json` (user values override checkout values). An installed wheel reads only `~/.config/bookweaver/config.json`; neither the working directory nor the installation directory supplies project configuration. The example file is a template, not a runtime default. Configuration is validated against `ai/config_schema.json` before provider construction.
 
 Old model aliases, model probes, fallback settings, output-format settings, and unused legacy controls fail with migration errors. An existing `~/.config/translatebook/config.json` also requires explicit migration. Back up user configuration before changing it. The reference example lists supported settings; model versions belong in the typed registry.
 

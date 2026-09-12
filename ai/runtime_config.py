@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import tomllib
+from importlib.resources import files
 from pathlib import Path
 
 from ai.core.config import ConfigRegistry
@@ -57,10 +59,23 @@ def _validate(value: object, schema: dict[str, object], path: str) -> None:
 
 
 def validate_config(config: dict[str, object]) -> dict[str, object]:
-    schema_path = Path(__file__).resolve().parent.parent / "config/schemas/config_schema.json"
-    schema = _mapping(json.loads(schema_path.read_text()))
+    schema = _mapping(
+        json.loads(files("ai").joinpath("config_schema.json").read_text(encoding="utf-8"))
+    )
     _validate(config, schema, "config")
     return config
+
+
+def _checkout_config_path() -> Path | None:
+    """Recognize a source checkout without searching cwd or installation siblings."""
+    root = Path(__file__).resolve().parent.parent
+    manifest = root / "pyproject.toml"
+    if not manifest.is_file():
+        return None
+    project = tomllib.loads(manifest.read_text(encoding="utf-8")).get("project", {})
+    if not isinstance(project, dict) or project.get("name") != "bookweaver":
+        return None
+    return root / "config/config.json"
 
 
 def load_runtime_config() -> dict[str, object]:
@@ -69,8 +84,9 @@ def load_runtime_config() -> dict[str, object]:
         raise ValueError(
             "Legacy ~/.config/translatebook/config.json exists; migrate it to ~/.config/bookweaver/config.json using SPEC-021"
         )
-    root = Path(__file__).resolve().parent.parent
-    paths = [root / "config/config.json", Path.home() / ".config/bookweaver/config.json"]
+    checkout_config = _checkout_config_path()
+    paths = [checkout_config] if checkout_config is not None else []
+    paths.append(Path.home() / ".config/bookweaver/config.json")
     for path in paths:
         if path.exists():
             try:
