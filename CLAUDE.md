@@ -10,7 +10,7 @@
 - Default runtime: Antigravity through `ai/antigravity_provider.py`; model versions are centralized in `ai/model_profiles.py`.
 - Default selection: Flash 3.8 Low. Model and effort are separate user axes; unsupported combinations fail loudly.
 - Paid API construction is authorization-gated by `ai/runtime_factory.py`. No automatic paid fallback. No live API tests without separate authorization.
-- Runtime JSON validation: `ai/runtime_config.py`, `config/schemas/config_schema.json`. Never automatically overwrite ignored user configuration.
+- Runtime JSON validation: `ai/runtime_config.py`, `ai/config_schema.json`. Never automatically overwrite ignored user configuration.
 - Checkpoint: `ai/checkpoint_store.py`, single atomic schema-v2 document, exclusive run lock, explicit mismatch failures, legacy import without rewriting v1 files.
 
 ## Migration status

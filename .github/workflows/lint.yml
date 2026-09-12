@@ -33,3 +33,8 @@ jobs:
         run: uv sync --frozen --group dev
       - name: Run tests
         run: uv run pytest -q
+
+      - name: Build distribution artifacts
+        run: uv build
+      - name: Verify installed runtime without model calls
+        run: uv run python scripts/verify_installed_runtime.py --wheel dist/*.whl --sdist dist/*.tar.gz

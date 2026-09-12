@@ -15,6 +15,9 @@ package = true
 [tool.setuptools.packages.find]
 include = ["ai*"]
 
+[tool.setuptools.package-data]
+ai = ["config_schema.json"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
