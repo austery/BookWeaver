@@ -86,3 +86,19 @@ def test_authorized_api_failure_is_one_attempt(
             "output_tokens": None,
         }
     ]
+
+
+@pytest.mark.parametrize("provider", ["cli", "api"])
+def test_audit_distinguishes_unavailable_usage_from_zero_paid_work(
+    tmp_path: Path, provider: str
+) -> None:
+    factory = DefaultProviderFactory(audit_directory=tmp_path)
+    factory.persist_audit({"provider": provider, "runtime_version": None})
+    audit = json.loads(next(tmp_path.glob("*.json")).read_text())
+    assert audit["usage_scope"] == "paid_api_requests"
+    assert audit["runtime"]["runtime_version"] is None
+    if provider == "cli":
+        assert audit["summary"] is None
+        assert factory.usage_snapshot() is None
+    else:
+        assert audit["summary"] == {"request_count": 0, "input_tokens": 0, "output_tokens": 0}
