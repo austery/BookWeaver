@@ -2,6 +2,7 @@
 specId: SPEC-023
 title: Installed Runtime Configuration
 status: Ready for Implementation
+implementationStatus: Locally verified; pending PR merge
 priority: P2 - Reliability
 creationDate: 2026-09-12
 lastUpdateDate: 2026-09-12
@@ -27,13 +28,26 @@ The owner authorized advancing the next task after SPEC-022. This is a bounded c
 
 One delivery ticket: package runtime schema and verify installed CLI/config behavior.
 
-- [ ] Schema is present in both sdist and wheel, with unchanged schema content.
-- [ ] Installed valid config succeeds; unknown keys, invalid values, and legacy config fail before runtime construction.
-- [ ] Checkout layering is preserved; installed lookup ignores unrelated working-directory and installation-sibling configuration.
-- [ ] Installed console invocation rebuilds a source-only EPUB with zero Provider construction; invalid configuration preserves an existing destination.
-- [ ] CI runs the installed-artifact smoke without model calls or external books.
-- [ ] Full offline test suite, Ruff, Tach, package build, and independent review pass; publish a task-owned PR, do not merge without approval.
+- [x] Schema is present in both sdist and wheel, with unchanged schema content.
+- [x] Installed valid config succeeds; unknown keys, invalid values, and legacy config fail before runtime construction.
+- [x] Checkout layering is preserved; installed lookup ignores unrelated working-directory and installation-sibling configuration.
+- [x] Installed console invocation rebuilds a source-only EPUB with zero Provider construction; invalid configuration preserves an existing destination.
+- [x] CI runs the installed-artifact smoke without model calls or external books.
+- [x] Full offline test suite, Ruff, Tach, package build, and independent review pass; publish a task-owned PR, do not merge without approval.
 
 ## Limits
 
 This covers configuration and zero-work installed execution. It does not certify live translation, glossary model work, visual/semantic book quality, or every remaining SPEC-021 CLI/config requirement.
+
+
+## Delivery evidence
+
+Ticket: [#33](https://github.com/austery/BookWeaver/issues/33). Implementation head: `245a45a59d5709bacfc8ce922071f28391437b6c`. [Independent review](../../../pr-reviews/installed-runtime-v1.md): zero findings on both Standards and Spec axes.
+
+- Full suite: **624 passed, zero skipped**, in 166.54s, with the local EPUB extraction opt-in enabled. No model calls.
+- Ruff lint and format (112 files), Tach, and diff whitespace checks passed.
+- Built sdist and wheel from that sdist; both contain the unchanged canonical schema. Installed smoke passed with zero Provider constructions, unchanged source-only EPUB entries, config rejection, and destination preservation.
+- Local sandbox could not write the global uv cache or download dependencies. Validation reused an isolated copy of the previously synced environment; all 46 installed non-project dependency versions matched the unchanged lockfile. Building used cached setuptools 82.0.1, `uv build --offline --no-build-isolation`, and a temporary writable cache. CI uses ordinary `uv sync --frozen` and `uv build`.
+- The first full run had **6 failed, 618 passed** because the historical shell attempted to initialize its missing legacy environment and download dependencies. Reusing the existing legacy environment fixed the setup: all 17 shell compatibility tests passed, followed by the green full run above. No historical implementation was changed or test skipped.
+
+The installed smoke shares only locked dependency packages with the caller environment and independently rejects importing BookWeaver from outside its installation. It is not a fresh dependency-resolution test, live runtime certification, or whole-book acceptance. Merge remains subject to owner approval.
