@@ -99,7 +99,10 @@ class _PaidProvider(ITranslationProvider):
             )
         except BaseException as exc:
             request_usage.state = "failed"
-            self._on_usage()
+            try:
+                self._on_usage()
+            except Exception as audit_error:
+                exc.add_note(f"Usage audit also failed: {type(audit_error).__name__}")
             if not isinstance(exc, Exception):
                 raise
             raise ProviderUnavailableError(
