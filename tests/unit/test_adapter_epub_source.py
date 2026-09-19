@@ -188,3 +188,54 @@ def test_successful_save_replaces_existing_output(tmp_path: Path) -> None:
         assert before.namelist() == after.namelist()
         assert all(before.read(name) == after.read(name) for name in before.namelist())
     assert not list(tmp_path.glob(".bookweaver-epub-*"))
+
+
+def test_directory_close_failure_does_not_mask_sync_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import stat
+
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_package(source)
+    adapter = EpubSourceAdapter(source)
+    real_sync, real_close = os.fsync, os.close
+    sync_error = OSError("primary directory sync failure")
+
+    def sync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise sync_error
+        real_sync(descriptor)
+
+    def close(descriptor: int) -> None:
+        directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+        real_close(descriptor)
+        if directory:
+            raise OSError("secondary directory close failure")
+
+    monkeypatch.setattr(os, "fsync", sync)
+    monkeypatch.setattr(os, "close", close)
+    with pytest.raises(OSError, match="output was replaced") as caught:
+        adapter.save(str(output))
+    assert caught.value.__cause__ is sync_error
+    assert "secondary directory close failure" in sync_error.__notes__[0]
+    assert zipfile.is_zipfile(output)
+
+
+def test_temporary_cleanup_failure_does_not_mask_replace_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import patch
+
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_package(source)
+    output.write_bytes(b"old output")
+    adapter = EpubSourceAdapter(source)
+    primary = OSError("primary replacement failure")
+    with patch("ai.epub_package.os.replace", side_effect=primary):
+        with patch.object(Path, "unlink", side_effect=OSError("secondary cleanup failure")):
+            with pytest.raises(OSError) as caught:
+                adapter.save(str(output))
+    assert caught.value is primary
+    assert "secondary cleanup failure" in primary.__notes__[0]
+    assert output.read_bytes() == b"old output"

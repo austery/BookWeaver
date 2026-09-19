@@ -655,10 +655,19 @@ def repack_epub_with_overrides(
             temporary = None
             try:
                 descriptor = os.open(output_epub.parent, os.O_RDONLY)
+                sync_failure: BaseException | None = None
                 try:
                     os.fsync(descriptor)
+                except BaseException as exc:
+                    sync_failure = exc
+                    raise
                 finally:
-                    os.close(descriptor)
+                    try:
+                        os.close(descriptor)
+                    except OSError as close_error:
+                        if sync_failure is None:
+                            raise
+                        sync_failure.add_note(f"EPUB directory close also failed: {close_error}")
             except OSError as exc:
                 raise OSError(
                     "EPUB output was replaced, but durability is unconfirmed: "
