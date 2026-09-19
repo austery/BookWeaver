@@ -115,3 +115,76 @@ def test_output_filesystem_failure_propagates(tmp_path: Path) -> None:
     adapter.get_segments()
     with pytest.raises(IsADirectoryError):
         adapter.save(str(tmp_path))
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("stage", ["write", "file_sync", "replace", "directory_sync"])
+def test_atomic_save_failure_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: bool, stage: str
+) -> None:
+    import os
+    import stat
+    from unittest.mock import patch
+
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_package(source)
+    original_source = source.read_bytes()
+    previous = b"previous complete output"
+    if existing:
+        output.write_bytes(previous)
+    adapter = EpubSourceAdapter(source)
+    adapter.get_segments()
+    real_sync = os.fsync
+
+    def sync(descriptor: int) -> None:
+        directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+        if (stage == "file_sync" and not directory) or (stage == "directory_sync" and directory):
+            raise OSError("injected sync failure")
+        real_sync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", sync)
+    with patch("ai.epub_package.os.replace", wraps=os.replace) as replace:
+        if stage == "replace":
+            replace.side_effect = OSError("injected replacement failure")
+        with patch.object(zipfile.ZipFile, "writestr", autospec=True) as write:
+            # Preserve real writes except for a failure after the first complete entry.
+            write.side_effect = real_write = _REAL_ZIP_WRITE
+            if stage == "write":
+
+                def fail_write(
+                    archive: zipfile.ZipFile, info: zipfile.ZipInfo, data: bytes
+                ) -> None:
+                    if info.filename != "mimetype":
+                        raise OSError("injected entry failure")
+                    real_write(archive, info, data)
+
+                write.side_effect = fail_write
+            with pytest.raises(OSError) as caught:
+                adapter.save(str(output))
+    assert source.read_bytes() == original_source
+    assert not list(tmp_path.glob(".bookweaver-epub-*"))
+    if stage == "directory_sync":
+        assert "output was replaced, but durability is unconfirmed" in str(caught.value)
+        with zipfile.ZipFile(source) as before, zipfile.ZipFile(output) as after:
+            assert before.namelist() == after.namelist()
+            assert all(before.read(name) == after.read(name) for name in before.namelist())
+    elif existing:
+        assert output.read_bytes() == previous
+    else:
+        assert not output.exists()
+
+
+_REAL_ZIP_WRITE = zipfile.ZipFile.writestr
+
+
+def test_successful_save_replaces_existing_output(tmp_path: Path) -> None:
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_package(source)
+    output.write_bytes(b"previous output")
+    adapter = EpubSourceAdapter(source)
+    adapter.get_segments()
+    adapter.save(str(output))
+    with zipfile.ZipFile(source) as before, zipfile.ZipFile(output) as after:
+        assert before.namelist() == after.namelist()
+        assert all(before.read(name) == after.read(name) for name in before.namelist())
+    assert not list(tmp_path.glob(".bookweaver-epub-*"))

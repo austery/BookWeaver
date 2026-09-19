@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+import os
+import tempfile
 import posixpath
 import re
 import zipfile
@@ -629,17 +631,50 @@ def repack_epub_with_overrides(
         remaining_infos = [info for info in infos if info.filename != "mimetype"]
 
         output_epub.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_epub, "w") as output_zip:
-            mimetype_bytes = overrides.get(
-                mimetype_info.filename, source_zip.read(mimetype_info.filename)
-            )
-            cloned = _clone_zip_info(mimetype_info)
-            cloned.compress_type = zipfile.ZIP_STORED
-            output_zip.writestr(cloned, mimetype_bytes)
+        temporary: Path | None = None
+        failure: BaseException | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=output_epub.parent, prefix=".bookweaver-epub-", delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                with zipfile.ZipFile(stream, "w") as output_zip:
+                    mimetype_bytes = overrides.get(
+                        mimetype_info.filename, source_zip.read(mimetype_info.filename)
+                    )
+                    cloned = _clone_zip_info(mimetype_info)
+                    cloned.compress_type = zipfile.ZIP_STORED
+                    output_zip.writestr(cloned, mimetype_bytes)
 
-            for info in remaining_infos:
-                content = overrides.get(info.filename, source_zip.read(info.filename))
-                output_zip.writestr(_clone_zip_info(info), content)
+                    for info in remaining_infos:
+                        content = overrides.get(info.filename, source_zip.read(info.filename))
+                        output_zip.writestr(_clone_zip_info(info), content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, output_epub)
+            temporary = None
+            try:
+                descriptor = os.open(output_epub.parent, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+            except OSError as exc:
+                raise OSError(
+                    "EPUB output was replaced, but durability is unconfirmed: "
+                    "destination directory synchronization failed"
+                ) from exc
+        except BaseException as exc:
+            failure = exc
+            raise
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    if failure is None:
+                        raise
+                    failure.add_note(f"EPUB temporary file cleanup also failed: {cleanup_error}")
 
 
 def repack_epub(source_epub: Path, output_epub: Path) -> None:
