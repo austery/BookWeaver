@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+import os
+import tempfile
 import posixpath
 import re
 import zipfile
@@ -608,13 +612,32 @@ def load_epub_package(epub_path: Path) -> EpubPackageModel:
     )
 
 
+@contextmanager
+def _preserve_failure_on_close(close: Callable[[], None], resource: str) -> Iterator[None]:
+    """Keep the active failure primary while still attempting resource closure."""
+    failure: BaseException | None = None
+    try:
+        yield
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        try:
+            close()
+        except BaseException as close_error:
+            if failure is None:
+                raise
+            failure.add_note(f"EPUB {resource} close also failed: {close_error}")
+
+
 def repack_epub_with_overrides(
     source_epub: Path,
     output_epub: Path,
     file_overrides: dict[str, bytes] | None = None,
 ) -> None:
     overrides = file_overrides or {}
-    with zipfile.ZipFile(source_epub, "r") as source_zip:
+    source_zip = zipfile.ZipFile(source_epub, "r")
+    with _preserve_failure_on_close(source_zip.close, "source ZIP"):
         infos = source_zip.infolist()
         known_paths = {info.filename for info in infos}
         unknown_overrides = sorted(path for path in overrides if path not in known_paths)
@@ -629,17 +652,56 @@ def repack_epub_with_overrides(
         remaining_infos = [info for info in infos if info.filename != "mimetype"]
 
         output_epub.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_epub, "w") as output_zip:
-            mimetype_bytes = overrides.get(
-                mimetype_info.filename, source_zip.read(mimetype_info.filename)
+        temporary: Path | None = None
+        failure: BaseException | None = None
+        try:
+            stream = tempfile.NamedTemporaryFile(
+                dir=output_epub.parent, prefix=".bookweaver-epub-", delete=False
             )
-            cloned = _clone_zip_info(mimetype_info)
-            cloned.compress_type = zipfile.ZIP_STORED
-            output_zip.writestr(cloned, mimetype_bytes)
+            temporary = Path(stream.name)
+            with _preserve_failure_on_close(stream.close, "temporary stream"):
+                output_zip = zipfile.ZipFile(stream, "w")
+                with _preserve_failure_on_close(output_zip.close, "output ZIP"):
+                    mimetype_bytes = overrides.get(
+                        mimetype_info.filename, source_zip.read(mimetype_info.filename)
+                    )
+                    cloned = _clone_zip_info(mimetype_info)
+                    cloned.compress_type = zipfile.ZIP_STORED
+                    output_zip.writestr(cloned, mimetype_bytes)
 
-            for info in remaining_infos:
-                content = overrides.get(info.filename, source_zip.read(info.filename))
-                output_zip.writestr(_clone_zip_info(info), content)
+                    for info in remaining_infos:
+                        content = overrides.get(info.filename, source_zip.read(info.filename))
+                        output_zip.writestr(_clone_zip_info(info), content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, output_epub)
+            temporary = None
+            try:
+                descriptor = os.open(output_epub.parent, os.O_RDONLY)
+                with _preserve_failure_on_close(lambda: os.close(descriptor), "directory"):
+                    os.fsync(descriptor)
+            except OSError as exc:
+                raise OSError(
+                    "EPUB output was replaced, but durability is unconfirmed: "
+                    "destination directory synchronization failed"
+                ) from exc
+            except BaseException as exc:
+                exc.add_note(
+                    "EPUB output was replaced, but durability is unconfirmed: "
+                    "destination directory synchronization was interrupted"
+                )
+                raise
+        except BaseException as exc:
+            failure = exc
+            raise
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    if failure is None:
+                        raise
+                    failure.add_note(f"EPUB temporary file cleanup also failed: {cleanup_error}")
 
 
 def repack_epub(source_epub: Path, output_epub: Path) -> None:
