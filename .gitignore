@@ -47,3 +47,4 @@ generate_test_epub.py
 # Misc artifacts
 *.epub
 *.json
+!config/schemas/config_schema.json

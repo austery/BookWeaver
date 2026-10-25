@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai import cli
+from ai import cli, orchestration
 from ai.core.batcher import TextBatcher
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.ports.provider import ITranslationProvider, TranslationError
@@ -61,12 +61,12 @@ def test_build_parser_accepts_model_and_probe_related_flags() -> None:
             "--output",
             "translated.epub",
             "--model",
-            "gemini-2.5-pro",
+            "pro",
             "--provider",
             "api",
         ]
     )
-    assert args.model == "gemini-2.5-pro"
+    assert args.model == "pro"
     assert args.provider == "api"
 
 
@@ -82,7 +82,7 @@ def test_resolve_model_alias_with_probe_fallback_prefers_available_candidate() -
         from ai import model_probe as probe_module
 
         mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({"gemini-2.5-flash": True}))
-        resolved_model, is_pro = cli.resolve_model("pro", config)
+        resolved_model, is_pro = orchestration.resolve_model("pro", config)
 
     assert resolved_model == "gemini-2.5-flash"
     assert is_pro is False
@@ -100,7 +100,7 @@ def test_resolve_model_explicit_mode_uses_alias_without_probe_fallback() -> None
         from ai import model_probe as probe_module
 
         mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({"gemini-2.5-flash": True}))
-        resolved_model, is_pro = cli.resolve_model("pro", config, explicit=True)
+        resolved_model, is_pro = orchestration.resolve_model("pro", config, explicit=True)
 
     assert resolved_model == "gemini-2.5-pro"
     assert is_pro is True
@@ -115,7 +115,7 @@ def test_resolve_model_without_probe_falls_back_to_name_heuristics() -> None:
                 raise RuntimeError("resolver unavailable")
 
         mp.setattr(resolver_module, "ModelResolver", _ExplodingResolver)
-        resolved_model, is_pro = cli.resolve_model("gemini-3-pro-preview", {})
+        resolved_model, is_pro = orchestration.resolve_model("gemini-3-pro-preview", {})
 
     assert resolved_model == "gemini-3-pro-preview"
     assert is_pro is True
@@ -135,7 +135,7 @@ def test_resolve_model_warns_and_returns_primary_when_probe_rejects_all() -> Non
         mp.setattr(probe_module, "ModelProbe", lambda **kwargs: _Probe({}))
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            resolved_model, is_pro = cli.resolve_model("pro", config)
+            resolved_model, is_pro = orchestration.resolve_model("pro", config)
 
     assert resolved_model == "gemini-2.5-pro"
     assert is_pro is True

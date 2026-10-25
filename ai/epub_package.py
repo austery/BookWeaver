@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+import os
+import tempfile
 import posixpath
 import re
 import zipfile
@@ -608,13 +612,32 @@ def load_epub_package(epub_path: Path) -> EpubPackageModel:
     )
 
 
+@contextmanager
+def _preserve_failure_on_close(close: Callable[[], None], resource: str) -> Iterator[None]:
+    """Keep the active failure primary while still attempting resource closure."""
+    failure: BaseException | None = None
+    try:
+        yield
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        try:
+            close()
+        except BaseException as close_error:
+            if failure is None:
+                raise
+            failure.add_note(f"EPUB {resource} close also failed: {close_error}")
+
+
 def repack_epub_with_overrides(
     source_epub: Path,
     output_epub: Path,
     file_overrides: dict[str, bytes] | None = None,
 ) -> None:
     overrides = file_overrides or {}
-    with zipfile.ZipFile(source_epub, "r") as source_zip:
+    source_zip = zipfile.ZipFile(source_epub, "r")
+    with _preserve_failure_on_close(source_zip.close, "source ZIP"):
         infos = source_zip.infolist()
         known_paths = {info.filename for info in infos}
         unknown_overrides = sorted(path for path in overrides if path not in known_paths)
@@ -629,17 +652,56 @@ def repack_epub_with_overrides(
         remaining_infos = [info for info in infos if info.filename != "mimetype"]
 
         output_epub.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(output_epub, "w") as output_zip:
-            mimetype_bytes = overrides.get(
-                mimetype_info.filename, source_zip.read(mimetype_info.filename)
+        temporary: Path | None = None
+        failure: BaseException | None = None
+        try:
+            stream = tempfile.NamedTemporaryFile(
+                dir=output_epub.parent, prefix=".bookweaver-epub-", delete=False
             )
-            cloned = _clone_zip_info(mimetype_info)
-            cloned.compress_type = zipfile.ZIP_STORED
-            output_zip.writestr(cloned, mimetype_bytes)
+            temporary = Path(stream.name)
+            with _preserve_failure_on_close(stream.close, "temporary stream"):
+                output_zip = zipfile.ZipFile(stream, "w")
+                with _preserve_failure_on_close(output_zip.close, "output ZIP"):
+                    mimetype_bytes = overrides.get(
+                        mimetype_info.filename, source_zip.read(mimetype_info.filename)
+                    )
+                    cloned = _clone_zip_info(mimetype_info)
+                    cloned.compress_type = zipfile.ZIP_STORED
+                    output_zip.writestr(cloned, mimetype_bytes)
 
-            for info in remaining_infos:
-                content = overrides.get(info.filename, source_zip.read(info.filename))
-                output_zip.writestr(_clone_zip_info(info), content)
+                    for info in remaining_infos:
+                        content = overrides.get(info.filename, source_zip.read(info.filename))
+                        output_zip.writestr(_clone_zip_info(info), content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, output_epub)
+            temporary = None
+            try:
+                descriptor = os.open(output_epub.parent, os.O_RDONLY)
+                with _preserve_failure_on_close(lambda: os.close(descriptor), "directory"):
+                    os.fsync(descriptor)
+            except OSError as exc:
+                raise OSError(
+                    "EPUB output was replaced, but durability is unconfirmed: "
+                    "destination directory synchronization failed"
+                ) from exc
+            except BaseException as exc:
+                exc.add_note(
+                    "EPUB output was replaced, but durability is unconfirmed: "
+                    "destination directory synchronization was interrupted"
+                )
+                raise
+        except BaseException as exc:
+            failure = exc
+            raise
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    if failure is None:
+                        raise
+                    failure.add_note(f"EPUB temporary file cleanup also failed: {cleanup_error}")
 
 
 def repack_epub(source_epub: Path, output_epub: Path) -> None:
@@ -715,12 +777,40 @@ def resolve_opf_href(opf_path: str, href: str) -> str:
     return posixpath.normpath(posixpath.join(str(opf_dir), href))
 
 
+def _is_bibliography_body(body: ET.Element) -> bool:
+    """Recognize dedicated bibliography pages without classifying prose mentions."""
+    semantics = body.get("{http://www.idpf.org/2007/ops}type", "").split()
+    if "bibliography" in semantics or "doc-bibliography" in body.get("role", "").split():
+        return True
+    titles = {"bibliography", "references", "works cited", "参考文献", "参考书目"}
+    heading_tags = {"h1", "h2", "h3", "h4", "h5", "h6"}
+    if sum(_local_name(node.tag).lower() in heading_tags for node in body.iter()) != 1:
+        return False
+
+    def leading_heading(node: ET.Element) -> bool | None:
+        # Follow visible document order: text, children, then each child's tail.
+        # None means this subtree has neither prose nor a heading.
+        if _local_name(node.tag).lower() in heading_tags:
+            return _normalize_visible_text(node).strip().casefold() in titles
+        if (node.text or "").strip():
+            return False
+        for child in node:
+            found = leading_heading(child)
+            if found is not None:
+                return found
+            if (child.tail or "").strip():
+                return False
+        return None
+
+    return leading_heading(body) is True
+
+
 def extract_translatable_segments(
     xhtml: str, document_path: str | None = None
 ) -> list[TranslatableSegment]:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
-    if body is None:
+    if body is None or _is_bibliography_body(body):
         return []
     is_toc_document = _is_toc_document(document_path)
     return _collect_translatable_block_segments(body, is_toc_document=is_toc_document)
@@ -734,7 +824,7 @@ def patch_xhtml_alternating(
 ) -> str:
     root = ET.fromstring(xhtml)
     body = _find_body(root)
-    if body is None:
+    if body is None or _is_bibliography_body(body):
         if translations:
             raise ValueError("translation count does not match translatable segments")
         return xhtml
