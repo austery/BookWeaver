@@ -68,7 +68,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--cli-api-fallback",
         action="store_true",
-        help=("Removed: choose --provider api with explicit authorization instead."),
+        help=(
+            "Removed: choose a metered --provider (gemini, openai, or anthropic) "
+            "with explicit authorization instead."
+        ),
     )
     p.add_argument(
         "--max-batch-chars",
@@ -135,7 +138,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("--provider api was renamed; use --provider gemini")
     if args.cli_api_fallback:
         parser.error(
-            "Automatic paid API fallback was removed; choose --provider api with explicit authorization"
+            "Automatic paid API fallback was removed; choose a metered --provider "
+            "(gemini, openai, or anthropic) with explicit authorization"
         )
     path = Path(args.input_path)
     fmt = (

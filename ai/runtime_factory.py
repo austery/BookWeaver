@@ -282,7 +282,9 @@ class DefaultProviderFactory:
         }
         if model.provider == "cli":
             if allow_paid_api:
-                raise PaidAuthorizationError("--allow-paid-api requires --provider api")
+                raise PaidAuthorizationError(
+                    "--allow-paid-api requires a metered --provider (gemini, openai, or anthropic)"
+                )
             return AntigravityProvider(
                 model, protocol=protocol, timeout_seconds=_antigravity_timeout(config)
             )

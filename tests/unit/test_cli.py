@@ -884,6 +884,18 @@ class TestBuildParser:
             main(["book.epub", "--output", "out.epub", "--provider", "api"])
         assert "use --provider gemini" in capsys.readouterr().err
 
+    def test_removed_fallback_flag_points_at_current_provider_names(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from ai.cli import main
+
+        with pytest.raises(SystemExit):
+            main(["book.epub", "--output", "out.epub", "--cli-api-fallback"])
+        error = capsys.readouterr().err
+        assert "gemini, openai, or anthropic" in error
+        assert "--provider api" not in error
+        assert "--provider api" not in build_parser().format_help()
+
     @pytest.mark.parametrize("provider", ["gemini", "openai", "anthropic"])
     def test_metered_providers_are_accepted_by_the_parser(self, provider: str) -> None:
         args = build_parser().parse_args(["b.epub", "--output", "o.epub", "--provider", provider])

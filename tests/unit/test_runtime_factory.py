@@ -24,7 +24,7 @@ def test_config_cannot_authorize_paid_api(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_paid_flag_is_invalid_for_subscription_provider() -> None:
-    with pytest.raises(PaidAuthorizationError, match="requires"):
+    with pytest.raises(PaidAuthorizationError, match="requires a metered --provider"):
         DefaultProviderFactory().create(
             resolve_profile(),
             protocol="segment_tags",
