@@ -8,9 +8,11 @@
 >   raising `TranslationError`. Thresholds and the `sanity_probe` config block are unchanged.
 > - Each warning is logged as `[progress:sanity_warning]`. After the batch's checkpoint save, warnings are written
 >   atomically to `warnings.json` in the checkpoint directory, or to `<output>.warnings.json` when no checkpoint is
->   used. Entries are keyed by segment ID: restored segments keep theirs; retranslated segments are replaced.
-> - The run ends with `[progress:sanity_summary] flagged=N`. Warning-file write failures are reported on stderr and
->   never stop translation. `--no-sanity-probe` / `enabled: false` disable warnings and the heartbeat.
+>   used. The checkpoint is the source of truth: on resume, warnings for restored segments are recomputed from their
+>   committed translations (batch `restored`), so a crash or write failure after the checkpoint save cannot hide a
+>   committed suspicious segment. Retranslated segments' entries are replaced.
+> - The run ends with `[progress:sanity_summary] flagged=N`. Warning-file write and temporary-file cleanup failures
+>   are reported on stderr and never stop translation. `--no-sanity-probe` / `enabled: false` disable warnings and the heartbeat.
 > - Acceptance criteria 1–3 below are replaced by: such outputs complete the run and produce the matching warning
 >   check. Empty provider output is still rejected by the provider adapters themselves.
 

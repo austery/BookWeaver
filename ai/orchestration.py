@@ -397,7 +397,18 @@ class TranslationOrchestrator:
                     checkpoint_directory / "warnings.json"
                     if checkpoint_directory is not None
                     else output_file.with_name(output_file.name + ".warnings.json"),
-                    retained_segment_ids=set(records),
+                    restored=_sanity_check_segments(
+                        [
+                            TranslatedSegment(
+                                segment.id, segment.text, records[segment.id].translated
+                            )
+                            for segment in segments
+                            if segment.id in records
+                        ],
+                        options.spec.output_lang,
+                        probe,
+                        "restored",
+                    ),
                 )
                 if probe.enabled
                 else None
@@ -454,7 +465,6 @@ class TranslationOrchestrator:
             )
             result = engine.translate(source, str(output_file), on_source_loaded=loaded)
             if warning_log is not None:
-                warning_log.finish()
                 _log_progress(
                     "sanity_summary",
                     flagged=warning_log.count,
@@ -616,8 +626,18 @@ def _sanity_check_batch(
     Static thresholds produce frequent false positives (abbreviations, short
     dialogue, mixed-language passages), so the probe observes and never halts.
     """
+    return _sanity_check_segments(
+        translated, output_lang, probe_config, f"{batch_index + 1}/{total_batches}"
+    )
+
+
+def _sanity_check_segments(
+    translated: Sequence[TranslatedSegment],
+    output_lang: str,
+    probe_config: _SanityProbeConfig,
+    batch_label: str,
+) -> list[SanityWarning]:
     check_cjk = output_lang.startswith("zh")
-    batch_label = f"{batch_index + 1}/{total_batches}"
     warnings: list[SanityWarning] = []
 
     def flag(seg: TranslatedSegment, check: str, detail: str) -> None:
@@ -678,31 +698,22 @@ def _log_sanity_warnings(warnings: Sequence[SanityWarning]) -> None:
 class _SanityWarningLog:
     """Persist probe warnings beside the run so they survive interruption and resume.
 
-    Entries are keyed by segment ID: warnings for restored segments are kept,
-    and a retranslated segment's entries are replaced by its newest result.
-    Write failures are reported but never stop translation.
+    The checkpoint is the source of truth: warnings for restored segments are
+    recomputed from their committed translations rather than read back from a
+    previous file, so a crash or write failure between the checkpoint save and
+    the warning write cannot hide a committed suspicious segment. A
+    retranslated segment's entries are replaced by its newest result. Write
+    and cleanup failures are reported but never stop translation.
     """
 
-    def __init__(self, path: Path, *, retained_segment_ids: set[str]) -> None:
+    def __init__(self, path: Path, *, restored: Sequence[SanityWarning] = ()) -> None:
         self.path = path
         self._by_segment: dict[str, list[SanityWarning]] = {}
-        for item in self._read_existing(path):
-            if item.segment_id in retained_segment_ids:
-                self._by_segment.setdefault(item.segment_id, []).append(item)
-        self._stale = path.exists()
-
-    @staticmethod
-    def _read_existing(path: Path) -> list[SanityWarning]:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            return [SanityWarning(**entry) for entry in payload["warnings"]]
-        except FileNotFoundError:
-            return []
-        except (OSError, ValueError, TypeError, KeyError) as exc:
-            _log_progress(
-                "sanity_warning_log", stderr=True, path=path, error=f"unreadable, replacing ({exc})"
-            )
-            return []
+        for item in restored:
+            self._by_segment.setdefault(item.segment_id, []).append(item)
+        if restored or path.exists():
+            # Replace any stale, partial, or missing file with the recomputed state.
+            self._write()
 
     @property
     def count(self) -> int:
@@ -716,11 +727,6 @@ class _SanityWarningLog:
         if warnings or self.path.exists():
             self._write()
 
-    def finish(self) -> None:
-        """Rewrite a pre-existing file never touched this run so it matches the summary."""
-        if self._stale:
-            self._write()
-
     def _write(self) -> None:
         payload = {
             "schema_version": 1,
@@ -728,7 +734,6 @@ class _SanityWarningLog:
             "warning_count": self.count,
             "warnings": [asdict(item) for items in self._by_segment.values() for item in items],
         }
-        self._stale = False
         temporary: Path | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -747,7 +752,15 @@ class _SanityWarningLog:
             _log_progress("sanity_warning_log", stderr=True, path=self.path, error=str(exc))
         finally:
             if temporary is not None:
-                temporary.unlink(missing_ok=True)
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError as exc:
+                    _log_progress(
+                        "sanity_warning_log",
+                        stderr=True,
+                        path=temporary,
+                        error=f"temporary file not removed ({exc})",
+                    )
 
 
 def _emit_batch_sample(

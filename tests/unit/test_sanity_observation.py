@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import ai.orchestration as orchestration
 from ai.orchestration import (
     EpubTranslationOptions,
     QualityPolicy,
@@ -109,16 +110,12 @@ def _warning(segment_id: str, check: str = "length_ratio") -> SanityWarning:
     return SanityWarning(segment_id, "1/1", check, "detail", "src", "tgt")
 
 
-def test_log_keeps_retained_segments_and_replaces_retranslated_ones(tmp_path: Path) -> None:
+def test_log_seeds_restored_and_replaces_retranslated_ones(tmp_path: Path) -> None:
     path = tmp_path / "warnings.json"
-    first = _SanityWarningLog(path, retained_segment_ids=set())
-    first.record(["a", "b", "c"], [_warning("a"), _warning("b"), _warning("c")])
-
-    # "c" was never committed, so its stale warning is discarded on load.
-    second = _SanityWarningLog(path, retained_segment_ids={"a", "b"})
-    assert second.count == 2
-    second.record(["b"], [])  # "b" retranslated cleanly
-    second.record(["d"], [_warning("d", "cjk_density")])
+    log = _SanityWarningLog(path, restored=[_warning("a"), _warning("b")])
+    assert log.count == 2
+    log.record(["b"], [])  # "b" retranslated cleanly
+    log.record(["d"], [_warning("d", "cjk_density")])
 
     assert sorted((e["segment_id"], e["check"]) for e in _warnings(path)) == [
         ("a", "length_ratio"),
@@ -126,14 +123,17 @@ def test_log_keeps_retained_segments_and_replaces_retranslated_ones(tmp_path: Pa
     ]
 
 
-def test_log_finish_rewrites_stale_file_to_match_summary(tmp_path: Path) -> None:
+def test_log_replaces_stale_or_unreadable_file_on_open(tmp_path: Path) -> None:
     path = tmp_path / "warnings.json"
-    _SanityWarningLog(path, retained_segment_ids=set()).record(["a"], [_warning("a")])
+    path.write_text("{not json")
 
-    log = _SanityWarningLog(path, retained_segment_ids=set())
-    log.finish()
+    log = _SanityWarningLog(path, restored=[_warning("a")])
 
-    assert log.count == 0
+    assert log.count == 1
+    assert [entry["segment_id"] for entry in _warnings(path)] == ["a"]
+
+    clean = _SanityWarningLog(path)
+    assert clean.count == 0
     assert _warnings(path) == []
 
 
@@ -142,19 +142,74 @@ def test_log_write_failure_is_reported_not_raised(
 ) -> None:
     blocker = tmp_path / "not-a-directory"
     blocker.write_text("")
-    log = _SanityWarningLog(blocker / "warnings.json", retained_segment_ids=set())
+    log = _SanityWarningLog(blocker / "warnings.json")
 
     log.record(["a"], [_warning("a")])
 
     assert "[progress:sanity_warning_log]" in capsys.readouterr().err
 
 
-def test_unreadable_log_is_replaced(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = tmp_path / "warnings.json"
-    path.write_text("{not json")
+def test_log_replace_and_cleanup_failure_is_reported_not_raised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def deny(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("denied")
 
-    log = _SanityWarningLog(path, retained_segment_ids={"a"})
+    monkeypatch.setattr(orchestration.os, "replace", deny)
+    monkeypatch.setattr(Path, "unlink", deny)
+    log = _SanityWarningLog(tmp_path / "warnings.json")
+
     log.record(["a"], [_warning("a")])
 
-    assert "unreadable" in capsys.readouterr().err
-    assert [entry["segment_id"] for entry in _warnings(path)] == ["a"]
+    err = capsys.readouterr().err
+    assert err.count("[progress:sanity_warning_log]") == 2
+    assert "temporary file not removed" in err
+
+
+def test_resume_recovers_warnings_lost_after_checkpoint_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    real_replace = orchestration.os.replace
+
+    def fail_warning_replace(src: object, dst: object) -> None:
+        if Path(str(dst)).name == "warnings.json":
+            raise PermissionError("denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(orchestration.os, "replace", fail_warning_replace)
+    _translate(tmp_path, RecordingFactory(translation=_RUNAWAY))
+    assert not (tmp_path / "ckpt" / "warnings.json").exists()
+    monkeypatch.setattr(orchestration.os, "replace", real_replace)
+    capsys.readouterr()
+
+    resumed = RecordingFactory()
+    _translate(tmp_path, resumed)
+
+    assert resumed.requests == []
+    entries = _warnings(tmp_path / "ckpt" / "warnings.json")
+    assert {(entry["batch"], entry["check"]) for entry in entries} == {("restored", "length_ratio")}
+    assert len(entries) == 2
+    assert "[progress:sanity_summary] flagged=2" in capsys.readouterr().out
+
+
+def test_cleanup_failure_still_produces_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_replace, real_unlink = orchestration.os.replace, Path.unlink
+
+    def fail_warning_replace(src: object, dst: object) -> None:
+        if Path(str(dst)).name == "warnings.json":
+            raise PermissionError("denied")
+        real_replace(src, dst)
+
+    def fail_warning_unlink(self: Path, missing_ok: bool = False) -> None:
+        if self.name.startswith(".warnings-"):
+            raise PermissionError("denied")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(orchestration.os, "replace", fail_warning_replace)
+    monkeypatch.setattr(Path, "unlink", fail_warning_unlink)
+
+    output = _translate(tmp_path, RecordingFactory(translation=_RUNAWAY))
+
+    assert output.exists()
