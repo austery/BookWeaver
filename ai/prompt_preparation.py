@@ -22,8 +22,10 @@ _LANG_NAMES: dict[str, str] = {
 }
 
 # ── System prompt template ────────────────────────────────────
-# NOTE: This prompt does NOT mention %% delimiters — that's the
-# adapter's job (see augment_prompt_for_batch).
+# NOTE: This prompt states no batch output format (no %% delimiters,
+# no <segment> tags). The transport protocol owns that contract and
+# appends it per request (see augment_prompt_for_batch), so every
+# rendered request carries exactly one output contract.
 
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are a professional {target_language} native translator \
@@ -39,13 +41,6 @@ should be placed in the translation while maintaining fluency
 4. For content that should not be translated (such as proper \
 nouns, code, URLs), keep the original text"""
 
-_EPUB_IMMERSIVE_PROMPT_ADDENDUM = """\
-5. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output
-
-## OUTPUT FORMAT:
-- Single paragraph input -> Output translation directly (no separators, no extra text)
-- Multi-paragraph input -> Use %% as paragraph separator between translations"""
-
 
 def _get_language_name(lang_code: str) -> str:
     """Resolve language code to full name."""
@@ -59,10 +54,12 @@ def build_system_prompt(
     custom_prompt: str | None = None,
     immersive: bool = False,
 ) -> str:
-    """Assemble the system prompt from components."""
+    """Assemble the protocol-neutral system prompt from components.
+
+    ``immersive`` (EPUB) only adds the closing target-language cue. The
+    batch output contract is added by the provider's transport protocol.
+    """
     prompt = _SYSTEM_PROMPT_TEMPLATE.format(target_language=target_language)
-    if immersive:
-        prompt = f"{prompt}\n\n{_EPUB_IMMERSIVE_PROMPT_ADDENDUM}"
     if glossary_block:
         prompt = f"{prompt}\n\n{glossary_block}"
     if custom_prompt:
