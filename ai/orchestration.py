@@ -262,6 +262,7 @@ class TranslationOrchestrator:
                             "requested_effort": active_requested_effort,
                             "effective_effort": active_model.effort,
                             "provider": active_model.provider,
+                            "row_status": active_model.status,
                             "runtime_version": active_provider.runtime_version
                             if active_provider is not None
                             else None,

@@ -6,17 +6,48 @@ from typing import Literal
 ModelProfile = Literal["flash", "pro"]
 Effort = Literal["low", "medium", "high"]
 ProviderName = Literal["cli", "gemini", "openai", "anthropic"]
+# Owner policy for a row (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
+RowStatus = Literal["default", "manual", "experiment"]
+# Seed list only: an unknown version is certified per model by the automatic probe (SPEC-025 §3.3).
 CERTIFIED_AGY_VERSIONS = frozenset({"1.1.27", "1.5.3"})
 METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 
-# A release changes these mappings together with its compatibility evidence.
-_CLI_MODELS: dict[tuple[ModelProfile, Effort], str] = {
-    ("flash", "low"): "gemini-3.8-flash-low",
-    ("flash", "medium"): "gemini-3.8-flash-medium",
-    ("flash", "high"): "gemini-3.8-flash-high",
-    ("pro", "low"): "gemini-3.1-pro-low",
-    ("pro", "high"): "gemini-3.1-pro-high",
-}
+
+@dataclass(frozen=True)
+class _CliRow:
+    """One owner-enabled subscription CLI combination (SPEC-025 §3.8)."""
+
+    profile: ModelProfile
+    family: str
+    effort: Effort
+    status: RowStatus
+    evidence: str
+
+
+# Named rows, not the Cartesian product: anything absent here is rejected before a run.
+# The family is the runtime's model family; effort is passed once through ``--effort``.
+_CLI_ROWS: tuple[_CliRow, ...] = (
+    _CliRow(
+        "flash",
+        "gemini-3.8-flash",
+        "low",
+        "default",
+        "agy 1.5.3 probe 2026-11-07; one validated book on agy 1.1.27",
+    ),
+    _CliRow(
+        "flash", "gemini-3.8-flash", "medium", "experiment", "enabled before SPEC-025; not probed"
+    ),
+    _CliRow(
+        "flash", "gemini-3.8-flash", "high", "experiment", "enabled before SPEC-025; not probed"
+    ),
+    _CliRow("pro", "gemini-4-argon", "low", "experiment", "agy 1.5.3 roster 2026-11-07"),
+    _CliRow("pro", "gemini-4-argon", "high", "experiment", "agy 1.5.3 roster 2026-11-07"),
+)
+
+
+def cli_model_id(family: str, effort: str) -> str:
+    """Concrete roster ID for provenance; agy 1.5.3 lists models as ``<family>-<effort>``."""
+    return f"{family}-{effort}"
 
 
 @dataclass(frozen=True)
@@ -49,6 +80,9 @@ class ResolvedModel:
     # Metered providers only: requested output cap and vendor-pinned effort.
     output_cap: int | None = None
     api_effort: str | None = None
+    # Subscription CLI only: the family passed to the runtime with ``--effort``.
+    family: str | None = None
+    status: RowStatus = "manual"
 
 
 def is_metered(provider: str) -> bool:
@@ -83,7 +117,17 @@ def resolve_profile(
     effective = effort if effort is not None else "low"
     if effective not in ("low", "medium", "high"):
         raise ValueError("effort must be low, medium, or high")
-    model_id = _CLI_MODELS.get((profile, effective))
-    if model_id is None:
-        raise ValueError(f"Unsupported model/effort combination: {profile}/{effective}")
-    return ResolvedModel(profile, provider, model_id, effective)
+    for row in _CLI_ROWS:
+        if (row.profile, row.effort) == (profile, effective):
+            return ResolvedModel(
+                profile,
+                provider,
+                cli_model_id(row.family, row.effort),
+                row.effort,
+                family=row.family,
+                status=row.status,
+            )
+    enabled = ", ".join(f"{row.profile}/{row.effort}" for row in _CLI_ROWS)
+    raise ValueError(
+        f"Unsupported model/effort combination: {profile}/{effective}; enabled rows: {enabled}"
+    )

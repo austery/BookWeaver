@@ -31,3 +31,27 @@ All three are faithful and in order.
 - `--model pro` still fails loudly at discovery on 1.5.3. Model discovery stays strict, so there is no silent substitution. The Pro mapping is replaced only after the 1.5.3 model roster is read and the replacement passes this probe.
 
 This is a three-passage protocol probe. It does not certify book-length reliability on 1.5.3.
+
+## Follow-up: SPEC-025 Phase 1 (same day)
+
+Live checks on agy `1.5.3` showed that effort is a separate axis: `--model gemini-3.8-flash-low --effort high` is rejected as a conflict, while `--model gemini-3.8-flash --effort high` resolves to `gemini-3.8-flash-high`. An unknown family (`gemini-3.1-pro`) is rejected loudly, without substitution.
+
+Phase 1 changes:
+
+- The registry holds named rows: model family plus owner-enabled efforts. The provider passes the family and passes effort once.
+- `pro` maps to `gemini-4-argon` (status `experiment`).
+- An unknown agy version triggers the synthetic three-passage probe automatically; a pass is recorded per `(version, model_id, protocol)` in `~/.local/state/bookweaver/runtime-certifications.json`.
+- Run audits record `row_status`.
+
+Live verification on the owner machine, with the seed version list emptied to force the automatic probe:
+
+| Row | Probe + 2-passage batch | Elapsed |
+|---|---|---:|
+| flash / low (`gemini-3.8-flash-low`, default) | PASS | 16.6 s |
+| pro / low (`gemini-4-argon-low`, experiment) | PASS | 36.4 s |
+
+The same forced probe with the `delimiter` protocol (used by glossary extraction) passed for both rows.
+
+End-to-end CLI on the generated 8-segment test EPUB: `--model pro` (glossary extraction and translation on Argon) and the default flash run both completed; audits show `row_status` `experiment` and `default`.
+
+This does not certify book-length quality for Argon; pro stays `experiment` until the evaluation in SPEC-025 §3.7.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
 import subprocess
 import tempfile
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ai.adapters.providers._delimiter import (
@@ -21,6 +23,7 @@ from ai.ports.provider import (
     ProviderAuthenticationError,
     ProviderTimeoutError,
     ProviderUnavailableError,
+    TranslationError,
 )
 
 
@@ -80,6 +83,90 @@ def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
 # Per-batch response deadline; configurable as antigravity.timeout_seconds.
 DEFAULT_TIMEOUT_SECONDS = 600.0
 
+# Synthetic compatibility probe (SPEC-025 §3.3). No book content is ever sent by the probe.
+PROBE_SAMPLES = (
+    "The old key was hidden beneath a cracked flowerpot beside the garden gate.",
+    "When the power failed, the program resumed from its last saved checkpoint "
+    "instead of starting over.",
+    "Through the small telescope she counted four moons circling the bright planet.",
+)
+PROBE_SYSTEM_PROMPT = (
+    "You are a professional translator. Translate each segment into Simplified Chinese. "
+    "Keep the segment structure exactly as requested."
+)
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+_PROBE_ARTIFACT = re.compile(r"```|file://|antigravity-cli/brain/")
+
+
+def default_certification_path() -> Path:
+    """User-local record of runtime versions that passed the automatic probe."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    root = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    return root / "bookweaver" / "runtime-certifications.json"
+
+
+def _probe_problems(outputs: Sequence[str]) -> list[str]:
+    problems: list[str] = []
+    for index, (source, text) in enumerate(zip(PROBE_SAMPLES, outputs, strict=True), 1):
+        stripped = text.strip()
+        if not stripped:
+            problems.append(f"segment {index} empty")
+        elif stripped == source or not _CJK.search(stripped):
+            problems.append(f"segment {index} not translated into Chinese")
+        if _PROBE_ARTIFACT.search(text):
+            problems.append(f"segment {index} contains a fence or artifact link")
+    return problems
+
+
+class _Certifications:
+    """Probe results keyed by runtime version, concrete model and framing protocol."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def _load(self) -> list[dict[str, str]]:
+        if not self._path.exists():
+            return []
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ProviderUnavailableError(
+                f"Unreadable runtime certification record {self._path}; fix or remove it"
+            ) from exc
+        if not isinstance(data, list):
+            raise ProviderUnavailableError(
+                f"Invalid runtime certification record {self._path}; fix or remove it"
+            )
+        return [entry for entry in data if isinstance(entry, dict)]
+
+    def contains(self, version: str, model_id: str, protocol: str) -> bool:
+        return any(
+            (entry.get("version"), entry.get("model_id"), entry.get("protocol"))
+            == (version, model_id, protocol)
+            and entry.get("result") == "pass"
+            for entry in self._load()
+        )
+
+    def record(self, version: str, model_id: str, protocol: str) -> None:
+        entries = self._load()
+        entries.append(
+            {
+                "runtime": "antigravity",
+                "version": version,
+                "model_id": model_id,
+                "protocol": protocol,
+                "result": "pass",
+                "probed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            }
+        )
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=self._path.parent, delete=False
+        ) as stream:
+            json.dump(entries, stream, indent=2)
+            temporary = Path(stream.name)
+        os.replace(temporary, self._path)
+
 
 class AntigravityProvider(ITranslationProvider):
     """Frame translation batches and invoke the subscription runtime once per batch."""
@@ -95,9 +182,10 @@ class AntigravityProvider(ITranslationProvider):
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         outer_grace_seconds: float = 30,
         protocol: str = "segment_tags",
+        certification_path: Path | None = None,
     ) -> None:
-        if model.provider != "cli" or model.effort is None:
-            raise ValueError("Antigravity requires a resolved CLI model and effort")
+        if model.provider != "cli" or model.effort is None or model.family is None:
+            raise ValueError("Antigravity requires a resolved CLI model family and effort")
         if timeout_seconds <= 0 or outer_grace_seconds < 0:
             raise ValueError("Invalid Antigravity timeout")
         self.model = model
@@ -107,6 +195,9 @@ class AntigravityProvider(ITranslationProvider):
         self._timeout = timeout_seconds
         self._grace = outer_grace_seconds
         self._protocol = protocol
+        self._certifications = _Certifications(
+            certification_path if certification_path is not None else default_certification_path()
+        )
 
     def _run(self, args: list[str], *, cwd: Path | None, timeout: float) -> str:
         try:
@@ -118,23 +209,37 @@ class AntigravityProvider(ITranslationProvider):
         if self.runtime_version is not None:
             return
         version = self._run(["--version"], cwd=None, timeout=30)
-        if version not in CERTIFIED_AGY_VERSIONS:
-            raise ProviderUnavailableError(
-                f"Antigravity {version} requires a compatibility probe before updating CERTIFIED_AGY_VERSIONS"
-            )
         roster = self._run(["models"], cwd=None, timeout=30)
         identifiers = {line.split()[0] for line in roster.splitlines() if line.strip()}
         if self.model.model_id not in identifiers:
             raise ProviderUnavailableError(
                 f"Selected model {self.model.model_id} is absent from agy models; update the registry explicitly"
             )
+        if version not in CERTIFIED_AGY_VERSIONS and not self._certifications.contains(
+            version, self.model.model_id, self._protocol
+        ):
+            self._probe(version)
+            self._certifications.record(version, self.model.model_id, self._protocol)
         self.runtime_version = version
 
-    def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
-        if not segments:
-            return []
-        self._discover()
-        items = list(segments)
+    def _probe(self, version: str) -> None:
+        """Run the synthetic passages through the production framing path; stop on any defect."""
+        try:
+            outputs = self._invoke(list(PROBE_SAMPLES), PROBE_SYSTEM_PROMPT)
+        except TranslationError as exc:
+            if isinstance(exc, ProviderUnavailableError):  # auth, timeout, transport: keep the type
+                raise
+            raise ProviderUnavailableError(
+                f"Antigravity {version} failed the compatibility probe for {self.model.model_id}: {exc}"
+            ) from exc
+        problems = _probe_problems(outputs)
+        if problems:
+            raise ProviderUnavailableError(
+                f"Antigravity {version} failed the compatibility probe for "
+                f"{self.model.model_id}: {'; '.join(problems)}"
+            )
+
+    def _invoke(self, items: list[str], system_prompt: str) -> list[str]:
         prompt = augment_prompt_for_batch(system_prompt, len(items), protocol=self._protocol)
         prompt += "\n\n" + join_segments(items, protocol=self._protocol)
         with tempfile.TemporaryDirectory(
@@ -153,7 +258,7 @@ class AntigravityProvider(ITranslationProvider):
             output = self._run(
                 [
                     "--model",
-                    self.model.model_id,
+                    str(self.model.family),
                     "--effort",
                     str(self.model.effort),
                     "--print",
@@ -165,3 +270,9 @@ class AntigravityProvider(ITranslationProvider):
                 timeout=self._timeout + self._grace,
             )
         return split_response(output, len(items), protocol=self._protocol)
+
+    def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+        if not segments:
+            return []
+        self._discover()
+        return self._invoke(list(segments), system_prompt)

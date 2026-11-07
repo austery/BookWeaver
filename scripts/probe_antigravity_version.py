@@ -5,7 +5,9 @@ Sends three synthetic English passages through the production translation path
 each CLI profile, and checks that every result is a non-empty Chinese segment in
 order. Only synthetic text is sent; no book content leaves the machine.
 
-Run after ``agy`` updates, before adding its version to CERTIFIED_AGY_VERSIONS:
+The runtime now probes an unknown version automatically before the first book
+batch (SPEC-025 §3.3). Use this script to inspect the roster and read the
+translations by eye, for example before adding a version to the seed list:
 
     uv run python scripts/probe_antigravity_version.py
 
@@ -24,16 +26,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from ai import antigravity_provider  # noqa: E402
 from ai.adapters.providers._delimiter import PROTOCOL_SEGMENT_TAGS  # noqa: E402
-from ai.antigravity_provider import AntigravityProvider  # noqa: E402
+from ai.antigravity_provider import PROBE_SAMPLES, AntigravityProvider  # noqa: E402
 from ai.model_profiles import CERTIFIED_AGY_VERSIONS, resolve_profile  # noqa: E402
 from ai.prompt_preparation import build_system_prompt  # noqa: E402
 
-SAMPLES = [
-    "The old key was hidden beneath a cracked flowerpot beside the garden gate.",
-    "When the power failed, the program resumed from its last saved checkpoint "
-    "instead of starting over.",
-    "Through the small telescope she counted four moons circling the bright planet.",
-]
+SAMPLES = list(PROBE_SAMPLES)
 PROFILES = [("flash", "low"), ("pro", "low")]
 _CJK = re.compile(r"[一-鿿]")
 _ARTIFACT = re.compile(r"```|file://|antigravity-cli/brain/")
