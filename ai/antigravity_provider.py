@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
@@ -17,7 +18,7 @@ from ai.adapters.providers._delimiter import (
     join_segments,
     split_response,
 )
-from ai.model_profiles import CERTIFIED_AGY_VERSIONS, ResolvedModel
+from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
 from ai.ports.provider import (
     ITranslationProvider,
     ProviderAuthenticationError,
@@ -90,29 +91,36 @@ PROBE_SAMPLES = (
     "instead of starting over.",
     "Through the small telescope she counted four moons circling the bright planet.",
 )
+# Used only for the delimiter protocol: its production prompt (glossary extraction)
+# returns terms, not translations, so it cannot judge a translation probe.
 PROBE_SYSTEM_PROMPT = (
     "You are a professional translator. Translate each segment into Simplified Chinese. "
     "Keep the segment structure exactly as requested."
 )
 _CJK = re.compile(r"[\u4e00-\u9fff]")
 _PROBE_ARTIFACT = re.compile(r"```|file://|antigravity-cli/brain/")
+_ENTRY_KEYS = ("runtime", "version", "model_id", "protocol", "result", "probed_at")
 
 
 def default_certification_path() -> Path:
     """User-local record of runtime versions that passed the automatic probe."""
-    state_home = os.environ.get("XDG_STATE_HOME")
-    root = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    state_home = os.environ.get("XDG_STATE_HOME", "")
+    # The XDG base directory specification says to ignore relative values.
+    root = Path(state_home) if os.path.isabs(state_home) else Path.home() / ".local" / "state"
     return root / "bookweaver" / "runtime-certifications.json"
 
 
-def _probe_problems(outputs: Sequence[str]) -> list[str]:
+def probe_problems(outputs: Sequence[str], *, require_chinese: bool) -> list[str]:
+    """Defects in probe output; empty when every synthetic passage was translated in order."""
     problems: list[str] = []
     for index, (source, text) in enumerate(zip(PROBE_SAMPLES, outputs, strict=True), 1):
         stripped = text.strip()
         if not stripped:
             problems.append(f"segment {index} empty")
-        elif stripped == source or not _CJK.search(stripped):
-            problems.append(f"segment {index} not translated into Chinese")
+        elif stripped == source:
+            problems.append(f"segment {index} returned untranslated")
+        elif require_chinese and not _CJK.search(stripped):
+            problems.append(f"segment {index} has no Chinese")
         if _PROBE_ARTIFACT.search(text):
             problems.append(f"segment {index} contains a fence or artifact link")
     return problems
@@ -124,48 +132,80 @@ class _Certifications:
     def __init__(self, path: Path) -> None:
         self._path = path
 
+    def _unavailable(self, problem: str) -> ProviderUnavailableError:
+        return ProviderUnavailableError(
+            f"{problem} runtime certification record {self._path}; fix or remove it"
+        )
+
     def _load(self) -> list[dict[str, str]]:
-        if not self._path.exists():
-            return []
         try:
+            if not self._path.exists():
+                return []
             data = json.loads(self._path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ProviderUnavailableError(
-                f"Unreadable runtime certification record {self._path}; fix or remove it"
-            ) from exc
+            raise self._unavailable("Unreadable") from exc
         if not isinstance(data, list):
-            raise ProviderUnavailableError(
-                f"Invalid runtime certification record {self._path}; fix or remove it"
-            )
-        return [entry for entry in data if isinstance(entry, dict)]
+            raise self._unavailable("Invalid")
+        entries: list[dict[str, str]] = []
+        for item in data:
+            if not (
+                isinstance(item, dict)
+                and set(item) == set(_ENTRY_KEYS)
+                and all(isinstance(item[key], str) for key in _ENTRY_KEYS)
+            ):
+                raise self._unavailable("Invalid entry in")
+            entries.append({key: item[key] for key in _ENTRY_KEYS})
+        return entries
 
     def contains(self, version: str, model_id: str, protocol: str) -> bool:
         return any(
-            (entry.get("version"), entry.get("model_id"), entry.get("protocol"))
-            == (version, model_id, protocol)
-            and entry.get("result") == "pass"
+            (entry["version"], entry["model_id"], entry["protocol"], entry["result"])
+            == (version, model_id, protocol, "pass")
             for entry in self._load()
         )
 
     def record(self, version: str, model_id: str, protocol: str) -> None:
-        entries = self._load()
-        entries.append(
-            {
-                "runtime": "antigravity",
-                "version": version,
-                "model_id": model_id,
-                "protocol": protocol,
-                "result": "pass",
-                "probed_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            }
-        )
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", dir=self._path.parent, delete=False
-        ) as stream:
-            json.dump(entries, stream, indent=2)
-            temporary = Path(stream.name)
-        os.replace(temporary, self._path)
+        """Append one pass under an exclusive lock, then replace the file atomically."""
+        directory = self._path.parent
+        temporary: Path | None = None
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            with (directory / f".{self._path.name}.lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                entries = self._load()
+                entries.append(
+                    {
+                        "runtime": "antigravity",
+                        "version": version,
+                        "model_id": model_id,
+                        "protocol": protocol,
+                        "result": "pass",
+                        "probed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                    }
+                )
+                with tempfile.NamedTemporaryFile(
+                    "w",
+                    encoding="utf-8",
+                    dir=directory,
+                    prefix=".certifications-",
+                    delete=False,
+                ) as stream:
+                    temporary = Path(stream.name)
+                    json.dump(entries, stream, indent=2)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self._path)
+                temporary = None
+                descriptor = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+        except OSError as exc:
+            raise self._unavailable("Unwritable") from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 class AntigravityProvider(ITranslationProvider):
@@ -205,39 +245,46 @@ class AntigravityProvider(ITranslationProvider):
         except subprocess.TimeoutExpired as exc:
             raise ProviderTimeoutError("Antigravity exceeded its outer deadline") from exc
 
-    def _discover(self) -> None:
+    def _discover(self, system_prompt: str) -> None:
         if self.runtime_version is not None:
             return
         version = self._run(["--version"], cwd=None, timeout=30)
         roster = self._run(["models"], cwd=None, timeout=30)
         identifiers = {line.split()[0] for line in roster.splitlines() if line.strip()}
-        if self.model.model_id not in identifiers:
+        model_id = self.model.model_id
+        if model_id not in identifiers:
             raise ProviderUnavailableError(
-                f"Selected model {self.model.model_id} is absent from agy models; update the registry explicitly"
+                f"Selected model {model_id} is absent from agy models; update the registry explicitly"
             )
-        if version not in CERTIFIED_AGY_VERSIONS and not self._certifications.contains(
-            version, self.model.model_id, self._protocol
+        if (version, model_id) not in CERTIFIED_AGY_MODELS and not self._certifications.contains(
+            version, model_id, self._protocol
         ):
-            self._probe(version)
-            self._certifications.record(version, self.model.model_id, self._protocol)
+            self._probe(version, system_prompt)
+            self._certifications.record(version, model_id, self._protocol)
         self.runtime_version = version
 
-    def _probe(self, version: str) -> None:
-        """Run the synthetic passages through the production framing path; stop on any defect."""
+    def _probe(self, version: str, system_prompt: str) -> None:
+        """Send the synthetic passages through the production path; stop on any defect.
+
+        Translation (segment tags) uses the run's own production prompt. The delimiter
+        protocol serves glossary extraction, whose prompt yields terms, so it uses
+        PROBE_SYSTEM_PROMPT to judge framing, invocation and parsing.
+        """
+        translation = self._protocol == "segment_tags"
+        label = f"Antigravity {version} compatibility probe for {self.model.model_id}"
         try:
-            outputs = self._invoke(list(PROBE_SAMPLES), PROBE_SYSTEM_PROMPT)
-        except TranslationError as exc:
-            if isinstance(exc, ProviderUnavailableError):  # auth, timeout, transport: keep the type
-                raise
-            raise ProviderUnavailableError(
-                f"Antigravity {version} failed the compatibility probe for {self.model.model_id}: {exc}"
-            ) from exc
-        problems = _probe_problems(outputs)
-        if problems:
-            raise ProviderUnavailableError(
-                f"Antigravity {version} failed the compatibility probe for "
-                f"{self.model.model_id}: {'; '.join(problems)}"
+            outputs = self._invoke(
+                list(PROBE_SAMPLES), system_prompt if translation else PROBE_SYSTEM_PROMPT
             )
+        except ProviderUnavailableError as exc:
+            # Keep auth/timeout/transport types for callers; name the probe in the message.
+            raise type(exc)(f"{label} stopped: {exc}") from exc
+        except TranslationError as exc:
+            # A split-eligible parse error must not reach the engine's binary split.
+            raise ProviderUnavailableError(f"{label} failed: {exc}") from exc
+        problems = probe_problems(outputs, require_chinese=not translation)
+        if problems:
+            raise ProviderUnavailableError(f"{label} failed: {'; '.join(problems)}")
 
     def _invoke(self, items: list[str], system_prompt: str) -> list[str]:
         prompt = augment_prompt_for_batch(system_prompt, len(items), protocol=self._protocol)
@@ -274,5 +321,5 @@ class AntigravityProvider(ITranslationProvider):
     def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
         if not segments:
             return []
-        self._discover()
+        self._discover(system_prompt)
         return self._invoke(list(segments), system_prompt)

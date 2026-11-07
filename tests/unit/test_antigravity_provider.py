@@ -1,5 +1,6 @@
 """Antigravity adapter behavior at the executable boundary."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -96,11 +97,14 @@ def test_missing_model_stops_before_translation(tmp_path: Path) -> None:
         )
 
 
-def _fake_agy(tmp_path: Path, *, version: str, reply: str) -> tuple[Path, Path]:
+def _fake_agy(
+    tmp_path: Path, *, version: str, reply: str, roster: str = "gemini-3.8-flash-low"
+) -> tuple[Path, Path]:
     """Fake runtime that logs each argv and answers segment-tag or %% delimiter prompts.
 
     reply="translate" returns one Chinese segment per source segment;
-    reply="echo" returns the source text unchanged.
+    reply="echo" returns the source text unchanged;
+    reply="short" returns one segment fewer than requested.
     """
     executable = tmp_path / "agy"
     log = tmp_path / "argv.log"
@@ -111,7 +115,7 @@ def _fake_agy(tmp_path: Path, *, version: str, reply: str) -> tuple[Path, Path]:
         'if sys.argv[1:] == ["--version"]:\n'
         f"    print({version!r})\n"
         'elif sys.argv[1:] == ["models"]:\n'
-        '    print("gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)")\n'
+        f"    print({roster!r})\n"
         "else:\n"
         '    prompt = pathlib.Path("prompt.txt").read_text()\n'
         f"    echo = {reply == 'echo'!r}\n"
@@ -121,6 +125,8 @@ def _fake_agy(tmp_path: Path, *, version: str, reply: str) -> tuple[Path, Path]:
         "        print('\\n\\n%%\\n\\n'.join(out)); raise SystemExit\n"
         "    # Skip the '...' examples in the framing instructions.\n"
         "    pairs = re.findall(r'<segment id=\"(\\d+)\">(?!\\.\\.\\.<)(.*?)</segment>', prompt, re.S)\n"
+        f"    if {reply == 'short'!r}:\n"
+        "        pairs = pairs[:-1]\n"
         "    if not pairs:\n"
         "        print('译文1'); raise SystemExit\n"
         "    print('\\n'.join(f'<segment id=\"{i}\">{s if echo else \"译文\" + i}</segment>' for i, s in pairs))\n"
@@ -130,8 +136,6 @@ def _fake_agy(tmp_path: Path, *, version: str, reply: str) -> tuple[Path, Path]:
 
 
 def _model_calls(log: Path) -> list[list[str]]:
-    import json
-
     calls = [json.loads(line) for line in log.read_text().splitlines()]
     return [argv for argv in calls if "--print" in argv]
 
@@ -191,3 +195,80 @@ def test_delimiter_protocol_probe_is_certified_separately(tmp_path: Path) -> Non
     ]
     assert len(_model_calls(log)) == 2
     assert '"protocol": "delimiter"' in cache.read_text()
+
+
+def test_argv_never_carries_the_suffixed_model_id(tmp_path: Path) -> None:
+    executable, log = _fake_agy(tmp_path, version="1.5.3", reply="translate")
+    AntigravityProvider(resolve_profile(), executable=str(executable)).translate_batch(
+        ["garden"], system_prompt="Translate"
+    )
+    [argv] = _model_calls(log)
+    assert "gemini-3.8-flash-low" not in argv
+
+
+def test_seeded_version_still_probes_an_unseeded_model(tmp_path: Path) -> None:
+    executable, log = _fake_agy(
+        tmp_path, version="1.5.3", reply="translate", roster="gemini-4-argon-high"
+    )
+    cache = tmp_path / "certifications.json"
+    provider = AntigravityProvider(
+        resolve_profile("pro", effort="high"),
+        executable=str(executable),
+        certification_path=cache,
+    )
+    provider.translate_batch(["garden"], system_prompt="Translate")
+    assert len(_model_calls(log)) == 2  # probe for the unseeded pair, then the book batch
+    assert "gemini-4-argon-high" in cache.read_text()
+
+
+def test_each_protocol_needs_its_own_pass(tmp_path: Path) -> None:
+    executable, log = _fake_agy(tmp_path, version="9.9.9", reply="translate")
+    cache = tmp_path / "certifications.json"
+    for protocol in ("segment_tags", "delimiter"):
+        AntigravityProvider(
+            resolve_profile(),
+            executable=str(executable),
+            certification_path=cache,
+            protocol=protocol,
+        ).translate_batch(["garden", "moon"], system_prompt="Translate")
+    assert len(_model_calls(log)) == 4  # a segment_tags pass does not certify delimiter
+
+
+def test_probe_parse_error_halts_instead_of_splitting(tmp_path: Path) -> None:
+    executable, log = _fake_agy(tmp_path, version="9.9.9", reply="short")
+    provider = AntigravityProvider(
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=tmp_path / "certifications.json",
+    )
+    with pytest.raises(ProviderUnavailableError, match="compatibility probe") as caught:
+        provider.translate_batch(["garden"], system_prompt="Translate")
+    assert caught.value.split_eligible is False
+    assert len(_model_calls(log)) == 1
+
+
+@pytest.mark.parametrize("content", ["not json", '{"a": 1}', '["comment"]'])
+def test_invalid_certification_record_stops_loudly(tmp_path: Path, content: str) -> None:
+    executable, log = _fake_agy(tmp_path, version="9.9.9", reply="translate")
+    cache = tmp_path / "certifications.json"
+    cache.write_text(content)
+    provider = AntigravityProvider(
+        resolve_profile(), executable=str(executable), certification_path=cache
+    )
+    with pytest.raises(ProviderUnavailableError, match="fix or remove it"):
+        provider.translate_batch(["garden"], system_prompt="Translate")
+    assert _model_calls(log) == []
+    assert cache.read_text() == content
+
+
+def test_unwritable_certification_path_is_a_provider_error(tmp_path: Path) -> None:
+    executable, _ = _fake_agy(tmp_path, version="9.9.9", reply="translate")
+    blocker = tmp_path / "state"
+    blocker.write_text("a file where the cache directory should be")
+    provider = AntigravityProvider(
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=blocker / "certifications.json",
+    )
+    with pytest.raises(ProviderUnavailableError, match="Unwritable"):
+        provider.translate_batch(["garden"], system_prompt="Translate")

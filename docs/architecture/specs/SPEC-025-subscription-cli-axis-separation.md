@@ -60,7 +60,7 @@ The `1.5.3` roster also lists `claude-opus-5-5-*`, `claude-sonnet-5-5-*` and `gp
 ### 3.1 Axis separation (owner-confirmed direction)
 
 - The user selects `provider`, `tier` and `effort`. These stay the CLI and config contract.
-- The registry maps `(runtime, tier)` to a model **family** plus the owner-enabled efforts. Example: `("antigravity", "flash") -> family "gemini-3.8-flash", efforts {low}`.
+- The registry maps `(runtime, tier)` to a model **family** plus the owner-enabled efforts. Example: `("antigravity", "flash") -> family "gemini-3.8-flash"`, with one row per enabled effort (§3.8 table).
 - The provider passes effort exactly once, through the runtime's own effort option.
 - The runtime still decides whether a `family + effort` pair exists; BookWeaver does not copy the vendor's naming or validity table. The enabled-effort list is a product decision (§3.8), not a copy of vendor rules.
 - `ResolvedModel.model_id` keeps the concrete ID (`gemini-3.8-flash-low`) for checkpoint provenance and mixed-model resume warnings. A new `family` field carries the argv value. Existing checkpoints stay compatible.
@@ -75,11 +75,11 @@ The `1.5.3` roster also lists `claude-opus-5-5-*`, `claude-sonnet-5-5-*` and `gp
 
 The gate guards protocol drift; roster checks already guard model absence.
 
-- Known certified versions run as today.
-- An unknown version triggers the existing probe (`scripts/probe_antigravity_version.py` logic, moved into the provider package): three synthetic passages through the production prompt, framing, invocation and `split_response` path. No book content is sent.
+- Seed certifications are `(version, model_id)` pairs with recorded probe evidence (`CERTIFIED_AGY_MODELS`). A seeded version does not exempt other models: any unseeded pair is probed before its first book batch.
+- An uncertified `(version, model_id, protocol)` triggers the probe in the provider package: one call with three synthetic passages through the production framing, invocation and `split_response` path. Translation (`segment_tags`) uses the run's own production prompt. Glossary extraction (`delimiter`) uses a fixed translation prompt, because the extraction prompt returns terms, not translations. No book content is sent.
 - Pass: record `(runtime, version, model_id, protocol, timestamp, result)` in the user-local certification cache `~/.local/state/bookweaver/runtime-certifications.json` (or `$XDG_STATE_HOME/bookweaver/`), then continue. The cache is the probe record; the run audit records `runtime_version` and `row_status`. The probe runs per framing protocol, because glossary extraction uses `delimiter` and translation uses `segment_tags`.
 - Fail: stop before any book batch, with the probe diagnosis.
-- Cost: three short subscription calls per new `(version, model_id)`. No metered API is ever used for this probe.
+- Cost: one short subscription call per new `(version, model_id, protocol)`, so at most two per model. No metered API is ever used for this probe.
 - `CERTIFIED_AGY_VERSIONS` becomes a seed list, not the only path.
 - SPEC-021's "probe before certifying" rule is kept; the probe becomes automatic instead of manual. Amend SPEC-021 accordingly.
 
@@ -171,7 +171,9 @@ Initial rows (proposal for owner review):
 | Runtime | Tier | Family | Effort | Status | Proven to |
 |---|---|---|---|---|---|
 | antigravity | flash | `gemini-3.8-flash` | low | default | Layer 2 (agy 1.5.3 probe) + one validated book on 1.1.27 |
-| antigravity | pro | `gemini-4-argon` | low | experiment | Layer 2 after Phase 1 probe |
+| antigravity | flash | `gemini-3.8-flash` | medium, high | experiment | Layer 1; kept for effort comparison (low is the normal choice for translation); probed automatically on first use |
+| antigravity | pro | `gemini-4-argon` | low | experiment | Layer 2 (agy 1.5.3 probe, both protocols) |
+| antigravity | pro | `gemini-4-argon` | high | experiment | Layer 1; probed automatically on first use |
 | codex | flash / pro | tbd after roster read | tbd | experiment | none yet |
 | claude-code | flash / pro | `claude-sonnet-5-5` / `claude-opus-5-5` | low | experiment | none yet |
 | anthropic / gemini API | flash / pro | as pinned in SPEC-024 | vendor-pinned | manual (paid) | Layer 2 offline only |
@@ -189,7 +191,7 @@ Initial rows (proposal for owner review):
 - [ ] Codex: pin flash/pro GPT families after reading the roster on the owner machine.
 - [ ] Claude Code: verify `claude -p` with `--model`, `--effort`, `--bare` and a tool lockdown (`--tools ""` or `--disallowedTools`), and confirm it uses subscription login, not an API key.
 - [ ] Antigravity: search for a print-mode tool or write restriction.
-- [ ] Choose the certification cache location (proposed: the existing runtime state directory beside the user config).
+- [x] Certification cache location: `$XDG_STATE_HOME/bookweaver/runtime-certifications.json`, default `~/.local/state/bookweaver/` (Phase 1).
 
 ## 6. Phases
 

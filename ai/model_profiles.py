@@ -8,8 +8,9 @@ Effort = Literal["low", "medium", "high"]
 ProviderName = Literal["cli", "gemini", "openai", "anthropic"]
 # Owner policy for a row (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
 RowStatus = Literal["default", "manual", "experiment"]
-# Seed list only: an unknown version is certified per model by the automatic probe (SPEC-025 §3.3).
-CERTIFIED_AGY_VERSIONS = frozenset({"1.1.27", "1.5.3"})
+# Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
+EvidenceLayer = Literal[1, 2, 3]
+CliRuntime = Literal["antigravity"]
 METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 
 
@@ -17,10 +18,12 @@ METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 class _CliRow:
     """One owner-enabled subscription CLI combination (SPEC-025 §3.8)."""
 
+    runtime: CliRuntime
     profile: ModelProfile
     family: str
     effort: Effort
     status: RowStatus
+    layer: EvidenceLayer
     evidence: str
 
 
@@ -28,26 +31,79 @@ class _CliRow:
 # The family is the runtime's model family; effort is passed once through ``--effort``.
 _CLI_ROWS: tuple[_CliRow, ...] = (
     _CliRow(
+        "antigravity",
         "flash",
         "gemini-3.8-flash",
         "low",
         "default",
+        2,
         "agy 1.5.3 probe 2026-11-07; one validated book on agy 1.1.27",
     ),
     _CliRow(
-        "flash", "gemini-3.8-flash", "medium", "experiment", "enabled before SPEC-025; not probed"
+        "antigravity",
+        "flash",
+        "gemini-3.8-flash",
+        "medium",
+        "experiment",
+        1,
+        "effort comparison only; probed automatically on first use",
     ),
     _CliRow(
-        "flash", "gemini-3.8-flash", "high", "experiment", "enabled before SPEC-025; not probed"
+        "antigravity",
+        "flash",
+        "gemini-3.8-flash",
+        "high",
+        "experiment",
+        1,
+        "effort comparison only; probed automatically on first use",
     ),
-    _CliRow("pro", "gemini-4-argon", "low", "experiment", "agy 1.5.3 roster 2026-11-07"),
-    _CliRow("pro", "gemini-4-argon", "high", "experiment", "agy 1.5.3 roster 2026-11-07"),
+    _CliRow(
+        "antigravity",
+        "pro",
+        "gemini-4-argon",
+        "low",
+        "experiment",
+        2,
+        "agy 1.5.3 probe 2026-11-07 (segment_tags and delimiter)",
+    ),
+    _CliRow(
+        "antigravity",
+        "pro",
+        "gemini-4-argon",
+        "high",
+        "experiment",
+        1,
+        "agy 1.5.3 roster 2026-11-07; probed automatically on first use",
+    ),
 )
 
 
 def cli_model_id(family: str, effort: str) -> str:
     """Concrete roster ID for provenance; agy 1.5.3 lists models as ``<family>-<effort>``."""
     return f"{family}-{effort}"
+
+
+def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
+    """Layer 1 check at import: one row per selection, and a known default."""
+    keys = [(row.runtime, row.profile, row.effort) for row in rows]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise RuntimeError(f"Duplicate CLI rows in ai/model_profiles.py: {duplicates}")
+    if ("antigravity", "flash", "low") not in keys:
+        raise RuntimeError("The default antigravity flash/low row is missing")
+
+
+_validate_rows(_CLI_ROWS)
+
+# Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
+# Any other pair is probed automatically before its first book batch (SPEC-025 §3.3).
+CERTIFIED_AGY_MODELS = frozenset(
+    {
+        ("1.1.27", "gemini-3.8-flash-low"),
+        ("1.5.3", "gemini-3.8-flash-low"),
+        ("1.5.3", "gemini-4-argon-low"),
+    }
+)
 
 
 @dataclass(frozen=True)
