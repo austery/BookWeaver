@@ -78,7 +78,7 @@ Before making ANY code changes:
 
 - `docs/architecture/specs/SPEC-010-*.md` - Glossary extraction & injection specification
 - `docs/architecture/specs/SPEC-011-*.md` - Model routing & provider factory specification
-- `CLAUDE.md` - Developer behavior guide for BookWeaver
+- `AGENTS.md` - Developer behavior guide for BookWeaver (read natively by Claude Code; no `CLAUDE.md`)
 - `README.md` - User-facing documentation
 
 ---
