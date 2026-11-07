@@ -69,11 +69,11 @@ class TestBuildSystemPrompt:
         prompt = build_system_prompt("Chinese")
         assert "%%" not in prompt
 
-    def test_epub_immersive_prompt_includes_delimiter_and_output_format_rules(self) -> None:
+    def test_epub_immersive_prompt_leaves_output_contract_to_protocol(self) -> None:
         prompt = build_system_prompt("Chinese", immersive=True)
-        assert "If input contains %%" in prompt
-        assert "OUTPUT FORMAT" in prompt
-        assert "Translate to Chinese:" in prompt
+        assert "%%" not in prompt
+        assert "OUTPUT FORMAT" not in prompt
+        assert prompt.endswith("Translate to Chinese:")
 
     def test_non_epub_prompt_does_not_include_immersive_footer(self) -> None:
         prompt = build_system_prompt("Chinese", immersive=False)
