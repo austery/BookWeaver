@@ -12,7 +12,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the supported application CLI and explicit migration errors."""
     p = argparse.ArgumentParser(
         prog="bookweaver",
-        description="Translate EPUB books through Antigravity.",
+        description="Translate EPUB books through Antigravity or a metered model API.",
     )
     p.add_argument(
         "input_path",
@@ -35,9 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--provider",
-        choices=["cli", "api"],
+        choices=["cli", "gemini", "openai", "anthropic", "api"],
+        metavar="{cli,gemini,openai,anthropic}",
         default="cli",
-        help="Translation backend (default: cli)",
+        help="Translation backend: cli is Antigravity; gemini/openai/anthropic are metered APIs (default: cli)",
     )
     p.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
     p.add_argument(
@@ -67,7 +68,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--cli-api-fallback",
         action="store_true",
-        help=("Removed: choose --provider api with explicit authorization instead."),
+        help=(
+            "Removed: choose a metered --provider (gemini, openai, or anthropic) "
+            "with explicit authorization instead."
+        ),
     )
     p.add_argument(
         "--max-batch-chars",
@@ -130,9 +134,12 @@ def main(argv: list[str] | None = None) -> None:
     tokens = argv if argv is not None else sys.argv[1:]
     parser = build_parser()
     args = parser.parse_args(tokens)
+    if args.provider == "api":
+        parser.error("--provider api was renamed; use --provider gemini")
     if args.cli_api_fallback:
         parser.error(
-            "Automatic paid API fallback was removed; choose --provider api with explicit authorization"
+            "Automatic paid API fallback was removed; choose a metered --provider "
+            "(gemini, openai, or anthropic) with explicit authorization"
         )
     path = Path(args.input_path)
     fmt = (

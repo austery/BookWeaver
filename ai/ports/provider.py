@@ -32,6 +32,10 @@ class ProviderTimeoutError(ProviderUnavailableError):
     """The owned provider process exceeded its deadline."""
 
 
+class OutputTruncatedError(ProviderUnavailableError):
+    """The model stopped at its output-token cap; the batch translation is incomplete."""
+
+
 class ITranslationProvider(ABC):
     """Port for translation backends (Gemini CLI, Gemini API, etc.).
 
@@ -45,6 +49,8 @@ class ITranslationProvider(ABC):
 
     # Unavailable until discovery, or for transports without a runtime version.
     runtime_version: str | None = None
+    # Concrete execution backend recorded as segment provenance (e.g. "antigravity").
+    backend: str | None = None
 
     @abstractmethod
     def translate_batch(

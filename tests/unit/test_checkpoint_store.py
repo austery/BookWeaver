@@ -42,6 +42,36 @@ def test_committed_segments_restore_with_their_provenance(tmp_path: Path) -> Non
         assert store.load(identity(), segment_ids={"chapter::0"}) == {"chapter::0": record}
 
 
+@pytest.mark.parametrize(
+    "provider,backend,model",
+    [
+        ("anthropic", "any_llm", "claude-sonnet-5-5"),
+        ("gemini", "any_llm", "gemini-2.5-flash"),
+        ("api", "gemini_api", "gemini-2.5-flash"),
+    ],
+)
+def test_metered_and_historical_api_provenance_reload(
+    tmp_path: Path, provider: str, backend: str, model: str
+) -> None:
+    record = SegmentRecord("译文", "flash", provider, backend, model, None, "2026-11-07T00:00:00Z")
+    selected = replace(identity(), effort=None)
+    with CheckpointStore(tmp_path) as store:
+        store.load(selected, segment_ids={"a"})
+        store.save(selected, {"a": record})
+    with CheckpointStore(tmp_path) as store:
+        assert store.load(selected, segment_ids={"a"}) == {"a": record}
+
+
+def test_unknown_provenance_is_still_rejected(tmp_path: Path) -> None:
+    record = SegmentRecord("译文", "flash", "mystery", "any_llm", "m", None, None)
+    with CheckpointStore(tmp_path) as store:
+        store.load(identity(), segment_ids={"a"})
+        store.save(identity(), {"a": record})
+    with CheckpointStore(tmp_path) as store:
+        with pytest.raises(CheckpointError, match="provenance"):
+            store.load(identity(), segment_ids={"a"})
+
+
 def test_second_writer_is_rejected(tmp_path: Path) -> None:
     with CheckpointStore(tmp_path):
         with pytest.raises(CheckpointError, match="Another run"):
