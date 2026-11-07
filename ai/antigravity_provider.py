@@ -84,7 +84,8 @@ def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
 # Per-batch response deadline; configurable as antigravity.timeout_seconds.
 DEFAULT_TIMEOUT_SECONDS = 600.0
 
-# Synthetic compatibility probe (SPEC-025 §3.3). No book content is ever sent by the probe.
+# Synthetic compatibility probe (SPEC-025 §3.3). The probe never sends book passages; the
+# translation probe reuses the run's prompt, which may include its glossary terms.
 PROBE_SAMPLES = (
     "The old key was hidden beneath a cracked flowerpot beside the garden gate.",
     "When the power failed, the program resumed from its last saved checkpoint "
@@ -110,17 +111,20 @@ def default_certification_path() -> Path:
     return root / "bookweaver" / "runtime-certifications.json"
 
 
-def probe_problems(outputs: Sequence[str], *, require_chinese: bool) -> list[str]:
-    """Defects in probe output; empty when every synthetic passage was translated in order."""
+def probe_problems(outputs: Sequence[str], *, expect_chinese: bool) -> list[str]:
+    """Defects in probe output; empty when every synthetic passage came back usable.
+
+    With the run's own prompt the target language is unknown here (an English target may
+    legitimately return the English samples), so only protocol defects count. With the
+    fixed Chinese prompt, an untranslated or non-Chinese segment is also a defect.
+    """
     problems: list[str] = []
     for index, (source, text) in enumerate(zip(PROBE_SAMPLES, outputs, strict=True), 1):
         stripped = text.strip()
         if not stripped:
             problems.append(f"segment {index} empty")
-        elif stripped == source:
-            problems.append(f"segment {index} returned untranslated")
-        elif require_chinese and not _CJK.search(stripped):
-            problems.append(f"segment {index} has no Chinese")
+        elif expect_chinese and (stripped == source or not _CJK.search(stripped)):
+            problems.append(f"segment {index} not translated into Chinese")
         if _PROBE_ARTIFACT.search(text):
             problems.append(f"segment {index} contains a fence or artifact link")
     return problems
@@ -142,7 +146,7 @@ class _Certifications:
             if not self._path.exists():
                 return []
             data = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:  # ValueError covers JSON and UTF-8 decoding
             raise self._unavailable("Unreadable") from exc
         if not isinstance(data, list):
             raise self._unavailable("Invalid")
@@ -282,7 +286,7 @@ class AntigravityProvider(ITranslationProvider):
         except TranslationError as exc:
             # A split-eligible parse error must not reach the engine's binary split.
             raise ProviderUnavailableError(f"{label} failed: {exc}") from exc
-        problems = probe_problems(outputs, require_chinese=not translation)
+        problems = probe_problems(outputs, expect_chinese=not translation)
         if problems:
             raise ProviderUnavailableError(f"{label} failed: {'; '.join(problems)}")
 

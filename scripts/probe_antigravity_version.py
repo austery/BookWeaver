@@ -50,7 +50,7 @@ def probe(executable: str, profile: str, effort: str, timeout: float) -> bool:
         print(f"FAIL {model.model_id}: {type(exc).__name__}: {exc}")
         return False
     elapsed = time.monotonic() - started
-    problems = probe_problems(outputs, require_chinese=True)
+    problems = probe_problems(outputs, expect_chinese=True)
     status = "FAIL" if problems else "PASS"
     print(f"{status} {model.model_id} ({elapsed:.1f}s)")
     for index, (source, text) in enumerate(zip(SAMPLES, outputs, strict=False), 1):

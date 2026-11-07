@@ -76,11 +76,11 @@ The `1.5.3` roster also lists `claude-opus-5-5-*`, `claude-sonnet-5-5-*` and `gp
 The gate guards protocol drift; roster checks already guard model absence.
 
 - Seed certifications are `(version, model_id)` pairs with recorded probe evidence (`CERTIFIED_AGY_MODELS`). A seeded version does not exempt other models: any unseeded pair is probed before its first book batch.
-- An uncertified `(version, model_id, protocol)` triggers the probe in the provider package: one call with three synthetic passages through the production framing, invocation and `split_response` path. Translation (`segment_tags`) uses the run's own production prompt. Glossary extraction (`delimiter`) uses a fixed translation prompt, because the extraction prompt returns terms, not translations. No book content is sent.
+- An uncertified `(version, model_id, protocol)` triggers the probe in the provider package: one call with three synthetic passages through the production framing, invocation and `split_response` path. Translation (`segment_tags`) uses the run's own production prompt and checks protocol only (segment count and order, non-empty, no fences or artifact links), because the target language is not known to the provider. Glossary extraction (`delimiter`) uses a fixed Chinese translation prompt and also requires Chinese output, because the extraction prompt returns terms, not translations. No book passages are sent. The run's prompt may carry its glossary terms; they go only to the same runtime that is about to translate the book.
 - Pass: record `(runtime, version, model_id, protocol, timestamp, result)` in the user-local certification cache `~/.local/state/bookweaver/runtime-certifications.json` (or `$XDG_STATE_HOME/bookweaver/`), then continue. The cache is the probe record; the run audit records `runtime_version` and `row_status`. The probe runs per framing protocol, because glossary extraction uses `delimiter` and translation uses `segment_tags`.
 - Fail: stop before any book batch, with the probe diagnosis.
 - Cost: one short subscription call per new `(version, model_id, protocol)`, so at most two per model. No metered API is ever used for this probe.
-- `CERTIFIED_AGY_VERSIONS` becomes a seed list, not the only path.
+- The old version-only `CERTIFIED_AGY_VERSIONS` list is replaced by the per-pair seed `CERTIFIED_AGY_MODELS` above.
 - SPEC-021's "probe before certifying" rule is kept; the probe becomes automatic instead of manual. Amend SPEC-021 accordingly.
 
 ### 3.4 Additional subscription CLIs (owner goals, clarified 2026-11-07)

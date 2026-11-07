@@ -93,8 +93,6 @@ def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
         raise RuntimeError("The default antigravity flash/low row is missing")
 
 
-_validate_rows(_CLI_ROWS)
-
 # Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
 # Any other pair is probed automatically before its first book batch (SPEC-025 §3.3).
 CERTIFIED_AGY_MODELS = frozenset(
@@ -104,6 +102,18 @@ CERTIFIED_AGY_MODELS = frozenset(
         ("1.5.3", "gemini-4-argon-low"),
     }
 )
+
+
+def _validate_seeds(rows: tuple[_CliRow, ...], seeds: frozenset[tuple[str, str]]) -> None:
+    """Every seeded model must belong to an enabled row; a dead seed hides a registry edit."""
+    known = {cli_model_id(row.family, row.effort) for row in rows}
+    dead = sorted(model for _, model in seeds if model not in known)
+    if dead:
+        raise RuntimeError(f"CERTIFIED_AGY_MODELS names models without a row: {dead}")
+
+
+_validate_rows(_CLI_ROWS)
+_validate_seeds(_CLI_ROWS, CERTIFIED_AGY_MODELS)
 
 
 @dataclass(frozen=True)

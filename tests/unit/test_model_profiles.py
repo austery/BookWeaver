@@ -74,3 +74,13 @@ def test_metered_predicate_excludes_subscription_runtime() -> None:
         True,
         True,
     ]
+
+
+def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
+    from ai import model_profiles
+
+    rows = model_profiles._CLI_ROWS
+    with pytest.raises(RuntimeError, match="Duplicate"):
+        model_profiles._validate_rows((*rows, rows[0]))
+    with pytest.raises(RuntimeError, match="without a row"):
+        model_profiles._validate_seeds(rows, frozenset({("1.5.3", "gemini-3.1-pro-low")}))

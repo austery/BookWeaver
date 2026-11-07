@@ -172,7 +172,10 @@ def test_failed_probe_stops_before_any_book_batch(tmp_path: Path) -> None:
     executable, log = _fake_agy(tmp_path, version="9.9.9", reply="echo")
     cache = tmp_path / "certifications.json"
     provider = AntigravityProvider(
-        resolve_profile(), executable=str(executable), certification_path=cache
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=cache,
+        protocol="delimiter",  # the fixed Chinese probe prompt rejects untranslated output
     )
     with pytest.raises(ProviderUnavailableError, match="compatibility probe"):
         provider.translate_batch(["garden"], system_prompt="Translate")
@@ -247,18 +250,18 @@ def test_probe_parse_error_halts_instead_of_splitting(tmp_path: Path) -> None:
     assert len(_model_calls(log)) == 1
 
 
-@pytest.mark.parametrize("content", ["not json", '{"a": 1}', '["comment"]'])
-def test_invalid_certification_record_stops_loudly(tmp_path: Path, content: str) -> None:
+@pytest.mark.parametrize("content", [b"not json", b'{"a": 1}', b'["comment"]', b'["\xff\xfe"]'])
+def test_invalid_certification_record_stops_loudly(tmp_path: Path, content: bytes) -> None:
     executable, log = _fake_agy(tmp_path, version="9.9.9", reply="translate")
     cache = tmp_path / "certifications.json"
-    cache.write_text(content)
+    cache.write_bytes(content)
     provider = AntigravityProvider(
         resolve_profile(), executable=str(executable), certification_path=cache
     )
     with pytest.raises(ProviderUnavailableError, match="fix or remove it"):
         provider.translate_batch(["garden"], system_prompt="Translate")
     assert _model_calls(log) == []
-    assert cache.read_text() == content
+    assert cache.read_bytes() == content
 
 
 def test_unwritable_certification_path_is_a_provider_error(tmp_path: Path) -> None:
@@ -272,3 +275,16 @@ def test_unwritable_certification_path_is_a_provider_error(tmp_path: Path) -> No
     )
     with pytest.raises(ProviderUnavailableError, match="Unwritable"):
         provider.translate_batch(["garden"], system_prompt="Translate")
+
+
+def test_translation_probe_accepts_output_that_keeps_the_source_language(tmp_path: Path) -> None:
+    # An English target may legitimately return the English samples unchanged.
+    executable, log = _fake_agy(tmp_path, version="9.9.9", reply="echo")
+    provider = AntigravityProvider(
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=tmp_path / "certifications.json",
+    )
+    outputs = provider.translate_batch(["garden", "moon"], system_prompt="Translate into English")
+    assert outputs == ["garden", "moon"]
+    assert len(_model_calls(log)) == 2
