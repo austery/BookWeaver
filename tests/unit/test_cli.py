@@ -159,36 +159,41 @@ class TestSanityCheckBatch:
                 "ch1.xhtml::0", "The key principle is that space curves.", "核心原则是空间弯曲。"
             )
         ]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=5)
+            == []
+        )
 
-    def test_raises_on_empty_output(self) -> None:
+    def test_flags_empty_output(self) -> None:
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world", "")]
-        with pytest.raises(TranslationError, match="empty output"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=2, total_batches=10
+        )
+        assert [w.check for w in warnings] == ["empty_output"]
 
-    def test_raises_on_length_ratio_too_high(self) -> None:
+    def test_flags_length_ratio_too_high(self) -> None:
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "你" * 200)]
-        with pytest.raises(TranslationError, match="length_ratio"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=0, total_batches=1
+        )
+        assert [w.check for w in warnings] == ["length_ratio"]
 
-    def test_raises_on_length_ratio_too_low(self) -> None:
+    def test_flags_length_ratio_too_low(self) -> None:
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         # Source 100 chars, translated 5 chars (ratio=0.05 < min=0.15)
         segs = [self._make_seg("ch1.xhtml::0", "A" * 100, "你好。")]
-        with pytest.raises(TranslationError, match="length_ratio"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=0, total_batches=1
+        )
+        assert [w.check for w in warnings] == ["length_ratio"]
 
-    def test_raises_on_cjk_density_too_low(self) -> None:
+    def test_flags_cjk_density_too_low(self) -> None:
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         # Source >= min_cjk_source_length (40) so CJK check fires.
         segs = [
@@ -198,14 +203,19 @@ class TestSanityCheckBatch:
                 "Hello world example, this is a longer test.",
             )
         ]
-        with pytest.raises(TranslationError, match="cjk_density"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=5)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=1, total_batches=5
+        )
+        assert [w.check for w in warnings] == ["cjk_density"]
 
     def test_skips_length_ratio_for_short_source(self) -> None:
         from ai.orchestration import _sanity_check_batch
 
         segs = [self._make_seg("ch1.xhtml::0", "A", "翻译一下这个字母A的中文意思是什么")]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+            == []
+        )
 
     def test_skips_length_ratio_for_short_section_heading(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -214,21 +224,28 @@ class TestSanityCheckBatch:
         # Short single-word EN headings legitimately translate to 2-char Chinese.
         # The length-ratio check must be skipped for source < min_source_length.
         segs = [self._make_seg("split_000.html::16", "Acknowledgements", "致谢")]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=438)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=438)
+            == []
+        )
 
     def test_skips_cjk_check_for_non_zh_lang(self) -> None:
         from ai.orchestration import _sanity_check_batch
 
         segs = [self._make_seg("ch1.xhtml::0", "Hello world example.", "Hallo Welt Beispiel.")]
-        _sanity_check_batch(segs, "de", self._default_probe(), batch_index=0, total_batches=1)
+        assert (
+            _sanity_check_batch(segs, "de", self._default_probe(), batch_index=0, total_batches=1)
+            == []
+        )
 
-    def test_error_message_includes_batch_position(self) -> None:
+    def test_warning_includes_batch_position(self) -> None:
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         segs = [self._make_seg("ch1.xhtml::5", "Hello world.", "")]
-        with pytest.raises(TranslationError, match=r"batch 3/10"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=2, total_batches=10)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=2, total_batches=10
+        )
+        assert [w.batch for w in warnings] == ["3/10"]
 
     def test_cjk_density_uses_stripped_length(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -236,7 +253,10 @@ class TestSanityCheckBatch:
         # Source >= min_cjk_source_length (40) to actually trigger the CJK density check.
         # After stripping: 2 CJK / 2 effective chars = 1.0 > threshold — should pass.
         segs = [self._make_seg("ch1.xhtml::0", "A" * 40, "你好\n\n\n\n\n\n\n\n\n\n")]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+            == []
+        )
 
     def test_cjk_density_subtracts_ascii_letters_for_proper_nouns(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -251,7 +271,10 @@ class TestSanityCheckBatch:
                 "1. Sheet & Tube优先股，售价40。",
             )
         ]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=26, total_batches=98)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=26, total_batches=98)
+            == []
+        )
 
     def test_cjk_check_skips_equation_length_source(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -259,7 +282,10 @@ class TestSanityCheckBatch:
         # Standalone math equation (19 chars, below min_cjk_source_length=40).
         # Model correctly preserves it as-is (0 CJK) — must not raise.
         segs = [self._make_seg("ch1.xhtml::19", "Rab − ½ R gab = Tab", "Rab − ½ R gab = Tab")]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=3, total_batches=12)
+            == []
+        )
 
     def test_cjk_check_skips_source_with_url(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -274,7 +300,10 @@ class TestSanityCheckBatch:
                 "关注企鹅 Twitter.com@penguinukbooks",
             )
         ]
-        _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=7, total_batches=9)
+        assert (
+            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=7, total_batches=9)
+            == []
+        )
 
     def test_cjk_check_skips_copyright_markers_in_source(self) -> None:
         from ai.orchestration import _sanity_check_batch
@@ -299,9 +328,13 @@ class TestSanityCheckBatch:
         ]
         for seg_id, src, tgt in cases:
             segs = [self._make_seg(seg_id, src, tgt)]
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=1, total_batches=2)
+            assert (
+                _sanity_check_batch(
+                    segs, "zh", self._default_probe(), batch_index=1, total_batches=2
+                )
+                == []
+            )
         from ai.orchestration import _sanity_check_batch
-        from ai.ports.provider import TranslationError
 
         # Pure prose (>= 40 chars, no URL, no copyright marker) — check fires.
         segs = [
@@ -311,8 +344,10 @@ class TestSanityCheckBatch:
                 "Hello world example, this is a longer test.",
             )
         ]
-        with pytest.raises(TranslationError, match="cjk_density"):
-            _sanity_check_batch(segs, "zh", self._default_probe(), batch_index=0, total_batches=1)
+        warnings = _sanity_check_batch(
+            segs, "zh", self._default_probe(), batch_index=0, total_batches=1
+        )
+        assert [w.check for w in warnings] == ["cjk_density"]
 
 
 class TestEmitBatchSample:
@@ -1955,10 +1990,11 @@ class TestRunSanityProbe:
         # _ResumeSource has 3 segments — all fit in one batch with default max_batch_chars
         assert out.count("[progress:batch_sample]") == 1
 
-    def test_run_halts_on_empty_translation(
+    def test_run_reports_empty_translation_without_halting(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         source = _ResumeSource()
         self._patch_base(monkeypatch, source, _EmptyTranslationProvider())
@@ -1966,8 +2002,11 @@ class TestRunSanityProbe:
         in_epub = tmp_path / "book.epub"
         in_epub.write_bytes(b"epub")
 
-        with pytest.raises(TranslationError, match="empty output"):
-            run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
+        run(input_path=str(in_epub), output=str(tmp_path / "out.epub"), input_format="epub")
+
+        out = capsys.readouterr().out
+        assert "[progress:sanity_warning]" in out
+        assert "check=empty_output" in out
 
     def test_no_sanity_probe_flag_suppresses_probe_and_sample(
         self,

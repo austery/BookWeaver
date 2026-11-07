@@ -1,6 +1,20 @@
 # SPEC-016: Batch Sanity Probe
 
-**Status:** Draft  
+> **Amendment (2026-11-07): observe, never halt.** The original hard-halt design below produced frequent false
+> positives on real books (scientific abbreviations, short dialogue, mixed-language passages) and was disabled in
+> practice. The owner decision is that the probe records signals for human review and never stops translation:
+>
+> - `_sanity_check_batch` returns `SanityWarning` records (`empty_output`, `length_ratio`, `cjk_density`) instead of
+>   raising `TranslationError`. Thresholds and the `sanity_probe` config block are unchanged.
+> - Each warning is logged as `[progress:sanity_warning]`. After the batch's checkpoint save, warnings are written
+>   atomically to `warnings.json` in the checkpoint directory, or to `<output>.warnings.json` when no checkpoint is
+>   used. Entries are keyed by segment ID: restored segments keep theirs; retranslated segments are replaced.
+> - The run ends with `[progress:sanity_summary] flagged=N`. Warning-file write failures are reported on stderr and
+>   never stop translation. `--no-sanity-probe` / `enabled: false` disable warnings and the heartbeat.
+> - Acceptance criteria 1–3 below are replaced by: such outputs complete the run and produce the matching warning
+>   check. Empty provider output is still rejected by the provider adapters themselves.
+
+**Status:** Superseded in part — observational mode (see Amendment, 2026-11-07)  
 **Date:** 2026-04-05  
 **Replaces:** P0-1 (restore `roundtrip_checkpoint/docs/` XHTML artifacts) — that item is dropped; see rationale below.
 

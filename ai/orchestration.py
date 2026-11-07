@@ -12,10 +12,12 @@ Usage:
 from __future__ import annotations
 
 import hashlib
+import os
+import tempfile
 import json
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -264,6 +266,7 @@ class TranslationOrchestrator:
 
             stack.push(finalize_audit)
             store = None
+            checkpoint_directory: Path | None = None
             if input_format == "epub" and (resume.enabled or resume.force):
                 directory = _resolve_checkpoint_dir(
                     checkpoint_dir=str(resume.checkpoint_dir) if resume.checkpoint_dir else None,
@@ -272,6 +275,7 @@ class TranslationOrchestrator:
                     input_format="epub",
                 )
                 store = stack.enter_context(self._checkpoint_factory.create(directory))
+                checkpoint_directory = directory
                 if identity is not None:
                     # Validate the complete document and known hard fields before any external work.
                     store.load(
@@ -388,11 +392,24 @@ class TranslationOrchestrator:
                 total_batches = batches
                 _log_progress("source", segments=total, resumed=restored, batches=batches)
 
+            warning_log = (
+                _SanityWarningLog(
+                    checkpoint_directory / "warnings.json"
+                    if checkpoint_directory is not None
+                    else output_file.with_name(output_file.name + ".warnings.json"),
+                    retained_segment_ids=set(records),
+                )
+                if probe.enabled
+                else None
+            )
+
             def persist(index: int, batch: list[TranslatedSegment]) -> None:
+                batch_warnings: list[SanityWarning] = []
                 if probe.enabled:
-                    _sanity_check_batch(
+                    batch_warnings = _sanity_check_batch(
                         batch, options.spec.output_lang, probe, index, total_batches
                     )
+                    _log_sanity_warnings(batch_warnings)
                     _emit_batch_sample(batch, probe, index, total_batches)
                 if store is not None and identity is not None:
                     completed = datetime.now(timezone.utc).isoformat()
@@ -420,6 +437,9 @@ class TranslationOrchestrator:
                         seconds=round(store.last_save_seconds, 4),
                         segments=len(records),
                     )
+                if warning_log is not None:
+                    # After the checkpoint save, so a warning never outlives lost work.
+                    warning_log.record([item.id for item in batch], batch_warnings)
 
             engine = TranslationEngine(
                 deferred_provider,
@@ -433,6 +453,13 @@ class TranslationOrchestrator:
                 ),
             )
             result = engine.translate(source, str(output_file), on_source_loaded=loaded)
+            if warning_log is not None:
+                warning_log.finish()
+                _log_progress(
+                    "sanity_summary",
+                    flagged=warning_log.count,
+                    warnings=warning_log.path if warning_log.path.exists() else None,
+                )
         _log_progress(
             "done",
             output=output_file,
@@ -558,30 +585,62 @@ _URL_HINT_RE = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class SanityWarning:
+    """One observational quality signal; never a reason to stop translation."""
+
+    segment_id: str
+    batch: str
+    check: str
+    detail: str
+    source_excerpt: str
+    translation_excerpt: str
+
+
+_WARNING_EXCERPT_CHARS = 120
+
+
+def _excerpt(text: str) -> str:
+    return text[:_WARNING_EXCERPT_CHARS] + ("..." if len(text) > _WARNING_EXCERPT_CHARS else "")
+
+
 def _sanity_check_batch(
     translated: list[TranslatedSegment],
     output_lang: str,
     probe_config: _SanityProbeConfig,
     batch_index: int,
     total_batches: int,
-) -> None:
+) -> list[SanityWarning]:
+    """Return per-segment quality signals for later human review.
+
+    Static thresholds produce frequent false positives (abbreviations, short
+    dialogue, mixed-language passages), so the probe observes and never halts.
+    """
     check_cjk = output_lang.startswith("zh")
     batch_label = f"{batch_index + 1}/{total_batches}"
+    warnings: list[SanityWarning] = []
+
+    def flag(seg: TranslatedSegment, check: str, detail: str) -> None:
+        warnings.append(
+            SanityWarning(
+                seg.id, batch_label, check, detail, _excerpt(seg.original), _excerpt(seg.translated)
+            )
+        )
+
     for seg in translated:
         tgt = seg.translated
         src = seg.original
         if not tgt.strip():
-            raise TranslationError(
-                f"sanity check failed at batch {batch_label} — empty output (segment {seg.id})"
-            )
+            flag(seg, "empty_output", "translation is empty")
+            continue
         if len(src) >= probe_config.min_source_length:
             ratio = len(tgt) / len(src)
             if ratio < probe_config.min_length_ratio or ratio > probe_config.max_length_ratio:
-                raise TranslationError(
-                    f"sanity check failed at batch {batch_label} — "
+                flag(
+                    seg,
+                    "length_ratio",
                     f"length_ratio={ratio:.2f} not in "
-                    f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]"
-                    f" (segment {seg.id})"
+                    f"[{probe_config.min_length_ratio}, {probe_config.max_length_ratio}]",
                 )
         if (
             check_cjk
@@ -597,11 +656,98 @@ def _sanity_check_batch(
             effective_len = max(len(tgt_stripped) - ascii_letters, 1)
             density = cjk_count / effective_len
             if density < probe_config.min_cjk_density:
-                raise TranslationError(
-                    f"sanity check failed at batch {batch_label} — "
-                    f"cjk_density={density:.2f} < {probe_config.min_cjk_density}"
-                    f" (segment {seg.id})"
+                flag(
+                    seg,
+                    "cjk_density",
+                    f"cjk_density={density:.2f} < {probe_config.min_cjk_density}",
                 )
+    return warnings
+
+
+def _log_sanity_warnings(warnings: Sequence[SanityWarning]) -> None:
+    for item in warnings:
+        _log_progress(
+            "sanity_warning",
+            batch=item.batch,
+            segment=item.segment_id,
+            check=item.check,
+            detail=item.detail,
+        )
+
+
+class _SanityWarningLog:
+    """Persist probe warnings beside the run so they survive interruption and resume.
+
+    Entries are keyed by segment ID: warnings for restored segments are kept,
+    and a retranslated segment's entries are replaced by its newest result.
+    Write failures are reported but never stop translation.
+    """
+
+    def __init__(self, path: Path, *, retained_segment_ids: set[str]) -> None:
+        self.path = path
+        self._by_segment: dict[str, list[SanityWarning]] = {}
+        for item in self._read_existing(path):
+            if item.segment_id in retained_segment_ids:
+                self._by_segment.setdefault(item.segment_id, []).append(item)
+        self._stale = path.exists()
+
+    @staticmethod
+    def _read_existing(path: Path) -> list[SanityWarning]:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return [SanityWarning(**entry) for entry in payload["warnings"]]
+        except FileNotFoundError:
+            return []
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            _log_progress(
+                "sanity_warning_log", stderr=True, path=path, error=f"unreadable, replacing ({exc})"
+            )
+            return []
+
+    @property
+    def count(self) -> int:
+        return sum(len(items) for items in self._by_segment.values())
+
+    def record(self, segment_ids: Sequence[str], warnings: Sequence[SanityWarning]) -> None:
+        for segment_id in segment_ids:
+            self._by_segment.pop(segment_id, None)
+        for item in warnings:
+            self._by_segment.setdefault(item.segment_id, []).append(item)
+        if warnings or self.path.exists():
+            self._write()
+
+    def finish(self) -> None:
+        """Rewrite a pre-existing file never touched this run so it matches the summary."""
+        if self._stale:
+            self._write()
+
+    def _write(self) -> None:
+        payload = {
+            "schema_version": 1,
+            "note": "Observational sanity-probe signals for manual review; translation was not halted.",
+            "warning_count": self.count,
+            "warnings": [asdict(item) for items in self._by_segment.values() for item in items],
+        }
+        self._stale = False
+        temporary: Path | None = None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=".warnings-",
+                delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                json.dump(payload, stream, ensure_ascii=False, indent=2)
+            os.replace(temporary, self.path)
+            temporary = None
+        except OSError as exc:
+            _log_progress("sanity_warning_log", stderr=True, path=self.path, error=str(exc))
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def _emit_batch_sample(
@@ -1372,8 +1518,10 @@ def _run_pipeline(
 
             def _on_checkpoint_batch(batch_index: int, translated: list[TranslatedSegment]) -> None:
                 if probe_config.enabled:
-                    _sanity_check_batch(
-                        translated, output_lang, probe_config, batch_index, _total_batches[0]
+                    _log_sanity_warnings(
+                        _sanity_check_batch(
+                            translated, output_lang, probe_config, batch_index, _total_batches[0]
+                        )
                     )
                     _emit_batch_sample(translated, probe_config, batch_index, _total_batches[0])
                 if _persist_fn is not None:

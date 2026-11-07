@@ -17,7 +17,7 @@ from ai.orchestration import (
     QualityPolicy,
     TranslationOrchestrator,
 )
-from ai.ports.provider import ITranslationProvider, TranslationError
+from ai.ports.provider import ITranslationProvider
 from tests.unit.test_orchestration import make_epub
 
 
@@ -119,7 +119,7 @@ def test_glossary_selection_and_injection_through_application(tmp_path: Path, mo
 
 
 @pytest.mark.parametrize("disabled_by", [None, "options", "config"])
-def test_sanity_validation_precedes_checkpoint_persistence(
+def test_sanity_probe_observes_without_blocking_checkpoint_persistence(
     tmp_path: Path, disabled_by: str | None
 ) -> None:
     source, output = tmp_path / "book.epub", tmp_path / "out.epub"
@@ -129,17 +129,19 @@ def test_sanity_validation_precedes_checkpoint_persistence(
         config={"sanity_probe": {"enabled": False}} if disabled_by == "config" else {},
         quality=QualityPolicy(sanity_probe=disabled_by != "options"),
     )
-    app = TranslationOrchestrator(provider_factory=factory)
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source, output, options, input_format="epub"
+    )
+    checkpoint = json.loads(next(tmp_path.rglob("checkpoint.json")).read_text())
+    assert len(checkpoint["segments"]) == 2
+    assert output.exists()
+    warnings = list(tmp_path.rglob("warnings.json"))
     if disabled_by is None:
-        with pytest.raises(TranslationError, match="sanity check"):
-            app.translate(source, output, options, input_format="epub")
-        assert not list(tmp_path.rglob("checkpoint.json"))
-        assert not output.exists()
+        entries = json.loads(warnings[0].read_text())["warnings"]
+        assert {entry["check"] for entry in entries} == {"length_ratio"}
+        assert {entry["segment_id"] for entry in entries} == set(checkpoint["segments"])
     else:
-        app.translate(source, output, options, input_format="epub")
-        checkpoint = json.loads(next(tmp_path.rglob("checkpoint.json")).read_text())
-        assert len(checkpoint["segments"]) == 2
-        assert output.exists()
+        assert warnings == []
 
 
 @pytest.mark.parametrize("invalid", ["model", "batch", "glossary", "source-output"])

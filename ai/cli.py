@@ -113,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-sanity-probe",
         action="store_true",
         default=False,
-        help="Disable per-batch sanity checks and heartbeat sample output.",
+        help="Disable per-batch sanity warnings (observational; never halts) and heartbeat sample output.",
     )
     return p
 
