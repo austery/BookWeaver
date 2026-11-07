@@ -34,7 +34,7 @@ SPEC-020's billing rules are unchanged: no automatic paid fallback, explicit per
 | D1 | Implementation shape | **One LiteLLM-backed metered provider** for every API vendor. The Gemini path moves onto it too. No new port and no per-vendor transport |
 | D2 | Provider naming | `--provider cli \| gemini \| openai \| anthropic`. `api` is removed from the CLI with an explicit error. Checkpoints keep accepting stored `api` as legacy Gemini |
 | D3 | Anthropic profiles | `flash` → Sonnet, `pro` → Opus |
-| D4 | Truncation | Stop; no automatic extra paid request (owner asked what this meant, §8 explains it; the recommended stop behavior is recorded) |
+| D4 | Truncation | Stop; no automatic extra paid request (owner confirmed after the §8 explanation) |
 | D5 | Batch size | Check the limits first. Verified Anthropic limits allow the current defaults, so API runs use the **same** 60,000 characters / 200 segments as Antigravity |
 | D6 | Custom `base_url` | Out of scope |
 | D7 | Async batch APIs | Yes, as a separate follow-up spec, not here |
