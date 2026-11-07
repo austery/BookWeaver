@@ -8,6 +8,11 @@ import json
 
 import pytest
 
+from ai.adapters.providers._delimiter import (
+    PROTOCOL_DELIMITER,
+    PROTOCOL_SEGMENT_TAGS,
+    augment_prompt_for_batch,
+)
 from ai.checkpoint_store import CheckpointMismatchError
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import EpubTranslationOptions, GlossarySpec, TranslationOrchestrator
@@ -21,16 +26,72 @@ from tests.unit.test_orchestration import make_epub
     "immersive,expected",
     [
         (False, "4b45b82710fd41716516e028ee98e345e2f76c053df30aa7d29364eb2b90cb57"),
-        (True, "07b111c5140ce96409bd3331a77a41bfc25bbf41d166ed79e36c3bb6bbae5e04"),
+        # Intentionally changed from 07b111c5... when the contradictory %% output
+        # rules were dropped from the EPUB prompt; older EPUB checkpoints now hit a
+        # soft system_prompt_hash mismatch that only --force-resume accepts.
+        (True, "37306032291d6d152932d399a862bc2d912804a908996aecaa784f684374b0b0"),
     ],
 )
-def test_default_prompt_matches_pre_refactor_bytes(immersive: bool, expected: str) -> None:
-    # Golden hashes captured from ee2e8d7's build_system_prompt, not the new renderer.
+def test_default_prompt_matches_golden_bytes(immersive: bool, expected: str) -> None:
+    # Non-EPUB golden hash captured from ee2e8d7's build_system_prompt, not the new renderer.
     prompt = PromptPreparation.from_config(
         {}, output_lang="zh", custom_prompt="Keep numerical ranges exact.", immersive=immersive
     ).render(None)
     assert prompt.sha256 == expected
     assert hashlib.sha256(prompt.text.encode()).hexdigest() == expected
+
+
+def test_epub_prompt_states_only_the_segment_tag_output_contract() -> None:
+    prompt = PromptPreparation.from_config(
+        {}, output_lang="zh", custom_prompt=None, immersive=True
+    ).render(None)
+    assert prompt.text == (
+        "You are a professional Chinese native translator who needs to fluently translate"
+        " text into Chinese.\n\n## Translation Rules\n"
+        "1. Output only the translated content, without explanations or additional content"
+        ' (such as "Here\'s the translation:")\n'
+        "2. The returned translation must maintain exactly the same number of paragraphs"
+        " and format as the original text\n"
+        "3. If the text contains HTML tags, consider where the tags should be placed in the"
+        " translation while maintaining fluency\n"
+        "4. For content that should not be translated (such as proper nouns, code, URLs),"
+        " keep the original text\n\nTranslate to Chinese:"
+    )
+    batch = augment_prompt_for_batch(prompt.text, 2, protocol=PROTOCOL_SEGMENT_TAGS)
+    assert "%%" not in batch
+    assert batch.count("[STRICT OUTPUT CONTRACT]") == 1
+    assert "Output only <segment> blocks" in batch
+    assert "OUTPUT FORMAT" not in batch
+
+
+def test_delimiter_protocol_alone_supplies_percent_contract_for_isolated_formats() -> None:
+    prompt = PromptPreparation.from_config(
+        {}, output_lang="zh", custom_prompt=None, immersive=False
+    ).render(None)
+    assert "%%" not in prompt.text
+    batch = augment_prompt_for_batch(prompt.text, 2, protocol=PROTOCOL_DELIMITER)
+    assert "preserve the %% separators" in batch
+    assert "<segment" not in batch
+
+
+def test_application_sends_epub_prompt_without_percent_rules(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    factory = RecordingFactory()
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source, tmp_path / "out.epub", EpubTranslationOptions(config={}), input_format="epub"
+    )
+    translation_requests = [r for r in factory.requests if r.protocol == "segment_tags"]
+    assert translation_requests
+    for request in translation_requests:
+        assert "%%" not in request.prompt
+        assert "<segment" not in request.prompt  # the provider protocol appends it per batch
+        assert request.prompt.endswith("Translate to Chinese:")
+    data = json.loads(next(tmp_path.rglob("checkpoint.json")).read_text())
+    assert (
+        data["identity"]["system_prompt_hash"]
+        == hashlib.sha256(translation_requests[0].prompt.encode()).hexdigest()
+    )
 
 
 @pytest.mark.parametrize("invalid", ["missing-profile", "missing-file", "legacy-wrapper"])
