@@ -21,6 +21,11 @@ class CheckpointMismatchError(CheckpointError):
     """Resume would combine incompatible translations."""
 
 
+# "api" is historical Gemini API provenance: readable, never written again (SPEC-024).
+_KNOWN_PROVIDERS = ("cli", "api", "gemini", "openai", "anthropic", "legacy_unknown")
+_KNOWN_BACKENDS = ("antigravity", "any_llm", "gemini_api", "gemini_cli", "legacy_unknown")
+
+
 @dataclass(frozen=True)
 class CheckpointIdentity:
     input_signature: str
@@ -227,9 +232,8 @@ class CheckpointStore:
                 raise CheckpointError("Invalid empty checkpoint translation")
             if (
                 record.profile not in ("flash", "pro")
-                or record.provider not in ("cli", "api", "legacy_unknown")
-                or record.backend
-                not in ("antigravity", "gemini_api", "gemini_cli", "legacy_unknown")
+                or record.provider not in _KNOWN_PROVIDERS
+                or record.backend not in _KNOWN_BACKENDS
             ):
                 raise CheckpointError("Invalid checkpoint provenance")
         if type(data.get("translated_segment_count")) is not int or data.get(

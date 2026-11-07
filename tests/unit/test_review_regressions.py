@@ -200,7 +200,7 @@ def test_cross_provider_resume_preserves_provenance_and_paid_noop(tmp_path: Path
         )
     api = replace(
         options,
-        provider=ProviderSpec(name="api", allow_paid_api=True),
+        provider=ProviderSpec(name="gemini", allow_paid_api=True),
         resume=ResumePolicy(force=True),
     )
     factory = OfflineFactory()
@@ -211,11 +211,11 @@ def test_cross_provider_resume_preserves_provenance_and_paid_noop(tmp_path: Path
     checkpoint = next(tmp_path.rglob("checkpoint.json"))
     before = checkpoint.read_bytes()
     records = json.loads(before)["segments"].values()
-    assert {record["provider"] for record in records} == {"cli", "api"}
+    assert {record["provider"] for record in records} == {"cli", "gemini"}
     assert {record["model"] for record in records} == {"gemini-3.8-flash-low", "gemini-2.5-flash"}
     # The production paid factory must not ask permission or construct a client on full restore.
     result = TranslationOrchestrator().translate(
-        source, output, replace(api, provider=ProviderSpec(name="api")), input_format="epub"
+        source, output, replace(api, provider=ProviderSpec(name="gemini")), input_format="epub"
     )
     assert result.resumed_segments == 2
     assert checkpoint.read_bytes() == before
@@ -230,11 +230,10 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
     import sys
     import json
     import importlib.util
-    from google import genai
-    from google.genai import types
     from ai.orchestration import ProviderSpec
     from ai.runtime_factory import PaidAuthorizationError
     from ai.ports.provider import ProviderUnavailableError
+    from tests.runtime_fakes import install_fake_any_llm
 
     source, output = (
         tmp_path / "book.epub",
@@ -242,38 +241,18 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
     )
     make_epub(source)
     calls: list[str] = []
-    constructed: list[bool] = []
+    constructed: list[dict[str, object]] = []
 
-    class Models:
-        def generate_content(
-            self, *, model: str, contents: str, config: types.GenerateContentConfig
-        ) -> types.GenerateContentResponse:
-            calls.append(model)
-            assert config.http_options is not None
-            assert config.http_options.retry_options is not None
-            assert config.http_options.retry_options.attempts == 1
-            if outcome == "failed":
-                raise RuntimeError("synthetic transport failure")
-            text = (
-                '{"critical_terminology": []}'
-                if model == "gemini-2.5-pro"
-                else '<segment id="1">花园大门敞开着。</segment><segment id="2">月亮从山丘上升起。</segment>'
-            )
-            return types.GenerateContentResponse(
-                candidates=[types.Candidate(content=types.Content(parts=[types.Part(text=text)]))],
-                usage_metadata=types.GenerateContentResponseUsageMetadata(
-                    prompt_token_count=10, candidates_token_count=5
-                ),
-            )
+    def respond(model: str) -> str:
+        if outcome == "failed":
+            raise RuntimeError("synthetic transport failure")
+        if model == "gemini-2.5-pro":
+            return '{"critical_terminology": []}'
+        return (
+            '<segment id="1">花园大门敞开着。</segment><segment id="2">月亮从山丘上升起。</segment>'
+        )
 
-    class Client:
-        def __init__(self, *, api_key: str | None, http_options: types.HttpOptions) -> None:
-            constructed.append(True)
-            assert http_options.retry_options is not None
-            assert http_options.retry_options.attempts == 1
-            self.models = Models()
-
-    monkeypatch.setattr(genai, "Client", Client)
+    install_fake_any_llm(monkeypatch, respond, calls=calls, constructed=constructed)
     monkeypatch.setenv("GEMINI_API_KEY", "test-only-not-a-secret")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
 
@@ -287,7 +266,7 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             monkeypatch.setattr(module, "load_runtime_config", lambda: {})
-            args = ["glossary", str(source), "--output", str(output), "--provider", "api"]
+            args = ["glossary", str(source), "--output", str(output), "--provider", "gemini"]
             if outcome != "denied":
                 args.append("--allow-paid-api")
             monkeypatch.setattr(sys, "argv", args)
@@ -298,7 +277,7 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
                 output,
                 EpubTranslationOptions(
                     config={},
-                    provider=ProviderSpec(name="api", allow_paid_api=outcome != "denied"),
+                    provider=ProviderSpec(name="gemini", allow_paid_api=outcome != "denied"),
                     glossary=GlossarySpec(extract=True),
                 ),
                 input_format="epub",
@@ -323,3 +302,8 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
         assert output.exists()
         audit = json.loads(next((tmp_path / ".bookweaver_runs").glob("*.json")).read_text())
         assert audit["summary"]["input_tokens"] == 10 * len(calls)
+    if outcome != "denied":
+        assert constructed
+        assert {(item["max_retries"], item["unified_exceptions"]) for item in constructed} == {
+            (0, True)
+        }

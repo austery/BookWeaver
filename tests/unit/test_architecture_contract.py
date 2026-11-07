@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 
 def test_checkpoint_cannot_import_application(tmp_path: Path) -> None:
@@ -20,3 +21,13 @@ def test_checkpoint_cannot_import_application(tmp_path: Path) -> None:
     assert broken.returncode != 0
     assert "ai.orchestration" in broken.stdout + broken.stderr
     assert "ai/checkpoint_store.py" in broken.stdout + broken.stderr
+
+
+def test_subscription_path_never_imports_the_metered_library() -> None:
+    root = Path(__file__).resolve().parents[2]
+    probe = (
+        "import sys; import ai.cli, ai.orchestration, ai.runtime_factory; "
+        "assert 'any_llm' not in sys.modules, 'any_llm imported eagerly'"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

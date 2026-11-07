@@ -1,6 +1,6 @@
 # BookWeaver
 
-BookWeaver translates EPUB publications into alternating bilingual EPUBs. The canonical entry point is `uv run bookweaver`. The subscription runtime is Antigravity CLI (`agy`); Gemini API is a separately authorized paid path.
+BookWeaver translates EPUB publications into alternating bilingual EPUBs. The canonical entry point is `uv run bookweaver`. The subscription runtime is Antigravity CLI (`agy`); the Gemini, Anthropic, and OpenAI APIs are separately authorized paid paths.
 
 ## Setup and translation
 
@@ -48,13 +48,21 @@ Running that command again restores matching segments. A fully restored book is 
 
 ## Paid API
 
-CLI failure never automatically switches to API. Paid execution requires `--provider api` and either interactive `USE_API` confirmation or an explicit per-invocation capability:
+CLI failure never automatically switches to an API. Metered providers are selected by vendor and share one any-llm adapter ([SPEC-024](docs/architecture/specs/SPEC-024-metered-openai-anthropic-providers.md)):
+
+| `--provider` | `flash` | `pro` | Key |
+|---|---|---|---|
+| `gemini` | `gemini-2.5-flash` | `gemini-2.5-pro` | `GEMINI_API_KEY` or `gemini_api.api_key` |
+| `anthropic` | `claude-sonnet-5-5` | `claude-opus-5-5` | `ANTHROPIC_API_KEY` |
+| `openai` | not yet pinned; fails before any request | | `OPENAI_API_KEY` |
+
+Paid execution needs either interactive `USE_API` confirmation or an explicit per-invocation capability:
 
 ```bash
-uv run bookweaver book.epub --output translated.epub --provider api --allow-paid-api
+uv run bookweaver book.epub --output translated.epub --provider anthropic --allow-paid-api
 ```
 
-This command may incur charges. It requires `GEMINI_API_KEY` or `gemini_api.api_key`. Config files cannot authorize spending. Explicit effort is not supported on the API path. Paid requests have one SDK attempt and no engine split retries. No live paid API test has been performed for this migration.
+These commands may incur charges. Config files cannot authorize spending. `--provider api` was renamed to `--provider gemini`; existing checkpoints that recorded `api` still resume. Explicit `--effort` is not supported on metered providers (Anthropic is pinned to low effort). Each batch is one streamed request with retries disabled and no engine split retries; reaching the model's output cap stops the run with a suggestion to lower `--max-batch-chars`. `api.timeout_seconds` sets the per-request deadline (default 600). No live paid API test has been performed for these providers.
 
 ## Configuration migration
 

@@ -21,13 +21,20 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--model", choices=["flash", "pro"], default="pro")
     parser.add_argument("--effort", choices=["low", "medium", "high"])
-    parser.add_argument("--provider", choices=["cli", "api"], default="cli")
+    parser.add_argument(
+        "--provider",
+        choices=["cli", "gemini", "openai", "anthropic", "api"],
+        metavar="{cli,gemini,openai,anthropic}",
+        default="cli",
+    )
     parser.add_argument("--allow-paid-api", action="store_true")
     parser.add_argument("--max-terms", type=int, default=50)
     parser.add_argument("--full-index", action="store_true")
     parser.add_argument("--glossary-mode", choices=["auto", "deep-scan"], default="auto")
     parser.add_argument("--no-fallback", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.provider == "api":
+        parser.error("--provider api was renamed; use --provider gemini")
     if args.no_fallback:
         parser.error("Automatic fallback was removed; omit --no-fallback")
     if args.max_terms <= 0:

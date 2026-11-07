@@ -13,8 +13,15 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
-from ai.model_profiles import ResolvedModel
-from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
+from ai.model_profiles import ResolvedModel, is_metered
+from ai.ports.provider import (
+    ITranslationProvider,
+    OutputTruncatedError,
+    ProviderAuthenticationError,
+    ProviderUnavailableError,
+    RateLimitError,
+    TranslationError,
+)
 
 
 class PaidAuthorizationError(ValueError):
@@ -25,6 +32,7 @@ class PaidAuthorizationError(ValueError):
 class RequestUsage:
     model: str
     protocol: str
+    provider: str
     state: str = "pending"
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -50,29 +58,63 @@ class IProviderFactory(Protocol):
         ...
 
 
-class _PaidProvider(ITranslationProvider):
+_VENDOR_LABELS = {"gemini": "Gemini", "openai": "OpenAI", "anthropic": "Anthropic"}
+_KEY_VARIABLES = {
+    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+}
+DEFAULT_API_TIMEOUT_SECONDS = 600.0
+
+
+def _translate_metered_error(exc: Exception) -> TranslationError:
+    """Map an any-llm unified exception to the port vocabulary without echoing request text."""
+    import any_llm
+
+    if isinstance(exc, any_llm.AuthenticationError):
+        return ProviderAuthenticationError(
+            "Metered API rejected the credentials; no automatic retry was made"
+        )
+    if isinstance(exc, any_llm.RateLimitError):
+        return RateLimitError("Metered API rate or credit limit reached; no automatic retry")
+    return ProviderUnavailableError("Paid API request failed; no automatic retry was made")
+
+
+class _MeteredProvider(ITranslationProvider):
+    """One any-llm request per planned batch; vendor differences stay inside any-llm."""
+
+    backend = "any_llm"
+
     def __init__(
         self,
         model: ResolvedModel,
-        api_key: str | None,
+        api_key: str,
         protocol: str,
         usage: list[RequestUsage],
         on_usage: Callable[[], None],
+        *,
+        timeout_seconds: float = DEFAULT_API_TIMEOUT_SECONDS,
+        api_base: str | None = None,
     ) -> None:
-        from google import genai
-        from google.genai import types
+        from any_llm import AnyLLM
 
-        self._client = genai.Client(
+        if model.output_cap is None:
+            raise ValueError("Metered model has no pinned output cap")
+        # api_base is a test seam for an offline local endpoint, not user configuration.
+        self._client = AnyLLM.create(
+            model.provider,
             api_key=api_key,
-            http_options=types.HttpOptions(retry_options=types.HttpRetryOptions(attempts=1)),
+            api_base=api_base,
+            unified_exceptions=True,
+            max_retries=0,
         )
         self._model = model
         self._protocol = protocol
         self._usage = usage
         self._on_usage = on_usage
+        self._timeout = timeout_seconds
 
     def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
-        from google.genai import types
         from ai.adapters.providers._delimiter import (
             augment_prompt_for_batch,
             join_segments,
@@ -81,22 +123,43 @@ class _PaidProvider(ITranslationProvider):
 
         if not segments:
             return []
-        request_usage = RequestUsage(self._model.model_id, self._protocol)
+        request_usage = RequestUsage(self._model.model_id, self._protocol, self._model.provider)
         self._usage.append(request_usage)
         self._on_usage()
-        try:
-            response = self._client.models.generate_content(
-                model=self._model.model_id,
-                contents=join_segments(list(segments), protocol=self._protocol),
-                config=types.GenerateContentConfig(
-                    system_instruction=augment_prompt_for_batch(
+        options: dict[str, object] = {
+            "model": self._model.model_id,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": augment_prompt_for_batch(
                         system_prompt, len(segments), protocol=self._protocol
                     ),
-                    http_options=types.HttpOptions(
-                        timeout=600000, retry_options=types.HttpRetryOptions(attempts=1)
-                    ),
-                ),
-            )
+                },
+                {
+                    "role": "user",
+                    "content": join_segments(list(segments), protocol=self._protocol),
+                },
+            ],
+            "max_tokens": self._model.output_cap,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "timeout": self._timeout,
+        }
+        if self._model.api_effort is not None:
+            # Anthropic-native effort without enabling extended thinking (SPEC-024 §12).
+            options["output_config"] = {"effort": self._model.api_effort}
+        parts: list[str] = []
+        finish_reason: str | None = None
+        try:
+            for chunk in self._client.completion(**options):
+                for choice in chunk.choices:
+                    if choice.delta.content:
+                        parts.append(choice.delta.content)
+                    if choice.finish_reason:
+                        finish_reason = choice.finish_reason
+                if chunk.usage is not None:
+                    request_usage.input_tokens = chunk.usage.prompt_tokens
+                    request_usage.output_tokens = chunk.usage.completion_tokens
         except BaseException as exc:
             request_usage.state = "failed"
             try:
@@ -105,17 +168,18 @@ class _PaidProvider(ITranslationProvider):
                 exc.add_note(f"Usage audit also failed: {type(audit_error).__name__}")
             if not isinstance(exc, Exception):
                 raise
-            raise ProviderUnavailableError(
-                "Paid API request failed; no automatic retry was made"
-            ) from exc
-        if response.usage_metadata is not None:
-            request_usage.input_tokens = response.usage_metadata.prompt_token_count
-            request_usage.output_tokens = response.usage_metadata.candidates_token_count
-        request_usage.state = "responded"
+            raise _translate_metered_error(exc) from exc
+        truncated = finish_reason == "length"
+        request_usage.state = "truncated" if truncated else "responded"
         self._on_usage()
-        if not response.text:
+        if truncated:
+            raise OutputTruncatedError(
+                "Metered API output reached its token cap; lower --max-batch-chars and resume"
+            )
+        text = "".join(parts)
+        if not text.strip():
             raise ProviderUnavailableError("Paid API returned empty output")
-        return split_response(response.text, len(segments), protocol=self._protocol)
+        return split_response(text, len(segments), protocol=self._protocol)
 
 
 def _antigravity_timeout(config: dict[str, object]) -> float:
@@ -126,6 +190,17 @@ def _antigravity_timeout(config: dict[str, object]) -> float:
         return DEFAULT_TIMEOUT_SECONDS
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
         raise ValueError("antigravity.timeout_seconds must be a positive number of seconds")
+    return float(value)
+
+
+def _api_timeout(config: dict[str, object]) -> float:
+    """Per-request metered API deadline from validated config, else the default."""
+    section = config.get("api", {})
+    value = section.get("timeout_seconds") if isinstance(section, dict) else None
+    if value is None:
+        return DEFAULT_API_TIMEOUT_SECONDS
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError("api.timeout_seconds must be a positive number of seconds")
     return float(value)
 
 
@@ -152,7 +227,7 @@ class DefaultProviderFactory:
             "runtime": self._runtime,
             "requests": [asdict(request) for request in self._usage],
             "summary": usage[1] if usage is not None else None,
-            "usage_scope": "paid_api_requests",
+            "usage_scope": "metered_api_requests",
         }
         temporary: Path | None = None
         try:
@@ -174,7 +249,8 @@ class DefaultProviderFactory:
                 temporary.unlink(missing_ok=True)
 
     def usage_snapshot(self) -> tuple[str, dict[str, int | None]] | None:
-        if self._runtime.get("provider") != "api":
+        provider = self._runtime.get("provider")
+        if not isinstance(provider, str) or not is_metered(provider):
             return None
         counts: dict[str, int | None] = {"request_count": len(self._usage)}
         for key in ("input_tokens", "output_tokens"):
@@ -217,18 +293,25 @@ class DefaultProviderFactory:
                         "Paid API requires --allow-paid-api when non-interactive"
                     )
                 print(
-                    f"Metered Gemini API: {model.model_id}; remaining source approximately {remaining_chars} characters, including any requested glossary work. This invocation may incur charges."
+                    f"Metered {_VENDOR_LABELS[model.provider]} API: {model.model_id}; remaining source approximately {remaining_chars} characters, including any requested glossary work. This invocation may incur charges."
                 )
                 if input("Type USE_API to continue: ") != "USE_API":
                     raise PaidAuthorizationError("Paid API execution was not authorized")
             self._authorized = True
-        api = config.get("gemini_api", {})
-        configured_key = api.get("api_key") if isinstance(api, dict) else None
-        key = os.environ.get("GEMINI_API_KEY") or (
-            configured_key if isinstance(configured_key, str) else None
-        )
+        variable = _KEY_VARIABLES[model.provider]
+        key = os.environ.get(variable)
+        if not key and model.provider == "gemini":
+            api = config.get("gemini_api", {})
+            configured_key = api.get("api_key") if isinstance(api, dict) else None
+            key = configured_key if isinstance(configured_key, str) else None
         if not key:
-            raise ValueError(
-                "GEMINI_API_KEY or gemini_api.api_key is required for paid API execution"
-            )
-        return _PaidProvider(model, key, protocol, self._usage, self.persist_audit)
+            source = f"{variable} or gemini_api.api_key" if model.provider == "gemini" else variable
+            raise ValueError(f"{source} is required for paid API execution")
+        return _MeteredProvider(
+            model,
+            key,
+            protocol,
+            self._usage,
+            self.persist_audit,
+            timeout_seconds=_api_timeout(config),
+        )

@@ -9,7 +9,7 @@
 - Active EPUB segmenter: `epub-leaf-block-v4-source-only-bibliography`; v3 checkpoint reuse is a hard mismatch. Segment-cap changes alone are soft mismatches; historical missing caps mean unbounded.
 - Default runtime: Antigravity through `ai/antigravity_provider.py`; model versions are centralized in `ai/model_profiles.py`.
 - Default selection: Flash 3.8 Low. Model and effort are separate user axes; unsupported combinations fail loudly.
-- Paid API construction is authorization-gated by `ai/runtime_factory.py`. No automatic paid fallback. No live API tests without separate authorization.
+- Paid API construction is authorization-gated by `ai/runtime_factory.py`. Metered providers (`gemini`, `anthropic`, `openai`) share one any-llm adapter there (SPEC-024); pinned models live in `ai/model_profiles.py`. No automatic paid fallback. No live API tests without separate authorization.
 - Runtime JSON validation: `ai/runtime_config.py`, `ai/config_schema.json`. Never automatically overwrite ignored user configuration.
 - Checkpoint: `ai/checkpoint_store.py`, single atomic schema-v2 document, exclusive run lock, explicit mismatch failures, legacy import without rewriting v1 files.
 

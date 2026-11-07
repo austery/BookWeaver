@@ -11,6 +11,7 @@ from tests.runtime_fakes import NoAuditFactory
 
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
+    ProviderSpec,
     EpubTranslationOptions,
     GlossarySpec,
     ModelSpec,
@@ -165,3 +166,25 @@ def test_invalid_application_intent_never_constructs_provider(tmp_path: Path, in
         )
     assert not factory.created
     assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "provider,effort",
+    [("openai", None), ("api", None), ("anthropic", "low"), ("cli", None)],
+)
+def test_unavailable_metered_selection_never_constructs_provider(
+    tmp_path: Path, provider: str, effort: str | None
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    factory = RecordingFactory()
+    options = EpubTranslationOptions(
+        config={},
+        model=ModelSpec(effort=effort),
+        provider=ProviderSpec(name=provider, allow_paid_api=provider == "cli"),
+    )
+    with pytest.raises(ValueError):
+        TranslationOrchestrator(provider_factory=factory).translate(
+            source, tmp_path / "out.epub", options, input_format="epub"
+        )
+    assert not factory.created

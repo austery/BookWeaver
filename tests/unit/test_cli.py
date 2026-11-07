@@ -844,7 +844,7 @@ class TestBuildParser:
                 "--model",
                 "pro",
                 "--provider",
-                "api",
+                "gemini",
                 "-p",
                 "Use formal tone",
                 "--glossary",
@@ -864,7 +864,7 @@ class TestBuildParser:
         )
         assert args.output_lang == "ja"
         assert args.model == "pro"
-        assert args.provider == "api"
+        assert args.provider == "gemini"
         assert args.prompt == "Use formal tone"
         assert args.glossary == "/path/to/glossary.json"
         assert args.glossary_min_priority == "high"
@@ -874,6 +874,20 @@ class TestBuildParser:
         assert args.resume is True
         assert args.force_resume is True
         assert args.checkpoint_dir == "checkpoint-dir"
+
+    def test_renamed_api_provider_fails_with_guidance(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from ai.cli import main
+
+        with pytest.raises(SystemExit):
+            main(["book.epub", "--output", "out.epub", "--provider", "api"])
+        assert "use --provider gemini" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("provider", ["gemini", "openai", "anthropic"])
+    def test_metered_providers_are_accepted_by_the_parser(self, provider: str) -> None:
+        args = build_parser().parse_args(["b.epub", "--output", "o.epub", "--provider", provider])
+        assert args.provider == provider
 
     def test_short_prompt_flag(self) -> None:
         parser = build_parser()

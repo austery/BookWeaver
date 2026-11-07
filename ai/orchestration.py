@@ -28,7 +28,7 @@ from ai.checkpoint_store import (
     ICheckpointStoreFactory,
     SegmentRecord,
 )
-from ai.model_profiles import resolve_profile
+from ai.model_profiles import is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
 from ai.prompt_preparation import (
@@ -126,6 +126,14 @@ class TranslationSummary:
     glossary_used: Path | None
 
 
+def _segment_backend(provider: ITranslationProvider | None, provider_name: str) -> str:
+    """Provenance backend reported by the provider, else the runtime family's default."""
+    reported = provider.backend if provider is not None else None
+    if reported:
+        return reported
+    return "antigravity" if provider_name == "cli" else "any_llm"
+
+
 class TranslationOrchestrator:
     """Own one invocation's provider construction and checkpoint lifetime."""
 
@@ -154,8 +162,8 @@ class TranslationOrchestrator:
         model = resolve_profile(
             options.model.requested, effort=options.model.effort, provider=options.provider.name
         )
-        if options.provider.allow_paid_api and model.provider != "api":
-            raise ValueError("--allow-paid-api requires --provider api")
+        if options.provider.allow_paid_api and not is_metered(model.provider):
+            raise ValueError("--allow-paid-api requires a metered --provider")
         config = (
             validate_config(options.config) if options.config is not None else load_runtime_config()
         )
@@ -430,7 +438,7 @@ class TranslationOrchestrator:
                             item.translated,
                             model.profile,
                             model.provider,
-                            "antigravity" if model.provider == "cli" else "gemini_api",
+                            _segment_backend(deferred_provider.delegate, model.provider),
                             model.model_id,
                             model.effort,
                             completed,
@@ -439,7 +447,7 @@ class TranslationOrchestrator:
                             else None,
                             options.model.effort,
                         )
-                    usage = factory.usage_snapshot() if model.provider == "api" else None
+                    usage = factory.usage_snapshot() if is_metered(model.provider) else None
                     store.save(identity, updated, usage=usage)
                     records.update(updated)
                     _log_progress(
@@ -458,7 +466,7 @@ class TranslationOrchestrator:
                     system_prompt=prompt,
                     max_batch_chars=batch_chars,
                     max_batch_segments=batch_segments,
-                    max_split_depth=0 if model.provider == "api" else split_depth,
+                    max_split_depth=0 if is_metered(model.provider) else split_depth,
                     resume_translations={key: record.translated for key, record in records.items()},
                     on_checkpoint_batch=persist,
                 ),

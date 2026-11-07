@@ -102,12 +102,17 @@ def test_audit_failure_is_visible_without_masking_execution(
     assert "[progress:done]" not in capsys.readouterr().out
 
 
-def test_injected_usage_and_version_reach_checkpoint_and_full_resume(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "provider,model", [("gemini", "gemini-2.5-flash"), ("anthropic", "claude-sonnet-5-5")]
+)
+def test_injected_usage_and_version_reach_checkpoint_and_full_resume(
+    tmp_path: Path, provider: str, model: str
+) -> None:
     source = tmp_path / "book.epub"
     make_epub(source)
     factory = AuditedFactory()
     app = TranslationOrchestrator(provider_factory=factory)
-    options = EpubTranslationOptions(config={}, provider=ProviderSpec(name="api"))
+    options = EpubTranslationOptions(config={}, provider=ProviderSpec(name=provider))
     app.translate(source, tmp_path / "out.epub", options, input_format="epub")
     checkpoint = next(tmp_path.rglob("checkpoint.json"))
     before = checkpoint.read_bytes()
@@ -115,6 +120,10 @@ def test_injected_usage_and_version_reach_checkpoint_and_full_resume(tmp_path: P
     assert all(
         record["runtime_version"] == "offline-runtime-1" for record in data["segments"].values()
     )
+    assert {
+        (record["provider"], record["backend"], record["model"])
+        for record in data["segments"].values()
+    } == {(provider, "any_llm", model)}
     assert "offline-run" in data["paid_usage_by_run"]
     assert data["paid_usage_by_run"]["offline-run"]["input_tokens"] is None
     created = len(factory.created)

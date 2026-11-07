@@ -15,7 +15,7 @@ def test_config_cannot_authorize_paid_api(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     with pytest.raises(PaidAuthorizationError, match="non-interactive"):
         DefaultProviderFactory().create(
-            resolve_profile(provider="api"),
+            resolve_profile(provider="gemini"),
             protocol="segment_tags",
             config={"allow_paid_api": True},
             allow_paid_api=False,
@@ -34,36 +34,44 @@ def test_paid_flag_is_invalid_for_subscription_provider() -> None:
         )
 
 
+class _FailingClient:
+    """Stands in for an any-llm provider client; records what BookWeaver asks for."""
+
+    def __init__(self, calls: list[dict[str, object]], created: dict[str, object]) -> None:
+        self.calls = calls
+        self.created = created
+
+    def completion(self, **options: object) -> None:
+        self.calls.append(options)
+        raise RuntimeError("network unavailable")
+
+
+def _install_failing_client(
+    monkeypatch: pytest.MonkeyPatch, calls: list[dict[str, object]]
+) -> dict[str, object]:
+    from any_llm import AnyLLM
+
+    created: dict[str, object] = {}
+
+    def create(provider: str, **kwargs: object) -> _FailingClient:
+        created.update(kwargs, provider=provider)
+        return _FailingClient(calls, created)
+
+    monkeypatch.setattr(AnyLLM, "create", staticmethod(create))
+    return created
+
+
 def test_authorized_api_failure_is_one_attempt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from google import genai
-    from google.genai import types
     from ai.ports.provider import ProviderUnavailableError
 
-    calls: list[str] = []
-
-    class Models:
-        def generate_content(
-            self, *, model: str, contents: str, config: types.GenerateContentConfig
-        ) -> None:
-            assert config.http_options is not None
-            assert config.http_options.retry_options is not None
-            assert config.http_options.retry_options.attempts == 1
-            calls.append(model)
-            raise RuntimeError("network unavailable")
-
-    class Client:
-        def __init__(self, *, api_key: str, http_options: types.HttpOptions) -> None:
-            assert http_options.retry_options is not None
-            assert http_options.retry_options.attempts == 1
-            self.models = Models()
-
-    monkeypatch.setattr(genai, "Client", Client)
+    calls: list[dict[str, object]] = []
+    created = _install_failing_client(monkeypatch, calls)
     monkeypatch.setenv("GEMINI_API_KEY", "test-only-not-a-secret")
     factory = DefaultProviderFactory(audit_directory=tmp_path)
     provider = factory.create(
-        resolve_profile(provider="api"),
+        resolve_profile(provider="gemini"),
         protocol="segment_tags",
         config={},
         allow_paid_api=True,
@@ -71,7 +79,19 @@ def test_authorized_api_failure_is_one_attempt(
     )
     with pytest.raises(ProviderUnavailableError):
         provider.translate_batch(["one", "two"], system_prompt="Translate")
-    assert calls == ["gemini-2.5-flash"]
+    assert created == {
+        "provider": "gemini",
+        "api_key": "test-only-not-a-secret",
+        "api_base": None,
+        "unified_exceptions": True,
+        "max_retries": 0,
+    }
+    assert [call["model"] for call in calls] == ["gemini-2.5-flash"]
+    sent = calls[0]
+    assert sent["stream"] is True
+    assert sent["max_tokens"] == 65_536
+    assert sent["timeout"] == 600.0
+    assert "output_config" not in sent
     assert factory.usage_snapshot()[1] == {
         "request_count": 1,
         "input_tokens": None,
@@ -82,6 +102,7 @@ def test_authorized_api_failure_is_one_attempt(
         {
             "model": "gemini-2.5-flash",
             "protocol": "segment_tags",
+            "provider": "gemini",
             "state": "failed",
             "input_tokens": None,
             "output_tokens": None,
@@ -89,14 +110,14 @@ def test_authorized_api_failure_is_one_attempt(
     ]
 
 
-@pytest.mark.parametrize("provider", ["cli", "api"])
+@pytest.mark.parametrize("provider", ["cli", "gemini", "anthropic"])
 def test_audit_distinguishes_unavailable_usage_from_zero_paid_work(
     tmp_path: Path, provider: str
 ) -> None:
     factory = DefaultProviderFactory(audit_directory=tmp_path)
     factory.persist_audit({"provider": provider, "runtime_version": None})
     audit = json.loads(next(tmp_path.glob("*.json")).read_text())
-    assert audit["usage_scope"] == "paid_api_requests"
+    assert audit["usage_scope"] == "metered_api_requests"
     assert audit["runtime"]["runtime_version"] is None
     if provider == "cli":
         assert audit["summary"] is None
@@ -106,19 +127,7 @@ def test_audit_distinguishes_unavailable_usage_from_zero_paid_work(
 
 
 def test_paid_failure_survives_usage_audit_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    from google import genai
-    from google.genai import types
     from ai.ports.provider import ProviderUnavailableError
-
-    class Models:
-        def generate_content(
-            self, *, model: str, contents: str, config: types.GenerateContentConfig
-        ) -> None:
-            raise RuntimeError("synthetic network failure")
-
-    class Client:
-        def __init__(self, *, api_key: str, http_options: types.HttpOptions) -> None:
-            self.models = Models()
 
     class Factory(DefaultProviderFactory):
         writes = 0
@@ -128,10 +137,10 @@ def test_paid_failure_survives_usage_audit_failure(monkeypatch: pytest.MonkeyPat
             if self.writes > 1:
                 raise OSError("synthetic audit disk failure")
 
-    monkeypatch.setattr(genai, "Client", Client)
+    _install_failing_client(monkeypatch, [])
     monkeypatch.setenv("GEMINI_API_KEY", "test-only-not-a-secret")
     provider = Factory().create(
-        resolve_profile(provider="api"),
+        resolve_profile(provider="gemini"),
         protocol="segment_tags",
         config={},
         allow_paid_api=True,
@@ -141,6 +150,58 @@ def test_paid_failure_survives_usage_audit_failure(monkeypatch: pytest.MonkeyPat
         provider.translate_batch(["Source"], system_prompt="Translate")
     assert isinstance(caught.value.__cause__, RuntimeError)
     assert "Usage audit also failed: OSError" in caught.value.__cause__.__notes__
+
+
+def test_missing_vendor_key_fails_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY is required"):
+        DefaultProviderFactory().create(
+            resolve_profile(provider="anthropic"),
+            protocol="segment_tags",
+            config={"gemini_api": {"api_key": "gemini-only"}},
+            allow_paid_api=True,
+            remaining_chars=100,
+        )
+
+
+def test_interactive_consent_names_vendor_and_model(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "no")
+    with pytest.raises(PaidAuthorizationError, match="not authorized"):
+        DefaultProviderFactory().create(
+            resolve_profile("pro", provider="anthropic"),
+            protocol="segment_tags",
+            config={},
+            allow_paid_api=False,
+            remaining_chars=1234,
+        )
+    assert "Metered Anthropic API: claude-opus-5-5" in capsys.readouterr().out
+
+
+def test_configured_api_timeout_reaches_the_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+    created = _install_failing_client(monkeypatch, calls)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-only-not-a-secret")
+    provider = DefaultProviderFactory().create(
+        resolve_profile(provider="anthropic"),
+        protocol="segment_tags",
+        config=validate_config({"api": {"timeout_seconds": 1800}}),
+        allow_paid_api=True,
+        remaining_chars=100,
+    )
+    with pytest.raises(Exception):
+        provider.translate_batch(["Source"], system_prompt="Translate")
+    assert calls[0]["timeout"] == 1800.0
+    assert calls[0]["output_config"] == {"effort": "low"}
+    assert (created["provider"], calls[0]["model"]) == ("anthropic", "claude-sonnet-5-5")
+
+
+@pytest.mark.parametrize("value", [0, -5, 86401, "600", True])
+def test_invalid_api_timeout_is_rejected(value: object) -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        validate_config({"api": {"timeout_seconds": value}})
 
 
 @pytest.mark.parametrize("configured,expected", [(None, 600.0), (1800, 1800.0), (90.5, 90.5)])

@@ -84,6 +84,8 @@ DEFAULT_TIMEOUT_SECONDS = 600.0
 class AntigravityProvider(ITranslationProvider):
     """Frame translation batches and invoke the subscription runtime once per batch."""
 
+    backend = "antigravity"
+
     def __init__(
         self,
         model: ResolvedModel,
