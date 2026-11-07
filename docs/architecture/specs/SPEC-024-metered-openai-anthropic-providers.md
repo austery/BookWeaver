@@ -1,7 +1,7 @@
 ---
 specId: SPEC-024
-title: Metered OpenAI and Anthropic API Providers
-status: Draft - awaiting owner review
+title: Metered API Providers through LiteLLM (OpenAI, Anthropic, Gemini)
+status: Draft - owner decisions recorded, awaiting final review
 implementationStatus: Not started
 priority: P2 - Core Feature
 creationDate: 2026-11-07
@@ -10,273 +10,261 @@ owner: User (AI-Assisted)
 relatedSpecs: [SPEC-020, SPEC-021, SPEC-022, SPEC-023]
 tags:
   - metered-api
+  - litellm
   - openai
   - anthropic
   - paid-api-authorization
-  - prompt-caching
   - checkpoint-provenance
 ---
 
-# SPEC-024: Metered OpenAI and Anthropic API Providers
+# SPEC-024: Metered API Providers through LiteLLM
 
 ## 1. Goal
 
-Let the owner translate EPUB books through the OpenAI API and the Anthropic API. The owner holds prepaid API credit with both vendors that cannot be spent through their subscription CLIs, so this adds metered API transports, not CLI runtimes.
+Let the owner translate EPUB books through the Anthropic and OpenAI APIs. The owner has prepaid API credit with both vendors, and that credit cannot be spent through their subscription CLIs.
 
-The change extends SPEC-020's single metered path (Gemini API) to a family of metered providers that share one authorization, audit, and failure policy. Antigravity remains the default runtime. SPEC-020's billing and retry rules are unchanged: no automatic paid fallback, explicit per-invocation authorization, one network attempt per planned batch.
+The design constraint is complexity. Vendor and call-layer differences are accidental complexity: the market is fragmented, and a maintained library already absorbs that. BookWeaver keeps only the essential parts in its own code: paid authorization, cost evidence, truncation handling, and checkpoint provenance. The vendor glue goes to LiteLLM, a documented and widely used library, instead of being written here.
 
-## 2. Review gate
+SPEC-020's billing rules are unchanged: no automatic paid fallback, explicit per-invocation authorization, and one network attempt per planned batch. Antigravity remains the default runtime.
 
-This document is a draft. Implementation starts only after the owner approves it and settles §13 (open decisions). No live API call is authorized by this spec; §11 Phase 3 requires a separate authorization.
+## 2. Owner decisions (2026-11-07)
 
-## 3. Research basis
-
-Observed on 2026-11-07 from shallow clones of two open-source bilingual translators. Upstream code changes; treat this as design input, not a contract.
-
-| Topic | read-frog (`mengxi-ream/read-frog`, browser extension) | bilingual_book_maker (`yihong0618/bilingual_book_maker`, EPUB) |
+| # | Question | Decision |
 |---|---|---|
-| Provider selection | Vercel AI SDK; native package per major vendor, `openai-compatible` for the rest | Chosen by **wire format**: `openai` and `anthropic`; `--api_base` points either at any host speaking that shape. Gemini and Qwen keep native routes because their features do not reduce to the OpenAI shape |
-| Batch size | Default 1,000 characters / 4 paragraphs per request, `%%` separator | Token-budget grouping (`--accumulated_num`), `@@` separator, "output EXACTLY N translations" |
-| Count mismatch | Retry, then fall back to per-paragraph requests | Loader repairs misalignment paragraph by paragraph |
-| Truncation | Not observed | Rejects replies with `finish_reason == "length"` |
-| Cost controls | None observed | Anthropic `cache_control: ephemeral` on the system prompt; optional Anthropic Message Batches (`--batch-api`, half price); `max_tokens` 4,096 |
-| Prompt | Short immersive-translation rules (same lineage as BookWeaver's `_SYSTEM_PROMPT_TEMPLATE`) | Short user template plus batch instruction |
+| D1 | Implementation shape | **One LiteLLM-backed metered provider** for every API vendor. The Gemini path moves onto it too. No new port and no per-vendor transport |
+| D2 | Provider naming | `--provider cli \| gemini \| openai \| anthropic`. `api` is removed from the CLI with an explicit error. Checkpoints keep accepting stored `api` as legacy Gemini |
+| D3 | Anthropic profiles | `flash` → Sonnet, `pro` → Opus |
+| D4 | Truncation | Stop; no automatic extra paid request (owner asked what this meant, §8 explains it; the recommended stop behavior is recorded) |
+| D5 | Batch size | Check the limits first. Verified Anthropic limits allow the current defaults, so API runs use the **same** 60,000 characters / 200 segments as Antigravity |
+| D6 | Custom `base_url` | Out of scope |
+| D7 | Async batch APIs | Yes, as a separate follow-up spec, not here |
 
-Conclusions used below:
+## 3. Evidence
 
-1. Two wire formats (OpenAI-shape, Anthropic-native) cover the requested vendors with two small transports. A generic "OpenAI-compatible for everything" route would lose Anthropic prompt-cache control, batch pricing, and usage detail.
-2. Both projects send batches one to two orders of magnitude smaller than BookWeaver's Antigravity default (60,000 characters / 200 segments). That default exists because each Antigravity call has process and subscription-quota overhead. Metered APIs bill by token, so smaller batches cost about the same, stay clear of output-token caps, and lose less when one request fails.
-3. BookWeaver's prompt is already concise. This spec does not change prompt text.
+### 3.1 Vendor limits
+
+Source: Anthropic models overview, read 2026-11-07 at `platform.claude.com/docs/en/about-claude/models/overview`.
+
+| Model | API ID | Max output | Price (input / output per MTok) |
+|---|---|---|---|
+| Claude Sonnet 5.5 | `claude-sonnet-5-5` | 128K tokens | $2 / $10 |
+| Claude Opus 5.5 | `claude-opus-5-5` | 128K tokens | $4 / $20 |
+
+- The same docs say the SDK requires streaming for large `max_tokens` values, to avoid HTTP timeouts.
+- Default effort is `medium` (Opus 5.5) and `high` (Sonnet 5.5).
+- Prompt caching needs at least 512 tokens.
+
+OpenAI limits are **not yet verified**: the documentation host was unreachable from the drafting environment. The OpenAI mapping stays empty until §6.2 is filled from vendor documentation.
+
+### 3.2 Why the current batch size fits
+
+A 60,000-character English batch translates into roughly 20k–27k output tokens of Chinese, including segment tags. That is an estimate, and §11 Phase 2 replaces it with measured values. A 128K output cap leaves more than 4x margin. API runs therefore need no separate batch defaults.
+
+With few, large requests per book (about ten for a 500,000-character book), repeating the system prompt costs little. Prompt caching is out of scope.
+
+### 3.3 Library check
+
+Inspected LiteLLM 1.108.2 in an isolated environment on 2026-11-07:
+
+- It maps Anthropic `stop_reason: max_tokens` to `finish_reason: "length"`.
+- It parses Anthropic cache usage.
+- It exposes `num_retries`.
+
+Cost of adoption: about 60 installed packages and about 230 MB in site-packages. Mitigations: an exact version pin in `uv.lock`, and an import only when a metered provider is selected.
+
+### 3.4 Open-source survey
+
+Two open-source translators were surveyed: read-frog and bilingual_book_maker.
+- Both route providers through a shared abstraction rather than per-vendor code paths. bilingual_book_maker includes a LiteLLM route.
+- bilingual_book_maker's hand-built per-vendor code (about 2,300 lines for its OpenAI translator, plus about 380 lines of batch collect/replay) shows the growth this spec avoids.
 
 ## 4. Scope
 
 In scope:
 
-- An internal metered-provider shell shared by Gemini, OpenAI, and Anthropic.
-- OpenAI transport (official endpoint) and Anthropic transport (native Messages API).
-- CLI provider values, configuration sections, authorization text, audit fields, checkpoint provenance values, metered batch defaults, and truncation detection.
-- Moving the existing Gemini `_PaidProvider` onto the shell without behavior change.
-- Optional later phase: a configurable OpenAI-shape `base_url` (§11 Phase 4).
+- Replace the Gemini-only `_PaidProvider` in `ai/runtime_factory.py` with one LiteLLM-backed metered provider.
+- Provider rename (D2), model registry entries, authorization text, truncation error, checkpoint provenance values, and `backend` reporting.
+- One optional configuration key for request timeout.
 
 Non-goals:
 
-- Codex CLI, Claude Code CLI, or any other subscription CLI runtime.
-- Vendor asynchronous batch APIs (Anthropic Message Batches, OpenAI Batch). They need their own checkpoint integration and get a separate spec.
-- Explicit `--effort` for metered providers, structured/JSON output modes, prompt text changes, automatic provider fallback, concrete model names on the CLI, and live tests in CI.
+- Subscription CLI runtimes (Codex CLI, Claude Code CLI).
+- Vendor async batch APIs (follow-up spec, D7).
+- Prompt caching, custom `base_url`, and structured output.
+- Prompt or segment-protocol changes.
+- Per-API batch defaults.
+- Concrete model names on the CLI.
+- Live tests in CI.
 - Extending legacy modules: `ai/gemini_api_provider.py`, `ai/provider_factory.py`, `ai/adapters/providers/gemini_api_adapter.py`, and the historical helpers in `ai/orchestration.py`.
 
-## 5. Public CLI contract
+## 5. CLI contract
 
 ```text
 --provider cli         Antigravity; default; subscription
---provider api         Gemini API; metered (unchanged name, kept for checkpoint compatibility)
+--provider gemini      Gemini API; metered
 --provider openai      OpenAI API; metered
 --provider anthropic   Anthropic API; metered
 ```
 
-- `--model flash|pro` remains the only model selector. Each metered vendor maps both profiles to pinned model IDs (§6.2).
-- `--allow-paid-api` authorizes any metered provider and stays invalid with `--provider cli`.
-- `--effort` with a metered provider fails before any request, as today.
-- The parser description stops saying "through Antigravity" only.
-
-Example:
+- `--provider api` fails during argument handling: `"--provider api was renamed; use --provider gemini"`.
+- `--model flash|pro` stays the only model selector.
+- `--allow-paid-api` authorizes any metered provider and stays invalid with `cli`.
+- `--effort` with a metered provider fails before construction, as today. The registry pins the API effort (§6.2).
+- The parser description no longer says "through Antigravity" only.
 
 ```bash
 uv run bookweaver book.epub --output book.zh.epub --provider anthropic --model flash --allow-paid-api
 ```
 
-## 6. Model registry
+## 6. Model registry (`ai/model_profiles.py`)
 
 ### 6.1 Provider identity
 
-`ai/model_profiles.py` widens `ProviderName` to `cli | api | openai | anthropic` and exposes one predicate, `is_metered(provider)`, true for every value except `cli`. Application code uses that predicate instead of comparing with `"api"`.
+- `ProviderName` becomes `cli | gemini | openai | anthropic`.
+- One predicate, `is_metered(provider)`, is true for everything except `cli`. Application code uses it instead of comparing with `"api"`.
 
-### 6.2 Pinned mappings
+### 6.2 Pinned API mappings
 
-Each metered vendor gets a `(profile) -> MeteredModel` table:
+One table, keyed by `(provider, profile)`, gives the LiteLLM model string, the requested output cap, and the pinned effort. Every row cites its source and read date.
 
-```python
-@dataclass(frozen=True)
-class MeteredModel:
-    model_id: str
-    max_output_tokens: int   # the cap BookWeaver requests, at or below the vendor limit
-    reasoning: str | None    # lowest supported reasoning setting, or None if the model has none
-```
+| Provider | Profile | LiteLLM model | Output cap | Effort | Source |
+|---|---|---|---|---|---|
+| anthropic | flash | `anthropic/claude-sonnet-5-5` | 128,000 | low (see §12 item 2) | §3.1 |
+| anthropic | pro | `anthropic/claude-opus-5-5` | 128,000 | low (see §12 item 2) | §3.1 |
+| gemini | flash | `gemini/gemini-2.5-flash` | fill from vendor docs | none | to cite in implementation |
+| gemini | pro | `gemini/gemini-2.5-pro` | fill from vendor docs | none | to cite in implementation |
+| openai | flash / pro | **unfilled** | — | — | blocked on §3.1 |
 
-- `flash` maps to the vendor's fast or economical tier, `pro` to its high-quality tier.
-- The implementation PR fills the concrete IDs and limits from the vendor's current documentation and records the source and date beside the table. Neither this spec nor code comments may infer them from memory.
-- Reasoning models count reasoning tokens against output and cost. The transport requests the lowest reasoning level the pinned model accepts. Anthropic extended thinking stays off.
-- `ResolvedModel` gains `max_output_tokens: int | None` and `reasoning: str | None`. Both are `None` for `cli`.
+- A provider with no filled row fails before any request: `"No pinned openai model for profile flash; update ai/model_profiles.py with cited limits"`.
+- `ResolvedModel` gains `output_cap: int | None` and `api_effort: str | None`. Both are `None` for `cli`.
+- `effort` stays the Antigravity user axis.
 
 ## 7. Architecture
 
-### 7.1 Transport port
+### 7.1 Metered provider
 
-A new port module, `ai/ports/metered.py`, defines the vendor boundary. It has no dependency on the application or the model registry:
+`_PaidProvider` in `ai/runtime_factory.py` becomes `_MeteredProvider`, still about one screen of code. It keeps today's audit and error sequence:
 
-```python
-@dataclass(frozen=True)
-class TransportReply:
-    text: str
-    input_tokens: int | None
-    output_tokens: int | None
-    cached_input_tokens: int | None   # None when the vendor does not report it
-    truncated: bool                   # vendor reported the output cap as the stop reason
+1. Frame the batch with the existing `_delimiter` helpers: `augment_prompt_for_batch` into the system message, `join_segments` into the user message. The prompt and protocol stay as they are.
+2. Append a pending `RequestUsage` and persist the audit.
+3. Call `litellm.completion(model=..., messages=..., max_tokens=output_cap, stream=True, stream_options={"include_usage": True}, num_retries=0, max_retries=0, timeout=...)` exactly once, plus the pinned effort parameter. Assemble the final response from the stream.
+   - Streaming is used for every vendor, so there is one code path.
+   - The SDK-retry and LiteLLM-retry arguments are asserted in tests.
+4. Record input and output tokens, and persist the audit.
+5. Translate errors (§8). If `finish_reason == "length"`, raise `OutputTruncatedError`. Raise on empty text.
+6. Otherwise return `split_response(...)`.
 
-class IMeteredTransport(Protocol):
-    backend: str                      # "gemini_api" | "openai_api" | "anthropic_api"
-    def send(self, *, model_id: str, system: str, user: str,
-             max_output_tokens: int, reasoning: str | None,
-             timeout_seconds: float) -> TransportReply: ...
-```
+`_MeteredProvider.backend = "litellm"` and `runtime_version = None`. `ITranslationProvider` gains `backend: str | None = None`, mirroring `runtime_version`. `AntigravityProvider` sets `"antigravity"`.
 
-Transports live in `ai/adapters/providers/` (`gemini_transport.py`, `openai_transport.py`, `anthropic_transport.py`) and depend only on `ai.ports`, which satisfies the existing `ai.adapters` Tach rule. Each transport:
+`litellm` is imported inside `_MeteredProvider.__init__` only. `pyproject.toml` adds `litellm` with an exact pin. `google-genai` stays a dependency until the legacy modules that import it are retired.
 
-- imports its SDK lazily inside the constructor;
-- disables SDK retries (`max_retries=0` for openai and anthropic; `HttpRetryOptions(attempts=1)` for google-genai);
-- maps vendor stop reasons to `truncated`: OpenAI `finish_reason == "length"`, Anthropic `stop_reason == "max_tokens"`, Gemini `finish_reason == MAX_TOKENS`;
-- maps vendor exceptions to the existing port errors (§8);
-- never logs or raises with request or response text.
+### 7.2 Factory and authorization
 
-Vendor specifics:
+- The `DefaultProviderFactory.create` branch changes from `model.provider == "api"` to `is_metered(model.provider)`. The SPEC-020 rules stay as they are:
+  - one consent per invocation, covering glossary extraction and translation;
+  - interactive confirmation or `--allow-paid-api`;
+  - configuration never authorizes.
+- The confirmation names the vendor and model: `Metered Anthropic API: claude-sonnet-5-5; remaining source approximately N characters ...`.
+- Keys come from the standard environment variables `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`. The existing `gemini_api.api_key` config value is still honored for Gemini, so current user configuration keeps working. A missing key fails before any request and names the variable.
+- `usage_snapshot()` reports when the runtime provider is metered.
 
-- **OpenAI**: The implementation PR chooses Chat Completions or Responses, whichever exposes `max_output_tokens`, reasoning control, stop reason, and cached-token usage for the pinned models. OpenAI applies prompt caching automatically. The transport reports `cached_tokens` when present.
-- **Anthropic**: Messages API with streaming. The SDK rejects long non-streaming requests, and a whole batch can run for minutes. `max_tokens` is always explicit. The system prompt is sent as one text block with `cache_control: {"type": "ephemeral"}`. Usage comes from the final message, including `cache_read_input_tokens`. A prompt below the vendor's minimum cacheable length simply reports no cache hits.
-- **Gemini**: The current `_PaidProvider` request moved behind the port. Behavior is unchanged, except that it now detects truncation.
+### 7.3 Orchestration (new application path only)
 
-### 7.2 Metered provider shell
+- `model.provider == "api"` becomes `is_metered(model.provider)` for split depth (metered split depth stays 0) and for usage snapshots.
+- The segment `backend` comes from the active provider's `backend` attribute instead of `"antigravity" if cli else "gemini_api"`.
+- Batch size resolution is unchanged.
 
-`ai/runtime_factory.py` replaces the Gemini-specific `_PaidProvider` with one `MeteredProvider(ITranslationProvider)` that wraps any `IMeteredTransport`. It:
+## 8. Truncation and failure policy
 
-1. frames the batch with the existing `_delimiter` helpers (`augment_prompt_for_batch` into `system`, `join_segments` into `user`);
-2. appends a pending `RequestUsage`, persists the audit, calls `send` once, and records the outcome. This is today's sequence, generalized;
-3. raises `OutputTruncatedError` when `reply.truncated`, even if the text happens to split;
-4. raises `ProviderUnavailableError` on empty text;
-5. otherwise returns `split_response(...)`.
+**Truncation.** Every model has a maximum output length per request. If a translation reaches it, the vendor cuts the reply off and reports that it stopped because of the length limit. The rest of that batch's translation is missing. Two responses were possible:
 
-`MeteredProvider` exposes `backend` from its transport and `runtime_version = None`.
+- **stop**: the chosen behavior. Earlier batches are already in the checkpoint. BookWeaver halts with a message suggesting a smaller `--max-batch-chars`, and the next run resumes.
+- **split and resend**: this would spend money without consent.
 
-### 7.3 Factory and authorization
+With more than 4x margin (§3.2), truncation should be rare.
 
-`DefaultProviderFactory.create` branches once on `is_metered`:
-
-- Authorization keeps the SPEC-020 rules: one consent per invocation, covering glossary extraction and translation. The interactive message names the vendor and the concrete model, for example `Metered Anthropic API: <model_id>; remaining source approximately N characters ...`. Non-interactive runs require `--allow-paid-api`.
-- API key lookup: environment variable first, then configuration. The variables are `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`. A missing key fails before any request and names both sources.
-- `usage_snapshot()` reports whenever the runtime provider is metered, not only `api`.
-
-### 7.4 Orchestration changes (new application path only)
-
-- Replace `model.provider == "api"` with `is_metered(model.provider)` for split depth and usage snapshots.
-- Take the segment `backend` from the active provider's `backend` attribute instead of `"antigravity" if cli else "gemini_api"`. `ITranslationProvider` gains `backend: str | None = None`, mirroring `runtime_version`. `AntigravityProvider` sets `"antigravity"`.
-- Use metered batch defaults (§9) when `is_metered`.
-
-## 8. Failure policy
-
-SPEC-020 §7 applies unchanged to every metered provider. Mapping:
-
-| Vendor condition | Port error | Engine action |
+| LiteLLM outcome | Port error | Action |
 |---|---|---|
-| 401 / 403, invalid key | `ProviderAuthenticationError` | stop, checkpoint preserved |
-| 429, rate or credit exhausted | `RateLimitError` | stop |
-| timeout, connection error, 5xx, overloaded | `ProviderUnavailableError` | stop |
-| stop reason = output cap | `OutputTruncatedError` (new, subclass of `ProviderUnavailableError`) | stop; message advises a smaller `--max-batch-chars` |
-| wrong segment count / malformed tags | `TranslationError` | stop (metered split depth stays 0) |
-| refusal or empty output | `ProviderUnavailableError` | stop |
+| `AuthenticationError`, `PermissionDeniedError` | `ProviderAuthenticationError` | stop |
+| `RateLimitError` (rate or credit) | `RateLimitError` | stop |
+| `Timeout`, `APIConnectionError`, `ServiceUnavailableError`, `InternalServerError` | `ProviderUnavailableError` | stop |
+| `finish_reason == "length"` | `OutputTruncatedError` (new, subclass of `ProviderUnavailableError`) | stop, suggest smaller batch |
+| wrong segment count / malformed tags | `TranslationError` | stop (metered split depth 0) |
+| empty content or refusal | `ProviderUnavailableError` | stop |
+| any other exception | `ProviderUnavailableError` | stop |
 
-`OutputTruncatedError` is not split-eligible. That keeps "no automatic additional paid request" intact. Small metered batch defaults make truncation the exception. §13 Q3 asks whether the owner wants a bounded split on truncation instead.
+Error messages never include request or response text.
 
-## 9. Batch defaults
+## 9. Configuration
 
-- New configuration keys `epub_resilience.metered_max_batch_chars` and `epub_resilience.metered_max_batch_segments` apply when the provider is metered. CLI `--max-batch-chars` / `--max-batch-segments` still override.
-- The starting defaults are **8,000 characters and 40 segments**. They are deliberately conservative: an 8,000-character English batch yields roughly 3k–5k output tokens of Chinese, well inside any plausible pinned `max_output_tokens`. Phase 3 calibrates them with authorized evidence before they are called final.
-- Startup validation: when `max_batch_chars` multiplied by a fixed conservative output-tokens-per-source-character factor exceeds the pinned `max_output_tokens`, fail before any request, with a message naming both numbers. The implementation records the factor and its derivation in code.
-- Checkpoint consequence (no schema change): `max_batch_chars` is a force-resume-overridable identity field (SPEC-020 §9.2). Moving a book between `cli` and a metered provider therefore requires `--force-resume`, or an explicit `--max-batch-chars` equal to the checkpoint's value. This is intentional and must appear in the mismatch message.
+- `ai/config_schema.json` adds one optional section: `"api": {"timeout_seconds": number > 0, <= 86400}`. The default is 600 seconds per request, matching today's Gemini value.
+- `gemini_api.api_key` stays accepted.
+- No other new keys. Unknown keys still fail loudly. User configuration is never rewritten.
 
-## 10. Configuration and persistence
+## 10. Checkpoint and audit
 
-### 10.1 Schema (`ai/config_schema.json`)
-
-```json
-"openai_api":    { "api_key": "string|null", "timeout_seconds": "number > 0, <= 86400", "max_output_tokens": "integer >= 1" },
-"anthropic_api": { "api_key": "string|null", "timeout_seconds": "number > 0, <= 86400", "max_output_tokens": "integer >= 1" }
-```
-
-- `additionalProperties: false` throughout, and unknown keys still fail loudly.
-- `max_output_tokens` may only lower the pinned value. A higher value is rejected.
-- `gemini_api` gains the same two optional keys for parity.
-- Configuration can never authorize paid execution. User configuration is never rewritten.
-- `config/config.json.example` documents the new sections, using environment-variable keys only.
-
-### 10.2 Checkpoint provenance (`ai/checkpoint_store.py`)
-
-- Accepted `provider` values become `cli | api | openai | anthropic | legacy_unknown`.
-- Accepted `backend` values gain `openai_api | anthropic_api`.
-- `CheckpointIdentity` is unchanged. SPEC-020 §9.2 keeps provider and concrete model audit-only. Mixed-vendor continuation is reported by the existing "Mixed-model continuation" notice.
-- Without the provenance change, a metered run would write a checkpoint that fails to load on resume (`Invalid checkpoint provenance`). Phase 2 must land this together with the transports.
-
-### 10.3 Audit (`.bookweaver_runs/<run_id>.json`)
-
-- `RequestUsage` gains `cached_input_tokens: int | None` and `backend: str`.
-- `usage_scope` becomes `"metered_api_requests"`. Readers of older audit files keep working because the field is informational.
-- The audit never stores keys, prompts, or responses.
+- **Provenance validator** (`ai/checkpoint_store.py`):
+  - `provider` accepts `cli | api | gemini | openai | anthropic | legacy_unknown`. `api` remains readable as historical Gemini and is never written again.
+  - `backend` adds `litellm`.
+  - Without this change, a metered run's checkpoint would fail to load on resume (`Invalid checkpoint provenance`).
+- **Identity**: `CheckpointIdentity` is unchanged. Provider and concrete model remain audit-only (SPEC-020 §9.2). Because batch sizes are now shared, switching vendors mid-book resumes normally and prints the existing "Mixed-model continuation" notice.
+- **Audit** (`.bookweaver_runs/<run_id>.json`):
+  - `RequestUsage` gains `provider`.
+  - `usage_scope` becomes `"metered_api_requests"`.
+  - No keys, prompts, or responses are recorded.
 
 ## 11. Phases
 
-**Phase 1: Shell and Gemini parity (no user-visible change)**
-Add `ai/ports/metered.py`, `MeteredProvider`, and the Gemini transport. Delete `_PaidProvider`. All existing runtime-factory, invocation-audit, and application tests pass unchanged, except the new truncation test.
+**Phase 1: Implementation (offline; mocks at the `litellm.completion` boundary)**
 
-**Phase 2: OpenAI and Anthropic**
-Add the two transports, registry entries with cited limits, CLI values, configuration schema, factory branches, checkpoint provenance values, `backend` reporting, metered batch defaults, and dependency declarations. Add `openai` and `anthropic` to `[project].dependencies` next to `google-genai`, with lazy imports. Update Tach for the new port module.
+- Registry, rename, `_MeteredProvider`, error mapping, provenance, `backend`, config key, dependency pin, and Tach.
+- Gemini behavior is carried over: the existing runtime-factory and invocation-audit tests are adapted to the LiteLLM boundary.
+- Update the `README.md`, `CLAUDE.md`/`AGENTS.md`, and `config/config.json.example` pointers.
 
-**Phase 3: Authorized calibration (requires separate owner authorization)**
-Run one short probe chapter per vendor and profile. Record cost, cached tokens, output/source ratio, and wall time in `docs/plans/`, separate from mocked tests. Adjust §9 defaults from that evidence. The probe is a calibration check, not book acceptance.
+**Phase 2: Authorized probe (requires separate owner authorization)**
 
-**Phase 4 (optional): OpenAI-shape `base_url`**
-Add `openai_api.base_url`. A non-default base URL requires an explicit `openai_api.models: {flash, pro}` mapping with `max_output_tokens`, because the official registry does not describe other hosts. Authorization stays mandatory, since BookWeaver cannot know whether the host bills. Audit records the host name only.
+- One short chapter each on Anthropic `flash` and `pro`. Record real output-token ratios, cost, and wall time in `docs/plans/`, separately from mocked tests.
+- Confirm or revise §3.2. This is calibration, not book acceptance.
 
-## 12. Acceptance criteria
+**Phase 3: OpenAI mapping**
 
-Offline (mocked SDK clients at the transport boundary; no network):
+- Fill §6.2 from vendor documentation with a citation, then run the same probe under authorization.
 
-- [ ] Each metered provider refuses to construct without `--allow-paid-api` when non-interactive, and configuration cannot authorize.
-- [ ] `--allow-paid-api` with `--provider cli` and `--effort` with a metered provider fail before any provider construction.
-- [ ] Exactly one SDK call per planned batch. SDK retry is disabled; the test asserts `max_retries=0` or the equivalent.
-- [ ] A vendor truncation stop reason raises `OutputTruncatedError`, persists the audit as failed, and leaves prior checkpoint batches intact.
-- [ ] Each vendor error class maps per §8.
-- [ ] Anthropic requests carry an explicit `max_tokens`, use streaming, and mark the system block with `cache_control`.
-- [ ] Usage, including cached tokens, reaches the audit file and the checkpoint usage summary. Unknown usage stays `None`, never `0`.
-- [ ] A checkpoint written by an `openai` or `anthropic` run reloads on resume with correct `provider`, `backend`, and `model`.
-- [ ] Switching between `cli` and a metered provider on one checkpoint fails without `--force-resume` and names `max_batch_chars`.
-- [ ] Metered batch defaults apply only to metered providers. CLI flags override them.
-- [ ] Unknown keys under `openai_api` and `anthropic_api` are rejected. A `max_output_tokens` above the pinned value is rejected.
-- [ ] A glossary extraction plus translation run asks for authorization once.
-- [ ] Gemini behavior matches the pre-change tests.
+## 12. Items to verify in Phase 1
+
+1. **Streaming usage.** Assembling the streamed Anthropic and Gemini responses through LiteLLM yields input and output token counts and `finish_reason`. If not, record usage as `None`, never as `0`.
+2. **Effort.** How LiteLLM passes Anthropic effort for these models. If it cannot pin `low`, record the vendor default and its cost implication instead of hand-writing a vendor request.
+3. **Retries.** `num_retries=0` and `max_retries=0` produce exactly one HTTP attempt. Assert it with a mocked transport.
+
+## 13. Acceptance criteria
+
+- [ ] `--provider api` fails with the rename message. `gemini`, `openai`, and `anthropic` are accepted.
+- [ ] Each metered provider requires `--allow-paid-api` when non-interactive. Configuration cannot authorize. One consent covers glossary extraction plus translation.
+- [ ] `--allow-paid-api` with `cli`, and `--effort` with a metered provider, fail before construction.
+- [ ] An unfilled registry row (OpenAI) fails before any request with the registry message.
+- [ ] Exactly one `litellm.completion` call per planned batch, with retries disabled.
+- [ ] `finish_reason == "length"` raises `OutputTruncatedError`, persists the audit as failed, and leaves earlier checkpoint batches intact.
+- [ ] Each row of §8 maps as specified.
+- [ ] A checkpoint written by an `anthropic` run reloads with `provider: anthropic`, `backend: litellm`. A checkpoint with historical `provider: api` still loads.
+- [ ] Usage reaches the audit file and the checkpoint usage summary. Unknown usage stays `None`.
+- [ ] `litellm` is not imported when `--provider cli` is used.
 - [ ] `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`, and `uv run tach check` pass.
-
-Evidence (Phase 3, authorized separately):
-
-- [ ] One probe per vendor completes with sane segment alignment, recorded cost, and cache-hit evidence.
-
-## 13. Open decisions for the owner
-
-1. **Provider naming.** Keep `api` for Gemini (recommended; existing checkpoints record `provider: api`) or add a `gemini` alias as well?
-2. **Profile mapping.** Which tier each vendor's `flash` and `pro` should mean. The recommendation is economical/fast for `flash` and the top general model for `pro`; concrete IDs are filled from vendor docs in Phase 2.
-3. **Truncation recovery.** Stop (recommended, no extra paid request) or allow one bounded split of the truncated batch under the same authorization?
-4. **Batch defaults.** Accept 8,000 characters / 40 segments as the starting point until Phase 3 calibration?
-5. **Phase 4.** Include `base_url` support at all?
-6. **Async batch APIs.** Write the follow-up spec for Anthropic Message Batches and OpenAI Batch (about half price, higher latency) after Phase 2?
 
 ## 14. Risks
 
 | Risk | Mitigation |
 |---|---|
-| Output cap truncates a batch | Small metered defaults, a startup bound check, explicit truncation error |
-| Reasoning tokens inflate cost and consume the output cap | Pin the lowest reasoning level per model; record output tokens per request |
-| Vendor model IDs or limits drift | One registry table with cited source and date; a failure on unknown model is loud, never a silent substitute |
-| Smaller batches weaken cross-paragraph consistency | Glossary stays in the system prompt; Phase 3 compares quality against the Antigravity baseline on the same chapter |
-| Repeated system prompt raises cost | Anthropic explicit cache control; OpenAI automatic prefix caching; cached tokens audited |
-| Spend surprises | Per-invocation authorization with remaining-character estimate, per-request audit persisted even on failure |
+| Heavy, fast-moving dependency | Exact pin in `uv.lock`; lazy import; upgrades only through a deliberate PR |
+| LiteLLM normalization hides a vendor behavior | §12 checks before relying on it; usage stays `None` when unknown |
+| Truncation on unusually expansive text | >4x margin; explicit stop; user lowers `--max-batch-chars` |
+| Mid-book vendor switch changes voice | Existing mixed-model notice; provenance per segment |
+| Spend surprises | Per-invocation authorization with remaining-character estimate; audit persisted even on failure |
 
-## 15. Status history
+## 15. Follow-up
 
-- 2026-11-07: Draft written from codebase analysis and open-source survey; awaiting owner review.
+- **SPEC-025 (planned):** vendor async batch APIs. Anthropic documents 50% pricing and up to 300K output tokens for Message Batches. The spec must define how submit, poll, and collect fit the checkpoint store without building a parallel batch framework. It should first check whether LiteLLM's batch support covers both vendors.
+
+## 16. Status history
+
+- 2026-11-07: First draft (native SDK transports).
+- 2026-11-07: Rewritten after owner review: LiteLLM single provider, provider rename, current batch defaults, caching and `base_url` removed, async batches deferred to SPEC-025.
