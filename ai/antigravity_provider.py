@@ -77,6 +77,10 @@ def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
     return response
 
 
+# Per-batch response deadline; configurable as antigravity.timeout_seconds.
+DEFAULT_TIMEOUT_SECONDS = 600.0
+
+
 class AntigravityProvider(ITranslationProvider):
     """Frame translation batches and invoke the subscription runtime once per batch."""
 
@@ -86,7 +90,7 @@ class AntigravityProvider(ITranslationProvider):
         *,
         executable: str = "agy",
         temp_root: Path | None = None,
-        timeout_seconds: float = 600,
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         outer_grace_seconds: float = 30,
         protocol: str = "segment_tags",
     ) -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ai.model_profiles import resolve_profile
+from ai.runtime_config import validate_config
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
 
 
@@ -140,3 +141,51 @@ def test_paid_failure_survives_usage_audit_failure(monkeypatch: pytest.MonkeyPat
         provider.translate_batch(["Source"], system_prompt="Translate")
     assert isinstance(caught.value.__cause__, RuntimeError)
     assert "Usage audit also failed: OSError" in caught.value.__cause__.__notes__
+
+
+@pytest.mark.parametrize("configured,expected", [(None, 600.0), (1800, 1800.0), (90.5, 90.5)])
+def test_antigravity_timeout_reaches_executable_boundary(
+    monkeypatch: pytest.MonkeyPatch, configured: float | None, expected: float
+) -> None:
+    from ai import antigravity_provider
+
+    calls: list[tuple[list[str], float]] = []
+
+    def execute(args: list[str], *, cwd: object, timeout: float) -> str:
+        calls.append((args, timeout))
+        if args[1:] == ["--version"]:
+            return "1.1.27"
+        if args[1:] == ["models"]:
+            return "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)"
+        return '<segment id="1">花园</segment>\n<segment id="2">月亮</segment>'
+
+    monkeypatch.setattr(antigravity_provider, "_execute", execute)
+    config: dict[str, object] = (
+        {} if configured is None else {"antigravity": {"timeout_seconds": configured}}
+    )
+    provider = DefaultProviderFactory().create(
+        resolve_profile(),
+        protocol="segment_tags",
+        config=validate_config(config),
+        allow_paid_api=False,
+        remaining_chars=1,
+    )
+
+    assert provider.translate_batch(["garden", "moon"], system_prompt="Translate") == [
+        "花园",
+        "月亮",
+    ]
+    args, outer_deadline = calls[-1]
+    assert args[args.index("--print-timeout") + 1] == f"{expected:g}s"
+    assert outer_deadline == expected + 30
+
+
+@pytest.mark.parametrize("value", [0, -5, 86401, "600", True])
+def test_invalid_antigravity_timeout_is_rejected_before_execution(value: object) -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        validate_config({"antigravity": {"timeout_seconds": value}})
+
+
+def test_unknown_antigravity_key_is_rejected() -> None:
+    with pytest.raises(ValueError, match="print_timeout"):
+        validate_config({"antigravity": {"print_timeout": 600}})

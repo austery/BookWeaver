@@ -1,5 +1,6 @@
 {
   "gemini_api": {"api_key": null},
+  "antigravity": {"timeout_seconds": 600},
   "epub_resilience": {
     "pro_epub_max_batch_chars": 60000,
     "standard_epub_max_batch_chars": 60000,
