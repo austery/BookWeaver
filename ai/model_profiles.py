@@ -6,7 +6,7 @@ from typing import Literal
 ModelProfile = Literal["flash", "pro"]
 Effort = Literal["low", "medium", "high"]
 ProviderName = Literal["cli", "gemini", "openai", "anthropic"]
-CERTIFIED_AGY_VERSIONS = frozenset({"1.1.27"})
+CERTIFIED_AGY_VERSIONS = frozenset({"1.1.27", "1.5.3"})
 METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 
 # A release changes these mappings together with its compatibility evidence.

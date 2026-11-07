@@ -80,6 +80,11 @@ def main() -> int:
     version = antigravity_provider._execute([args.executable, "--version"], cwd=None, timeout=30)
     print(f"Antigravity version: {version}")
     print(f"Certified versions: {', '.join(sorted(CERTIFIED_AGY_VERSIONS))}")
+    roster = antigravity_provider._execute([args.executable, "models"], cwd=None, timeout=30)
+    print("agy models:")
+    for line in roster.splitlines():
+        if line.strip():
+            print(f"  {line.strip()}")
     # Probe this version only: let discovery accept it for this process.
     antigravity_provider.CERTIFIED_AGY_VERSIONS = frozenset({version})
 
