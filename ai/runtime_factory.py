@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from ai.antigravity_provider import AntigravityProvider
+from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
 from ai.model_profiles import ResolvedModel
 from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
 
@@ -118,6 +118,17 @@ class _PaidProvider(ITranslationProvider):
         return split_response(response.text, len(segments), protocol=self._protocol)
 
 
+def _antigravity_timeout(config: dict[str, object]) -> float:
+    """Per-batch Antigravity deadline from validated config, else the built-in default."""
+    section = config.get("antigravity", {})
+    value = section.get("timeout_seconds") if isinstance(section, dict) else None
+    if value is None:
+        return DEFAULT_TIMEOUT_SECONDS
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        raise ValueError("antigravity.timeout_seconds must be a positive number of seconds")
+    return float(value)
+
+
 class DefaultProviderFactory:
     """One instance is owned by one invocation, including its glossary work."""
 
@@ -196,7 +207,9 @@ class DefaultProviderFactory:
         if model.provider == "cli":
             if allow_paid_api:
                 raise PaidAuthorizationError("--allow-paid-api requires --provider api")
-            return AntigravityProvider(model, protocol=protocol)
+            return AntigravityProvider(
+                model, protocol=protocol, timeout_seconds=_antigravity_timeout(config)
+            )
         if not self._authorized:
             if not allow_paid_api:
                 if not sys.stdin.isatty():

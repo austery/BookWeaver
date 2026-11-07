@@ -23,6 +23,17 @@
         }
       }
     },
+    "antigravity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400
+        }
+      }
+    },
     "epub_resilience": {
       "type": "object",
       "additionalProperties": false,
