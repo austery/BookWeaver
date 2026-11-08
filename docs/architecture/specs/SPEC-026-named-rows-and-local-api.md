@@ -185,15 +185,15 @@ Phase 4's rejection rule is implemented here by decision 5; Phase 4 keeps only i
 
 ### 7.4 Phase 4 as built (2026-11-08)
 
-Phase 4 adds tests only; no product code changed. `tests/unit/test_local_api.py` takes the rows from `enabled_rows()`, so a new metered row is covered without a test change. No test makes a paid call.
+Phase 4 adds tests only; no product code changed. `tests/unit/test_local_api.py` takes the rows from `enabled_rows()`, so a new metered row is covered without a test change. No test can make a paid call.
 
 - Every metered row without consent (field omitted or false) returns 400 with its provider and model. A null value returns 422. In each case no record, log or child exists.
 - Every metered row with consent gives the child `--allow-paid-api` exactly once. Consent is not remembered for the next run.
 - Every subscription row refuses consent and never gets the flag.
 - The child's stdin is `/dev/null`, even when the server's own stdin is something else.
-- Second layer: the real CLI, started with `/dev/null` stdin and no provider keys, refuses every metered row without the flag and writes no output.
+- Second layer: the CLI itself, with a provider key present and no `--allow-paid-api`, refuses every metered row. It builds no client and writes no output. This test runs in-process with a fake client and an empty config, because `config/config.json` in a checkout can hold a real key.
 
-Each of these fails when its check is removed (checked by temporarily editing the server gate, the flag rule, the stdin setting and the factory gate).
+Removing each check made its test fail (checked manually on 2026-11-08). To repeat this for the paid gate, use a copy of the code without `config/config.json` and with network access denied, so that a broken gate cannot make a paid call.
 
 ## 8. Verification
 

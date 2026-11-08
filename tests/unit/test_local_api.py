@@ -18,10 +18,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 import ai.cli as entry_module
-from ai import local_api
+from ai import local_api, orchestration
 from ai.antigravity_provider import default_certification_path
 from ai.model_profiles import Row, enabled_rows, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
+from tests.runtime_fakes import install_fake_any_llm
 
 BASE_URL = "http://127.0.0.1:8765"
 METERED_ROWS = [row for row in enabled_rows() if is_metered(row.provider)]
@@ -406,46 +407,34 @@ def test_subscription_rows_never_carry_the_paid_flag(
         },
     )
     assert refused.status_code == 400
+    assert refused.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
     assert_nothing_started(client, tmp_path)
     start(client, tmp_path, row=row.name)
     assert "--allow-paid-api" not in child_args(settle(client))
 
 
 @pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
-def test_real_cli_child_refuses_a_metered_row_without_the_flag(tmp_path: Path, row: Row) -> None:
-    """The second layer: what the API's child would do if the server check were bypassed.
+def test_cli_refuses_a_metered_row_without_the_flag_even_with_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row: Row
+) -> None:
+    """The second layer: what the API's child does if the server check were bypassed.
 
-    The real CLI runs with the API's stdin. Provider keys are removed and the working
-    directory is empty, so a broken gate fails on the missing key and still makes no call.
+    Runs in-process against a fake client and an empty config. A checkout's config can hold
+    a real key, so this test must stay offline even when the paid gate is broken.
     """
+    calls: list[str] = []
+    constructed: list[dict[str, object]] = []
+    install_fake_any_llm(monkeypatch, lambda _model: "", calls=calls, constructed=constructed)
+    monkeypatch.setattr(orchestration, "load_runtime_config", lambda: {})
+    monkeypatch.setenv(f"{row.provider.upper()}_API_KEY", "test-only-not-a-secret")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     output = tmp_path / "o.epub"
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if not name.endswith(("_API_KEY", "_AUTH_TOKEN"))
-    }
-    environment["XDG_STATE_HOME"] = str(tmp_path / "state")
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "ai.cli",
-            str(make_epub(tmp_path / "b.epub")),
-            "--output",
-            str(output),
-            "--row",
-            row.name,
-        ],
-        cwd=tmp_path,
-        env=environment,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode != 0
-    assert local_api.PAID_CONSENT_REQUIRED in result.stderr
+    with pytest.raises(PaidAuthorizationError) as refused:
+        entry_module.main(
+            [str(make_epub(tmp_path / "b.epub")), "--output", str(output), "--row", row.name]
+        )
+    assert str(refused.value) == local_api.PAID_CONSENT_REQUIRED
+    assert not constructed and not calls
     assert not output.exists()
 
 
