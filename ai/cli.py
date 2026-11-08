@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bookweaver",
         description="Translate EPUB books through Antigravity or a metered model API.",
-        epilog="List the named rows for --row with: bookweaver rows",
+        epilog="List the named rows for --row with: bookweaver rows. Start the local API with: bookweaver serve",
     )
     p.add_argument(
         "input_path",
@@ -143,10 +143,21 @@ def _is_model_flag_explicit(argv: list[str] | None) -> bool:
 def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
     """Plain table: one row per line, evidence last because it is free text."""
     # Same fields as `rows --json`, in Row field order.
-    header = ("ROW", "PROVIDER", "TIER", "EFFORT", "MODEL", "STATUS", "LAYER", "EVIDENCE")
+    header = (
+        "ROW",
+        "RUNTIME",
+        "PROVIDER",
+        "TIER",
+        "EFFORT",
+        "MODEL",
+        "STATUS",
+        "LAYER",
+        "EVIDENCE",
+    )
     lines = [
         (
             row.name,
+            row.runtime,
             row.provider,
             row.profile,
             row.effort or "-",
@@ -180,6 +191,27 @@ def rows_main(tokens: list[str]) -> None:
         print(_format_rows(rows))
 
 
+def serve_main(tokens: list[str]) -> None:
+    """`bookweaver serve`: start the local API and its /docs page on 127.0.0.1."""
+    parser = argparse.ArgumentParser(
+        prog="bookweaver serve",
+        description="Start the local API on 127.0.0.1; open /docs in a browser.",
+    )
+    parser.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
+    args = parser.parse_args(tokens)
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
+    try:
+        from ai import local_api
+    except ModuleNotFoundError as exc:
+        parser.error(
+            f"The local API needs the optional api extra ({exc.name} is missing); "
+            "install it with: uv sync --extra api (in a checkout), "
+            "or install the bookweaver[api] package"
+        )
+    local_api.serve(args.port)
+
+
 def _apply_row(
     parser: argparse.ArgumentParser, args: argparse.Namespace, tokens: list[str]
 ) -> None:
@@ -208,6 +240,9 @@ def main(argv: list[str] | None = None) -> None:
     tokens = argv if argv is not None else sys.argv[1:]
     if tokens[:1] == ["rows"]:
         rows_main(tokens[1:])
+        return
+    if tokens[:1] == ["serve"]:
+        serve_main(tokens[1:])
         return
     parser = build_parser()
     args = parser.parse_args(tokens)

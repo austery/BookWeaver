@@ -2,7 +2,7 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phase 1 implemented (2026-11-07), awaiting the owner's real-run checkpoint; Phases 2-4 not started
+implementationStatus: Phases 1-2 implemented (2026-11-07); Phase 1 real-run checkpoint deferred by the owner; Phases 3-4 not started
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-07
@@ -82,7 +82,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /rows` | Enabled rows with runtime (quota pool), tier, family, effort, status (`default`, `manual`, `experiment`) and highest proven layer |
+| `GET /rows` | Enabled rows with runtime (quota pool), provider, tier, effort, concrete `model_id` (which names the family), status (`default`, `manual`, `experiment`), highest proven layer and evidence (§7.2) |
 | `POST /runs` | Start one run. Body: `source`, `output`, `row` (Enum), optional prompt and glossary fields, `allow_paid_api` (default false). Returns `202` with the run's checkpoint path |
 | `GET /runs/current` | Basic status (§4.2) |
 | `POST /runs/current/stop` | Send the same signal as Ctrl-C to the child process |
@@ -115,7 +115,7 @@ Richer monitoring is out of scope (§2).
 
 ## 6. Open items
 
-- [ ] Add FastAPI and uvicorn as an optional dependency group (`uv add --optional ui ...`) so the CLI install stays lean.
+- [x] Add FastAPI and uvicorn as the optional `api` extra so the CLI install stays lean; the dev group also carries them (plus httpx) so CI runs the HTTP tests (Phase 2).
 - [ ] Confirm that the checkpoint exposes planned versus done counts without loading all segment text.
 - [ ] Decide where the child process log is written so the UI can tail it after a restart.
 - [ ] Phase 3: start the child with a non-terminal stdin. Otherwise the paid gate could show the interactive `USE_API` prompt instead of rejecting a request without `allow_paid_api` (§4.2 step 4).
@@ -137,6 +137,16 @@ Richer monitoring is out of scope (§2).
 - Metered rows show no evidence layer: they have offline contract tests only (SPEC-024) and no live probe, so they do not claim Layer 2 executability.
 - `bookweaver rows` is a reserved first argument. A source literally named `rows` must be passed as `./rows`.
 - Checkpoint identity is unchanged: `--row agy-flash-low` resolves to the same profile and effective effort as the default command, so existing checkpoints resume. Only the recorded requested effort differs (`low` instead of none).
+
+Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because no book is waiting for translation; work continues to Phase 2. The first real run with `--row` still confirms the row names.
+
+### 7.2 Phase 2 as built (2026-11-07)
+
+- `uv run bookweaver serve [--port 8765]` starts the API in the foreground. The host is fixed at `127.0.0.1`; there is no host option. Like `rows`, `serve` is a reserved first argument; pass a source named `serve` as `./serve`.
+- `GET /rows` returns the same objects as `bookweaver rows --json`. The OpenAPI page at `/docs` shows `runtime`, `provider`, `profile`, `effort`, `status` and `layer` as enums.
+- Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 originally listed `family`; it was dropped, and §4.1 amended, because `model_id` already names the concrete model.
+- Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
+- `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
 
 ## 8. Verification
 

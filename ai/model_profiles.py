@@ -1,17 +1,20 @@
 """Version-pinned model selection; update concrete mappings here when upgrading."""
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, get_args
 
 ModelProfile = Literal["flash", "pro"]
 Effort = Literal["low", "medium", "high"]
-ProviderName = Literal["cli", "gemini", "openai", "anthropic"]
+MeteredProvider = Literal["gemini", "openai", "anthropic"]
+ProviderName = Literal["cli", MeteredProvider]
 # Owner policy for a row (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
 RowStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
 CliRuntime = Literal["antigravity"]
-METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
+# Runtime = quota pool: a subscription CLI, or the metered vendor for API rows.
+RowRuntime = Literal[CliRuntime, MeteredProvider]
+METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))
 
 
 @dataclass(frozen=True)
@@ -132,7 +135,7 @@ class _MeteredEntry:
 
 # Metered API models (SPEC-024 §6.2). Each row cites its vendor source and read date;
 # a provider without a row fails before any request instead of guessing a model.
-_API_MODELS: dict[tuple[ProviderName, ModelProfile], _MeteredEntry] = {
+_API_MODELS: dict[tuple[MeteredProvider, ModelProfile], _MeteredEntry] = {
     # Output cap 65,536 as listed in LiteLLM 1.108.2's model map, inspected 2026-11-07;
     # not yet checked against ai.google.dev, which was unreachable from that environment.
     ("gemini", "flash"): _MeteredEntry("gemini-2.5-flash", 65_536, None),
@@ -157,6 +160,7 @@ class Row:
     """
 
     name: str
+    runtime: RowRuntime
     provider: ProviderName
     profile: ModelProfile
     effort: Effort | None
@@ -179,6 +183,7 @@ def enabled_rows() -> tuple[Row, ...]:
     rows = [
         Row(
             f"{_RUNTIME_PREFIX[row.runtime]}-{row.profile}-{row.effort}",
+            row.runtime,
             "cli",
             row.profile,
             row.effort,
@@ -193,6 +198,7 @@ def enabled_rows() -> tuple[Row, ...]:
         # Effort is vendor-pinned. No layer: only offline contract tests (SPEC-024), no live probe.
         Row(
             f"{provider}-{profile}",
+            provider,  # runtime: the vendor is the quota pool
             provider,
             profile,
             None,
