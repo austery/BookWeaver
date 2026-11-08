@@ -2,13 +2,15 @@
 
 Rules (``~/Documents/global-skills/agents/DOC-LIFECYCLE.md``, "Link check"):
 
-- every relative inline link or image resolves to an existing path inside the repository;
-- absolute paths and ``file:`` links fail: write a machine-specific path in a code span;
+- every relative link or image resolves to an existing path inside the repository;
+- absolute paths, ``~`` paths and ``file:`` links (including ``<file:...>`` autolinks)
+  fail: write a machine-specific path in a code span;
 - files under ``docs/_archive/`` are byte-preserved history and are skipped, except the
   archive indexes (``docs/_archive/README.md`` and ``docs/_archive/<dir>/README.md``).
 
-Out of scope: heading anchors, external URLs and reference-style link definitions. Links
-inside fenced code blocks and code spans are not links. No third-party dependency.
+Markdown is parsed as CommonMark by ``markdown-it-py``, as the puresubs reference parses it
+with mdast, so code blocks, code spans, HTML and escapes are handled by the parser, not by
+patterns. Out of scope: heading anchors and external URLs.
 
 Usage: ``uv run python scripts/check_doc_links.py [repository root]``; exits 1 on any
 broken link.
@@ -20,22 +22,26 @@ import posixpath
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 from urllib.parse import unquote
 
-ARCHIVE = "docs/_archive/"
-Reason = Literal["missing", "outside-repository", "machine-specific"]
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
 
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-_CODE_SPAN = re.compile(r"(`+)(.+?)\1", re.DOTALL)
-# [text](target) or ![alt](target); text may hold one level of nested brackets.
-_INLINE_LINK = re.compile(r"!?\[(?:[^\[\]]|\[[^\[\]]*\])*\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+[^)]*)?\)")
+ARCHIVE = "docs/_archive/"
+Reason = Literal["missing", "outside-repository", "machine-specific", "unreadable"]
+
 _SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
 # A bare filename with an editor line suffix (file.py:12) looks like a URI scheme.
 _BARE_FILE_LINE = re.compile(r"^[^:/]+\.[^:/]+:\d+(?:-\d+)?(?:[?#].*)?$")
 _LINE_SUFFIX = re.compile(r":\d+(?:-\d+)?$")
+_PARSER = MarkdownIt("commonmark")
+# markdown-it drops file: and other "unsafe" targets as links; keep every target, so the
+# rules below can fail file: links instead of silently ignoring them.
+_PARSER.validateLink = lambda url: True  # type: ignore[method-assign]
 
 
 @dataclass(frozen=True)
@@ -55,48 +61,51 @@ def is_maintained(path: str) -> bool:
     return rest == "README.md" or re.fullmatch(r"[^/]+/README\.md", rest) is not None
 
 
-def _prose_lines(text: str) -> list[tuple[int, str]]:
-    """Lines outside fenced code blocks, with code spans blanked out."""
-    lines: list[tuple[int, str]] = []
-    fence: str | None = None
-    for number, line in enumerate(text.splitlines(), start=1):
-        opening = _FENCE.match(line)
-        if fence is not None:
-            if opening and opening.group(1)[0] == fence[0] and len(opening.group(1)) >= len(fence):
-                fence = None
+def _attribute(token: Token, name: str) -> str:
+    value = token.attrGet(name)
+    return value if isinstance(value, str) else ""
+
+
+def _links(text: str) -> Iterator[tuple[int, str]]:
+    """(line number, target) for every link and image, as CommonMark reads them."""
+    for block in _PARSER.parse(text):
+        if block.type != "inline" or block.map is None or block.children is None:
             continue
-        if opening:
-            fence = opening.group(1)
-            continue
-        lines.append((number, _CODE_SPAN.sub(lambda match: " " * len(match.group(0)), line)))
-    return lines
+        line = block.map[0] + 1
+        for token in block.children:
+            if token.type in ("softbreak", "hardbreak"):
+                line += 1
+            elif token.type in ("link_open", "image"):
+                target = _attribute(token, "href" if token.type == "link_open" else "src")
+                if target:
+                    yield line, target
 
 
 def _link_path(target: str) -> str:
-    unwrapped = target[1:-1] if target.startswith("<") and target.endswith(">") else target
-    without_fragment = unwrapped.split("#", 1)[0].split("?", 1)[0]
-    return unquote(_LINE_SUFFIX.sub("", without_fragment))
+    """The file path part of a target: no fragment, query or editor line suffix."""
+    without_fragment = target.split("#", 1)[0].split("?", 1)[0]
+    return _LINE_SUFFIX.sub("", without_fragment)
 
 
 def broken_links_in_text(root: Path, file: str, text: str) -> list[BrokenLink]:
     broken: list[BrokenLink] = []
-    for number, line in _prose_lines(text):
-        for match in _INLINE_LINK.finditer(line):
-            target = match.group(1)
-            bare = target[1:-1] if target.startswith("<") and target.endswith(">") else target
-            if bare.lower().startswith("file:") or bare.startswith("/") or bare.startswith("~"):
-                broken.append(BrokenLink(file, number, target, "machine-specific"))
-                continue
-            if (_SCHEME.match(bare) and not _BARE_FILE_LINE.match(bare)) or bare.startswith("#"):
-                continue
-            path = _link_path(target)
-            if not path:
-                continue
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(file), path))
-            if resolved == ".." or resolved.startswith("../"):
-                broken.append(BrokenLink(file, number, target, "outside-repository"))
-            elif not (root / resolved).exists():
-                broken.append(BrokenLink(file, number, target, "missing"))
+    for number, encoded in _links(text):
+        # The parser percent-encodes targets (spaces, non-ASCII); report them as written.
+        target = unquote(encoded)
+        if target.lower().startswith("file:") or target.startswith(("/", "~")):
+            broken.append(BrokenLink(file, number, target, "machine-specific"))
+            continue
+        is_uri = _SCHEME.match(target) and not _BARE_FILE_LINE.match(target)
+        if is_uri or target.startswith("#"):
+            continue
+        path = _link_path(target)
+        if not path:
+            continue
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(file), path))
+        if resolved == ".." or resolved.startswith("../"):
+            broken.append(BrokenLink(file, number, target, "outside-repository"))
+        elif not (root / resolved).exists():
+            broken.append(BrokenLink(file, number, target, "missing"))
     return broken
 
 
@@ -112,7 +121,12 @@ def find_broken_links(root: Path) -> list[BrokenLink]:
         raise SystemExit("No maintained Markdown files found; is this a git checkout?")
     broken: list[BrokenLink] = []
     for name in files:
-        text = (root / name).read_text(encoding="utf-8")
+        try:
+            text = (root / name).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            # A tracked file missing from the working tree (a plain mv) or not UTF-8.
+            broken.append(BrokenLink(name, 1, type(exc).__name__, "unreadable"))
+            continue
         broken.extend(broken_links_in_text(root, name, text))
     return broken
 

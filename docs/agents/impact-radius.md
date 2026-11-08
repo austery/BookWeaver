@@ -229,7 +229,7 @@ the PR:
   criteria (`probe_problems` and `PROBE_SAMPLES` in `ai/antigravity_provider.py`). Seeding a new
   pair needs probe evidence.
 - **Policy text:** `AGENTS.md`, `CONTEXT.md`, `docs/agents/`, and approved specs
-  under `docs/architecture/specs/`, and ADRs under `docs/architecture/decisions/`.
+  under `docs/architecture/specs/`; ADRs under `docs/architecture/decisions/`.
 
 ## Review depth
 

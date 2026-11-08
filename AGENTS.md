@@ -22,7 +22,7 @@ SPEC-021 is approved for implementation. The new application path and CLI wiring
 
 ## Documents
 
-Before publishing a PR that closes a task, follow the task closeout in `~/Documents/global-skills/agents/DOC-LIFECYCLE.md`. Archive: `docs/_archive/` (index in its `README.md`). Link check: `uv run python scripts/check_doc_links.py`. ADRs live in `docs/architecture/decisions/`, a Structure path.
+Before publishing a PR that closes a task, follow the task closeout in `~/Documents/global-skills/agents/DOC-LIFECYCLE.md`. Archive: `docs/_archive/`. Link check: `uv run python scripts/check_doc_links.py`. ADRs live in `docs/architecture/decisions/`, a Structure path.
 
 ## Verification
 

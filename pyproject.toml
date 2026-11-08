@@ -30,6 +30,8 @@ dev = [
     # The api extra, so CI runs the HTTP tests with the same bounds users install.
     "bookweaver[api]",
     "httpx>=0.28.1",
+    # CommonMark parser for scripts/check_doc_links.py (already locked through rich).
+    "markdown-it-py>=4.0.0",
     "pytest>=9.0.3",
     "ruff>=0.12.12",
     "tach>=0.34.0",
@@ -38,6 +40,8 @@ dev = [
 [tool.ruff]
 target-version = "py313"
 line-length = 100
+# Archived files are byte-preserved history (docs/_archive/README.md).
+extend-exclude = ["docs/_archive"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "ANN"]
