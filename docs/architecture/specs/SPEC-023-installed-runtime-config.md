@@ -42,7 +42,7 @@ This covers configuration and zero-work installed execution. It does not certify
 
 ## Delivery evidence
 
-Ticket: [#33](https://github.com/austery/BookWeaver/issues/33). Implementation head: `245a45a59d5709bacfc8ce922071f28391437b6c`. [Independent review](../../../pr-reviews/installed-runtime-v1.md): zero findings on both Standards and Spec axes.
+Ticket: [#33](https://github.com/austery/BookWeaver/issues/33). Implementation head: `245a45a59d5709bacfc8ce922071f28391437b6c`. [Independent review](https://github.com/austery/BookWeaver/blob/abbe09d/pr-reviews/installed-runtime-v1.md): zero findings on both Standards and Spec axes.
 
 - Full suite: **624 passed, zero skipped**, in 166.54s, with the local EPUB extraction opt-in enabled. No model calls.
 - Ruff lint and format (112 files), Tach, and diff whitespace checks passed.
