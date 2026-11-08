@@ -20,6 +20,10 @@ SPEC-021 is approved for implementation. The new application path and CLI wiring
 
 `translatebook.sh`, numbered Markdown scripts, Gemini CLI modules, and the orphaned `ai/epub_translate_roundtrip.py` remain retirement candidates. Do not resurrect or route the new application through them. Keep `08_epub_roundtrip_baseline.py`, EPUB package handling, isolated Markdown/PDF adapters, and evaluation assets.
 
+## Documents
+
+Before publishing a PR that closes a task, follow the task closeout in `~/Documents/global-skills/agents/DOC-LIFECYCLE.md`. Archive: `docs/_archive/` (index in its `README.md`). Link check: `uv run python scripts/check_doc_links.py`. ADRs live in `docs/architecture/decisions/`, a Structure path.
+
 ## Verification
 
 ```bash
@@ -27,6 +31,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
 uv run tach check
+uv run python scripts/check_doc_links.py
 ```
 
 Test behavior through the application, provider, and checkpoint boundaries. Record live probes separately from mocked tests. A tiny EPUB or a passing registry test is not proof of whole-book translation quality. See `docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md` and `docs/plans/2026-09-07-antigravity-protocol-probe.md`.
