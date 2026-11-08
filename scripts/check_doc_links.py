@@ -81,24 +81,28 @@ def _links(text: str) -> Iterator[tuple[int, str]]:
                     yield line, target
 
 
-def _link_path(target: str) -> str:
-    """The file path part of a target: no fragment, query or editor line suffix."""
-    without_fragment = target.split("#", 1)[0].split("?", 1)[0]
-    return _LINE_SUFFIX.sub("", without_fragment)
+def _link_path(encoded: str) -> str:
+    """The decoded file path of a target: no fragment, query or editor line suffix.
+
+    Split before decoding: an encoded delimiter such as ``%23`` is part of the file name.
+    """
+    without_fragment = encoded.split("#", 1)[0].split("?", 1)[0]
+    return unquote(_LINE_SUFFIX.sub("", without_fragment))
 
 
 def broken_links_in_text(root: Path, file: str, text: str) -> list[BrokenLink]:
     broken: list[BrokenLink] = []
     for number, encoded in _links(text):
-        # The parser percent-encodes targets (spaces, non-ASCII); report them as written.
+        # The parser percent-encodes targets (spaces, non-ASCII). Decode for the report and
+        # the machine-specific rule; read the link's structure from the encoded form.
         target = unquote(encoded)
         if target.lower().startswith("file:") or target.startswith(("/", "~")):
             broken.append(BrokenLink(file, number, target, "machine-specific"))
             continue
-        is_uri = _SCHEME.match(target) and not _BARE_FILE_LINE.match(target)
-        if is_uri or target.startswith("#"):
+        is_uri = _SCHEME.match(encoded) and not _BARE_FILE_LINE.match(encoded)
+        if is_uri or encoded.startswith("#"):
             continue
-        path = _link_path(target)
+        path = _link_path(encoded)
         if not path:
             continue
         resolved = posixpath.normpath(posixpath.join(posixpath.dirname(file), path))

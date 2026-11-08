@@ -171,6 +171,40 @@ def test_unreadable_tracked_file_is_reported(tmp_path: Path) -> None:
     assert "docs/gone.md:1: unreadable" in result.stderr
 
 
+def test_encoded_delimiters_are_part_of_the_file_name(tmp_path: Path) -> None:
+    root = make_repo(
+        tmp_path,
+        {
+            "README.md": "[hash](topic%23one.md) [query](what%3Fnow.md) [colon](a%3Ab.md)\n"
+            "[space](docs/x%20y.md) [real fragment](docs/x%20y.md#part)\n",
+            "topic#one.md": "t\n",
+            "what?now.md": "w\n",
+            "a:b.md": "a\n",
+            "docs/x y.md": "x\n",
+        },
+    )
+    result = check(root)
+    assert result.returncode == 0, result.stderr
+
+
+def test_encoded_delimiters_do_not_hide_a_missing_file(tmp_path: Path) -> None:
+    root = make_repo(
+        tmp_path,
+        {
+            "README.md": "[hash](README.md%23missing)\n"
+            "[query](README.md%3Fmissing)\n"
+            "[anchor-like](%23missing.md)\n"
+            "[scheme-like](missing%3Afile.md)\n"
+            "[line-like](README.md%3A12)\n",
+        },
+    )
+    result = check(root)
+    assert result.returncode == 1
+    for line in range(1, 6):
+        assert f"README.md:{line}: missing" in result.stderr
+    assert "5 broken Markdown link(s)." in result.stderr
+
+
 def test_archive_subdirectory_index_is_checked(tmp_path: Path) -> None:
     root = make_repo(
         tmp_path,
