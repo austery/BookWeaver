@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import zipfile
@@ -382,3 +383,28 @@ def test_no_run_yet_is_404(runs: tuple[TestClient, Path]) -> None:
 
 def test_state_dir_shares_the_certification_root() -> None:
     assert local_api.default_state_dir() == default_certification_path().parent
+
+
+def test_reused_pid_is_never_signalled(tmp_path: Path) -> None:
+    # After a restart the recorded PID may belong to another process (here: this test run).
+    state = tmp_path / "state"
+    state.mkdir()
+    record = {
+        "schema_version": 1,
+        "run_id": "r2",
+        "pid": os.getpid(),
+        "source": str(tmp_path / "not-this-process.epub"),
+        "output": "/b.zh.epub",
+        "row": "agy-flash-low",
+        "allow_paid_api": False,
+        "started_at": "2026-11-08T00:00:00+00:00",
+        "log_path": str(tmp_path / "none.log"),
+        "checkpoint_dir": str(tmp_path / "none"),
+        "planned_segments": 5,
+        "exit_code": None,
+        "ended_at": None,
+    }
+    (state / "current-run.json").write_text(json.dumps(record))
+    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
+    assert client.get("/runs/current").json()["state"] == "ended"
+    assert client.post("/runs/current/stop").status_code == 409

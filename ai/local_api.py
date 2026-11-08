@@ -132,22 +132,39 @@ class _RunStore:
                 self.write(replace(record, exit_code=exit_code, ended_at=_now()))
 
 
-def _alive(pid: int) -> bool:
+def _alive(record: RunRecord) -> bool:
+    """True only while the record's own child runs; a reused PID must never count.
+
+    After a server restart the PID may belong to an unrelated process, and stop would send
+    it SIGINT. The child's command line always carries the run's source path, so check it.
+    """
     try:
-        os.kill(pid, 0)
+        os.kill(record.pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True
-    return True
+        return False
+    listing = subprocess.run(
+        ["ps", "-o", "command=", "-p", str(record.pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return record.source in listing.stdout
 
 
-def _state(record: RunRecord) -> RunState:
-    if record.exit_code is None:
-        return "running" if _alive(record.pid) else "ended"
-    if record.exit_code == 0:
+def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState:
+    exit_code = record.exit_code
+    if exit_code is None and child is not None:
+        # This server started the child: its own exit status is authoritative.
+        exit_code = child.poll()
+        if exit_code is None:
+            return "running"
+    if exit_code is None:
+        return "running" if _alive(record) else "ended"
+    if exit_code == 0:
         return "finished"
-    if record.exit_code in (-signal.SIGINT, 128 + signal.SIGINT):
+    if exit_code in (-signal.SIGINT, 128 + signal.SIGINT):
         return "stopped"
     return "failed"
 
@@ -171,16 +188,19 @@ def _log_tail(path: str) -> list[str]:
     return lines[-_LOG_TAIL_LINES:]
 
 
-def _status(record: RunRecord) -> RunStatus:
+def _status(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunStatus:
+    exit_code = record.exit_code
+    if exit_code is None and child is not None:
+        exit_code = child.poll()
     return RunStatus(
         run_id=record.run_id,
-        state=_state(record),
+        state=_state(record, child),
         row=record.row,
         source=record.source,
         output=record.output,
         planned_segments=record.planned_segments,
         done_segments=_done_segments(record),
-        exit_code=record.exit_code,
+        exit_code=exit_code,
         started_at=record.started_at,
         ended_at=record.ended_at,
         log_path=record.log_path,
@@ -200,6 +220,7 @@ def create_app(
 ) -> FastAPI:
     """Build the API; separate from ``serve`` so tests can call it without a socket."""
     store = _RunStore(state_dir or default_state_dir())
+    children: dict[str, subprocess.Popen[bytes]] = {}
     allowed_origins = {f"http://{name}:{port}" for name in _LOCAL_HOSTNAMES}
     app = FastAPI(
         title="BookWeaver local API",
@@ -259,7 +280,7 @@ def create_app(
             raise HTTPException(400, f"Output directory does not exist: {output.parent}")
         with store.lock:
             current = store.read()
-            if current is not None and _state(current) == "running":
+            if current is not None and _state(current, children.get(current.run_id)) == "running":
                 raise HTTPException(409, f"Run {current.run_id} is still running")
             try:
                 planned = orchestration.count_epub_segments(source)
@@ -299,10 +320,11 @@ def create_app(
                 ended_at=None,
             )
             store.write(record)
+            children[run_id] = child
         threading.Thread(
             target=lambda: store.finish(run_id, child.wait()), daemon=True, name=f"run-{run_id}"
         ).start()
-        return _status(record)
+        return _status(record, child)
 
     @app.get(
         "/runs/current",
@@ -314,7 +336,7 @@ def create_app(
         record = store.read()
         if record is None:
             raise HTTPException(404, "No run has been started")
-        return _status(record)
+        return _status(record, children.get(record.run_id))
 
     @app.post(
         "/runs/current/stop",
@@ -328,10 +350,11 @@ def create_app(
     )
     def stop_run() -> RunStatus:
         record = store.read()
-        if record is None or _state(record) != "running":
+        child = children.get(record.run_id) if record is not None else None
+        if record is None or _state(record, child) != "running":
             raise HTTPException(409, "No run is running")
         os.killpg(record.pid, signal.SIGINT)
-        return _status(record)
+        return _status(record, child)
 
     return app
 
