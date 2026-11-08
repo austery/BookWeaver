@@ -164,7 +164,7 @@ def test_serve_rejects_an_invalid_port(capsys: pytest.CaptureFixture[str]) -> No
     assert "between 1 and 65535" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("missing", ["fastapi", "uvicorn"])
+@pytest.mark.parametrize("missing", ["fastapi", "python_multipart", "uvicorn"])
 def test_serve_without_the_api_extra_names_the_install_command(
     missing: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -900,12 +900,22 @@ def test_upload_never_replaces_a_different_book_with_the_same_name(
 
 
 @pytest.mark.parametrize(
-    "name", ["../evil.epub", "a/b.epub", "a\\b.epub", ".hidden.epub", ".epub", "notes.txt", ""]
+    "name",
+    [
+        "../evil.epub",
+        "a/b.epub",
+        "a\\b.epub",
+        ".hidden.epub",
+        ".epub",
+        "notes.txt",
+        "zero\u200bwidth.epub",
+        f"{'x' * 251}.epub",
+    ],
 )
 def test_upload_refuses_an_unsafe_source_name(runs: tuple[TestClient, Path], name: str) -> None:
     client, tmp_path = runs
     response = upload(client, epub_bytes(tmp_path), name=name)
-    assert response.status_code in (400, 422), response.text
+    assert response.status_code == 400, response.text
     assert_nothing_started(client, tmp_path)
     assert library_files(tmp_path) == []
     assert not (tmp_path / "evil.epub").exists()
@@ -913,7 +923,19 @@ def test_upload_refuses_an_unsafe_source_name(runs: tuple[TestClient, Path], nam
 
 @pytest.mark.parametrize(
     "name",
-    ["../evil.epub", "a/b.epub", "a\\b", ".hidden.epub", "..", "x.txt", "book.epub", "BOOK.EPUB"],
+    [
+        "../evil.epub",
+        "a/b.epub",
+        "a\\b",
+        ".hidden.epub",
+        "..",
+        "x.txt",
+        "book.epub",
+        "BOOK.EPUB",
+        "zero\u200bwidth.epub",
+        "new\nline.epub",
+        f"{'x' * 251}.epub",
+    ],
 )
 def test_upload_refuses_an_unsafe_output_name(runs: tuple[TestClient, Path], name: str) -> None:
     client, tmp_path = runs
@@ -1040,3 +1062,31 @@ def test_upload_that_cannot_start_keeps_nothing_so_a_corrected_copy_can_follow(
     assert not (book / "book.epub").exists()
     blocker.unlink()
     assert upload(client, epub_bytes(tmp_path, "corrected")).status_code == 202
+
+
+def test_upload_refuses_a_default_output_name_that_would_be_too_long(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), name=f"{'x' * 248}.epub")
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_upload_refuses_a_prompt_that_no_process_can_receive(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), prompt="bad\0prompt")
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_docs_page_states_the_upload_limit(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
+    ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
+    file_field = schema["components"]["schemas"][ref]["properties"]["file"]
+    assert "200 MiB" in file_field["description"]

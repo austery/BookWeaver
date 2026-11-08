@@ -46,6 +46,7 @@ _UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 _LOG_TAIL_LINES = 20
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 _COPY_CHUNK_BYTES = 1024 * 1024
+_MAX_FILE_NAME_BYTES = 255
 # The CLI's own wording: ai/runtime_factory.py (metered row without consent) and
 # ai/orchestration.py (consent on a subscription row). Tests keep them identical.
 PAID_CONSENT_REQUIRED = "Paid API requires --allow-paid-api when non-interactive"
@@ -358,9 +359,12 @@ def _check_consent(row: orchestration.Row, allow_paid_api: bool) -> None:
 
 def _checked_file_name(name: str, label: str) -> str:
     """A name that stays inside its book folder: no directories and no hidden files."""
-    is_plain = name == Path(name).name and not any(mark in name for mark in ("\\", "\0"))
-    if not name or not is_plain or name.startswith("."):
+    is_plain = name == Path(name).name and "\\" not in name
+    # `ps` escapes unprintable characters, and finding a live run after a restart reads `ps`.
+    if not name or not is_plain or name.startswith(".") or not name.isprintable():
         raise HTTPException(400, f"{label} must be a plain file name: {name!r}")
+    if len(os.fsencode(name)) > _MAX_FILE_NAME_BYTES:
+        raise HTTPException(400, f"{label} is too long for a file name: {name!r}")
     return name
 
 
@@ -609,25 +613,30 @@ def create_app(
         ),
     )
     def upload_run(
-        file: Annotated[UploadFile, File(description="The source EPUB, at most 200 MiB.")],
+        file: Annotated[
+            UploadFile,
+            File(description=f"The source EPUB, at most {MAX_UPLOAD_BYTES // 1024**2} MiB."),
+        ],
         output_name: Annotated[
             str,
-            Form(description="Name of the translated file. Empty means `<book name>.zh.epub`."),
+            Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
         row: Annotated[
             RowName,
-            Form(description="Model and effort to use. `GET /rows` explains each row."),
+            Form(description="Model and effort to use, as `GET /rows` explains them."),
         ] = DEFAULT_ROW,
         prompt: Annotated[
-            str, Form(description="Extra translation instructions. Empty means none.")
+            str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
         allow_paid_api: Annotated[
             bool,
-            Form(description="Consent to paid calls for this run. Paid rows require it."),
+            Form(description="Consent to paid calls for this run, which paid rows require."),
         ] = False,
     ) -> RunStatus:
         selected = orchestration.find_row(row.value)
         _check_consent(selected, allow_paid_api)
+        if "\0" in prompt:
+            raise HTTPException(400, "prompt must not contain a NUL character")
         source_name = _checked_file_name(file.filename or "", "The uploaded file")
         if not _is_epub_name(source_name):
             raise HTTPException(400, f"The uploaded file must be an EPUB: {source_name!r}")

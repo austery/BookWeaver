@@ -57,7 +57,7 @@ Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user inter
 5. Press **Execute**. The translation starts at once and uses quota or money, as the row says.
 6. Use `GET /runs/current` to read the state, the progress, and the last log lines.
 
-The book and its translation stay in one folder:
+The book and its translation stay in one folder. `<book name>` is the uploaded file name without `.epub`, not the title inside the book.
 
 ```text
 ~/Documents/BookWeaver/<book name>/
@@ -69,7 +69,8 @@ The run log and the saved progress are in the same folder.
 
 - Upload the same file with the same row and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
 - A row from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
-- BookWeaver never replaces a stored book. A different file with the same name returns 409. Rename the file to upload it.
+- BookWeaver never replaces the uploaded copy. A different file with the same name returns 409. Rename the file to upload it.
+- A new run rewrites the translation file. Copy the file first if you edited it by hand.
 - A paid row needs `allow_paid_api` set to `true`. Without it, the server returns 400 and stores nothing. The consent covers this run only.
 
 ### Other endpoints
@@ -86,7 +87,8 @@ curl -X POST http://127.0.0.1:8765/runs \
   -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "row": "agy-flash-low"}'
 ```
 
-- `POST /runs` needs absolute paths. A relative path resolves against the directory where you started the server. The output directory must already exist. It also accepts `"allow_paid_api": true` for a paid row.
+- Use absolute paths with `POST /runs`. The server resolves a relative path against the directory where you started it. The output directory must already exist.
+- A paid row needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing.
 - The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
 - A stop keeps the saved batches for a later run. It loses the batch in progress. On a paid row, the vendor may already have charged for that batch.
 - The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
