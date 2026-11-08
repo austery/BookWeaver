@@ -2,7 +2,8 @@
 
 **North Star: pending (owner to write).** The policy expects this map to open
 with a link to the product's mission, intended form and non-goals, and to
-derive Trunk from the mission. The owner will write it; until then:
+derive Trunk from the mission. The owner will write it outside the repository;
+agents read only its `## Current core` section. Until it exists:
 
 - Treat every Trunk assignment below as **provisional**. Re-check it against
   the North Star once it exists.
