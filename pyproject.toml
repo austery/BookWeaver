@@ -27,12 +27,12 @@ ai = ["config_schema.json"]
 
 [dependency-groups]
 dev = [
-    "fastapi>=0.162.2",
+    # The api extra, so CI runs the HTTP tests with the same bounds users install.
+    "bookweaver[api]",
     "httpx>=0.28.1",
     "pytest>=9.0.3",
     "ruff>=0.12.12",
     "tach>=0.34.0",
-    "uvicorn>=0.54.0",
 ]
 
 [tool.ruff]

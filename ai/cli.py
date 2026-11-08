@@ -206,7 +206,8 @@ def serve_main(tokens: list[str]) -> None:
     except ModuleNotFoundError as exc:
         parser.error(
             f"The local API needs the optional api extra ({exc.name} is missing); "
-            "install it with: uv sync --extra api"
+            "install it with: uv sync --extra api (in a checkout), "
+            "or install the bookweaver[api] package"
         )
     local_api.serve(args.port)
 

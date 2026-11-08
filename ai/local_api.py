@@ -1,17 +1,18 @@
 """Local HTTP API over the application path (SPEC-026); its generated /docs page is the UI.
 
 Bound to 127.0.0.1 only. It reads the same named rows as the CLI and keeps no state of
-its own. Requires the optional ``api`` extra (FastAPI and uvicorn).
+its own. Requires the optional ``api`` extra (FastAPI and uvicorn), imported at module load so a
+missing one is reported by the CLI before anything starts.
 """
 
 from __future__ import annotations
 
+import uvicorn
 from fastapi import FastAPI
 
 from ai import orchestration
 
 HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
 
 
 def create_app() -> FastAPI:
@@ -19,8 +20,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="BookWeaver local API",
         description=(
-            "Choose an enabled row, then start one run. Rows are the same as "
-            "`bookweaver rows`; anything not listed is rejected."
+            "Lists the enabled rows, the same as `bookweaver rows`. "
+            "Starting runs arrives in SPEC-026 Phase 3."
         ),
         version="0.1.0",
     )
@@ -40,8 +41,6 @@ def create_app() -> FastAPI:
     return app
 
 
-def serve(port: int = DEFAULT_PORT) -> None:
+def serve(port: int) -> None:
     """Run the API in the foreground until interrupted; never binds beyond this Mac."""
-    import uvicorn
-
     uvicorn.run(create_app(), host=HOST, port=port)

@@ -2,7 +2,7 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phases 1-2 implemented (2026-11-07); Phases 3-4 not started
+implementationStatus: Phases 1-2 implemented (2026-11-07); Phase 1 real-run checkpoint deferred by the owner; Phases 3-4 not started
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-07
@@ -82,7 +82,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /rows` | Enabled rows with runtime (quota pool), tier, family, effort, status (`default`, `manual`, `experiment`) and highest proven layer |
+| `GET /rows` | Enabled rows with runtime (quota pool), provider, tier, effort, concrete `model_id` (which names the family), status (`default`, `manual`, `experiment`), highest proven layer and evidence (§7.2) |
 | `POST /runs` | Start one run. Body: `source`, `output`, `row` (Enum), optional prompt and glossary fields, `allow_paid_api` (default false). Returns `202` with the run's checkpoint path |
 | `GET /runs/current` | Basic status (§4.2) |
 | `POST /runs/current/stop` | Send the same signal as Ctrl-C to the child process |
@@ -142,10 +142,11 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 
 ### 7.2 Phase 2 as built (2026-11-07)
 
-- `uv run bookweaver serve [--port 8765]` starts the API in the foreground. The host is fixed at `127.0.0.1`; there is no host option.
+- `uv run bookweaver serve [--port 8765]` starts the API in the foreground. The host is fixed at `127.0.0.1`; there is no host option. Like `rows`, `serve` is a reserved first argument; pass a source named `serve` as `./serve`.
 - `GET /rows` returns the same objects as `bookweaver rows --json`. The OpenAPI page at `/docs` shows `runtime`, `provider`, `profile`, `effort`, `status` and `layer` as enums.
-- Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 also lists `family`; it is left out because `model_id` already names the concrete model.
-- `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command instead of failing with a stack trace.
+- Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 also lists `family`; it is left out because `model_id` already names the concrete model. §4.1 is amended to match.
+- Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
+- `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
 
 ## 8. Verification
 

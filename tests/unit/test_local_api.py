@@ -52,8 +52,9 @@ def test_serve_rejects_an_invalid_port(capsys: pytest.CaptureFixture[str]) -> No
     assert "between 1 and 65535" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("missing", ["fastapi", "uvicorn"])
 def test_serve_without_the_api_extra_names_the_install_command(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    missing: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     import uvicorn
 
@@ -63,11 +64,11 @@ def test_serve_without_the_api_extra_names_the_install_command(
         raise AssertionError("serve must not start without the api extra")
 
     monkeypatch.setattr(uvicorn, "run", never_serve)
-    # Force a fresh import of ai.local_api with fastapi unavailable.
-    monkeypatch.setitem(sys.modules, "fastapi", None)
+    # Force a fresh import of ai.local_api with one dependency unavailable.
+    monkeypatch.setitem(sys.modules, missing, None)
     monkeypatch.delitem(sys.modules, "ai.local_api")
     monkeypatch.delattr(ai, "local_api")
     with pytest.raises(SystemExit):
         entry_module.main(["serve"])
     error = capsys.readouterr().err
-    assert "fastapi" in error and "uv sync --extra api" in error
+    assert missing in error and "uv sync --extra api" in error
