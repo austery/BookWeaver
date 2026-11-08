@@ -280,7 +280,10 @@ def test_metered_row_with_consent_passes_the_flag(runs: tuple[TestClient, Path])
     assert child_args(settle(client))[-3:] == ["--row", "gemini-flash", "--allow-paid-api"]
 
 
-def test_rejection_texts_match_the_cli_paid_gate(tmp_path: Path) -> None:
+def test_rejection_texts_match_the_cli_paid_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     # Consent on a subscription row: the CLI itself raises this before any provider exists.
     with pytest.raises(ValueError) as cli_error:
         entry_module.main(
@@ -391,6 +394,35 @@ def test_prompt_starting_with_a_dash_reaches_the_child(runs: tuple[TestClient, P
     status = settle(client)
     assert status["state"] == "finished"
     assert "--prompt=-formal" in child_args(status)
+
+
+def test_restarted_server_still_controls_a_live_child(
+    runs: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A non-ASCII path must survive the ps lookup that identifies the child after a restart.
+    client, tmp_path = runs
+    monkeypatch.setenv("FAKE_SLEEP", "30")
+    script = tmp_path / "fake_child.py"
+    start(client, tmp_path, source=str(make_epub(tmp_path / "书.epub")))
+    restarted = TestClient(
+        local_api.create_app(
+            state_dir=tmp_path / "state", child_command=(sys.executable, str(script))
+        ),
+        base_url=BASE_URL,
+    )
+    assert restarted.get("/runs/current").json()["state"] == "running"
+    assert restarted.post("/runs/current/stop").status_code == 202
+    assert settle(client)["state"] == "stopped"
+
+
+def test_damaged_record_is_refused_with_its_path(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "current-run.json").write_text("{not json")
+    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
+    response = client.get("/runs/current")
+    assert response.status_code == 500
+    assert "current-run.json" in response.json()["detail"]
 
 
 def test_no_run_yet_is_404(runs: tuple[TestClient, Path]) -> None:

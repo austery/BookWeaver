@@ -1,7 +1,8 @@
 """Local HTTP API over the application path (SPEC-026); its generated /docs page is the UI.
 
 Bound to 127.0.0.1 only. It reads the same named rows as the CLI and starts runs as a child
-``bookweaver`` process (SPEC-026 §7.3). Its only own state is the run record file. Requires the
+``bookweaver`` process (SPEC-026 §7.3). Its own files are the run record, its lock file, and
+each run's log. Requires the
 optional ``api`` extra (FastAPI and uvicorn), imported at module load so a missing one is
 reported by the CLI before anything starts.
 """
@@ -38,6 +39,7 @@ _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 _RECORD_NAME = "current-run.json"
 _LOCK_NAME = "current-run.lock"
 _START_TOLERANCE_S = 5
+_UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 _LOG_TAIL_LINES = 20
 # The CLI's own wording: ai/runtime_factory.py (metered row without consent) and
 # ai/orchestration.py (consent on a subscription row). Tests keep them identical.
@@ -132,9 +134,25 @@ class _RunStore:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
+        except (OSError, ValueError) as exc:
+            raise self._damaged(exc) from exc
         if not isinstance(data, dict) or data.get("schema_version") != 1:
-            raise HTTPException(500, f"Unreadable run record: {self.path}")
-        return RunRecord(**data)
+            raise self._damaged(ValueError("not a schema-version-1 record"))
+        try:
+            record = RunRecord(**data)
+        except TypeError as exc:
+            raise self._damaged(exc) from exc
+        if not isinstance(record.pid, int) or not isinstance(record.source, str):
+            raise self._damaged(ValueError("pid or source has the wrong type"))
+        return record
+
+    def _damaged(self, cause: Exception) -> HTTPException:
+        # Whether a run is still live is unknown, so refuse instead of guessing.
+        return HTTPException(
+            500,
+            f"Run record {self.path} is damaged ({cause}); check that no run is active, "
+            "then delete the file",
+        )
 
     def write(self, record: RunRecord) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -146,7 +164,10 @@ class _RunStore:
 
     def finish(self, run_id: str, exit_code: int) -> None:
         with self.lock():
-            record = self.read()
+            try:
+                record = self.read()
+            except HTTPException:
+                return  # A damaged record is reported by the next request.
             if record is not None and record.run_id == run_id and record.exit_code is None:
                 self.write(replace(record, exit_code=exit_code, ended_at=_now()))
 
@@ -162,22 +183,29 @@ def _alive(record: RunRecord) -> bool:
         os.kill(record.pid, 0)
     except (ProcessLookupError, PermissionError):
         return False
-    listing = subprocess.run(
-        ["ps", "-o", "lstart=,command=", "-p", str(record.pid)],
-        capture_output=True,
-        text=True,
-        check=False,
-        env={**os.environ, "LC_ALL": "C"},
-    )
-    line = listing.stdout.strip()
+    # Start time in the C locale, so day and month names parse; for example
+    # "Sun Nov  8 09:36:09 2026" (local time).
+    started = _ps(record.pid, "lstart=", {"LC_ALL": "C"})
+    # Command line in a UTF-8 locale; under C, ps escapes non-ASCII paths and never matches.
+    command = _ps(record.pid, "command=", {"LC_ALL": _UTF8_LOCALE})
     try:
-        # `lstart` is a fixed 24-character local time, for example "Sun Nov  8 09:36:09 2026".
-        process_start = datetime.strptime(line[:24], "%a %b %d %H:%M:%S %Y").astimezone()
+        process_start = datetime.strptime(started, "%a %b %d %H:%M:%S %Y").astimezone()
         recorded_start = datetime.fromisoformat(record.started_at)
     except ValueError:
         return False
     close_in_time = abs((process_start - recorded_start).total_seconds()) <= _START_TOLERANCE_S
-    return close_in_time and record.source in line[24:]
+    return close_in_time and record.source in command
+
+
+def _ps(pid: int, field: str, locale: dict[str, str]) -> str:
+    listing = subprocess.run(
+        ["ps", "-o", field, "-p", str(pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, **locale},
+    )
+    return listing.stdout.strip()
 
 
 def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState:
@@ -396,7 +424,10 @@ def create_app(
         child = children.get(record.run_id) if record is not None else None
         if record is None or _state(record, child) != "running":
             raise HTTPException(409, "No run is running")
-        os.killpg(record.pid, signal.SIGINT)
+        try:
+            os.killpg(record.pid, signal.SIGINT)
+        except ProcessLookupError:
+            raise HTTPException(409, "No run is running") from None
         return _status(record, child)
 
     return app
