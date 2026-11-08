@@ -1114,3 +1114,15 @@ def test_record_from_before_the_preset_rename_is_refused(tmp_path: Path) -> None
     response = restarted(tmp_path / "state").get("/runs/current")
     assert response.status_code == 500
     assert str(tmp_path / "state" / "current-run.json") in response.json()["detail"]
+
+
+@pytest.mark.parametrize("old_value", ["agy-pro-low", "gemini-flash"])
+def test_upload_with_the_old_row_field_starts_nothing(
+    runs: tuple[TestClient, Path], old_value: str
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row=old_value)
+    assert response.status_code == 400, response.text
+    assert "preset" in response.json()["detail"]
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []

@@ -635,7 +635,11 @@ def create_app(
             bool,
             Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
+        row: Annotated[str | None, Form(include_in_schema=False)] = None,
     ) -> RunStatus:
+        # An ignored old field would silently run the default preset and spend its quota.
+        if row is not None:
+            raise HTTPException(400, "The field `row` is now `preset`; nothing was started")
         selected = orchestration.find_preset(preset.value)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:
