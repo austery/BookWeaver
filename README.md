@@ -44,15 +44,39 @@ Start the local API server. It stays in the foreground of your terminal, on `127
 uv run bookweaver serve
 ```
 
-Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user interface: it lists each endpoint and lets you send requests. It loads its assets from a CDN. Without network the page is blank, but the endpoints still work. Use `--port` to choose another port. Press Ctrl-C to stop the server.
+Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user interface. It loads its assets from a CDN. Without network the page is blank, but the endpoints still work. Use `--port` to choose another port. Press Ctrl-C to stop the server.
 
 `uv sync --frozen` already installs what the server needs. To run without the dev tools, start the server with `uv run --no-dev --extra api bookweaver serve`. An installed package also needs the `api` extra.
+
+### Translate a book
+
+1. Open `POST /runs/upload` on the `/docs` page and press **Try it out**.
+2. Choose the EPUB in `file` (at most 200 MiB).
+3. Confirm the output name. Leave `output_name` empty to use `<book name>.zh.epub`.
+4. Choose the `row` from the list. The default is `agy-flash-low`.
+5. Press **Execute**. The translation starts at once and uses quota or money, as the row says.
+6. Use `GET /runs/current` to read the state, the progress, and the last log lines.
+
+The book and its translation stay in one folder:
+
+```text
+~/Documents/BookWeaver/<book name>/
+  <book name>.epub       the uploaded copy
+  <book name>.zh.epub    the translation
+```
+
+The run log and the saved progress are in the same folder.
+
+- Upload the same file with the same row and prompt to resume. A different row or prompt fails, because the API has no `--force-resume`; use the CLI for that.
+- BookWeaver never replaces a stored book. A different file with the same name returns 409. Rename the file to upload it.
+- A paid row needs `allow_paid_api` set to `true`. Without it, the server returns 400 and stores nothing. The consent covers this run only.
+
+### Other endpoints
 
 | Endpoint | Action |
 |---|---|
 | `GET /rows` | List the enabled rows, the same as `bookweaver rows --json`. |
-| `POST /runs` | Start one translation. Only one can run at a time. |
-| `GET /runs/current` | Show the state, progress, and last log lines of the latest run. |
+| `POST /runs` | Start one translation from paths on this Mac, with no upload. Only one can run at a time. |
 | `POST /runs/current/stop` | Stop the run, the same as Ctrl-C on the CLI. |
 
 ```bash
@@ -61,11 +85,9 @@ curl -X POST http://127.0.0.1:8765/runs \
   -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "row": "agy-flash-low"}'
 ```
 
-- Use absolute paths. A relative path resolves against the directory where you started the server. The output directory must already exist.
-- A paid row needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing. The consent covers this run only.
+- `POST /runs` needs absolute paths. A relative path resolves against the directory where you started the server. The output directory must already exist. It also accepts `"allow_paid_api": true` for a paid row.
 - The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
-- A stop keeps the saved batches. A later run with the same book, row, and prompt resumes from them. A different row or prompt fails, because the API has no `--force-resume`; use the CLI for that.
-- A stop loses the batch in progress. On a paid row, the vendor may already have charged for that batch.
+- A stop keeps the saved batches for a later run. It loses the batch in progress. On a paid row, the vendor may already have charged for that batch.
 - The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
 
 ## Batch size and fidelity
