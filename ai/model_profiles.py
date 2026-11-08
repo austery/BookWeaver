@@ -11,6 +11,8 @@ RowStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
 CliRuntime = Literal["antigravity"]
+# Runtime = quota pool: a subscription CLI, or the metered vendor for API rows.
+RowRuntime = Literal["antigravity", "gemini", "openai", "anthropic"]
 METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 
 
@@ -157,6 +159,7 @@ class Row:
     """
 
     name: str
+    runtime: RowRuntime
     provider: ProviderName
     profile: ModelProfile
     effort: Effort | None
@@ -179,6 +182,7 @@ def enabled_rows() -> tuple[Row, ...]:
     rows = [
         Row(
             f"{_RUNTIME_PREFIX[row.runtime]}-{row.profile}-{row.effort}",
+            row.runtime,
             "cli",
             row.profile,
             row.effort,
@@ -193,6 +197,7 @@ def enabled_rows() -> tuple[Row, ...]:
         # Effort is vendor-pinned. No layer: only offline contract tests (SPEC-024), no live probe.
         Row(
             f"{provider}-{profile}",
+            provider,  # runtime: the vendor is the quota pool
             provider,
             profile,
             None,

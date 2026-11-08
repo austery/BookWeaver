@@ -79,4 +79,8 @@ depends_on = ["ai.core"]
 
 [[modules]]
 path = "ai.cli"
+depends_on = ["ai.orchestration", "ai.local_api"]
+
+[[modules]]
+path = "ai.local_api"
 depends_on = ["ai.orchestration"]

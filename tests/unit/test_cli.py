@@ -2543,8 +2543,9 @@ class TestNamedRows:
         entry_module.main(["rows"])
         lines = capsys.readouterr().out.splitlines()
         assert lines[0].split()[0] == "ROW"
-        assert lines[1].split()[:6] == [
+        assert lines[1].split()[:7] == [
             "agy-flash-low",
+            "antigravity",
             "cli",
             "flash",
             "low",
