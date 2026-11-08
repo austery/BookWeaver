@@ -143,6 +143,10 @@ _API_MODELS: dict[tuple[ProviderName, ModelProfile], _MeteredEntry] = {
     # OpenAI: unfilled until its model documentation can be cited (SPEC-024 §11 Phase 3).
 }
 
+# Every metered entry becomes a paid row; a non-metered key would mislabel a free runtime.
+if any(provider not in METERED_PROVIDERS for provider, _ in _API_MODELS):
+    raise RuntimeError("_API_MODELS may contain only metered providers")
+
 
 @dataclass(frozen=True)
 class Row:

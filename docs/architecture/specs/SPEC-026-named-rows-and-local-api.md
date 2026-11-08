@@ -118,6 +118,7 @@ Richer monitoring is out of scope (§2).
 - [ ] Add FastAPI and uvicorn as an optional dependency group (`uv add --optional ui ...`) so the CLI install stays lean.
 - [ ] Confirm that the checkpoint exposes planned versus done counts without loading all segment text.
 - [ ] Decide where the child process log is written so the UI can tail it after a restart.
+- [ ] Phase 3: start the child with a non-terminal stdin. Otherwise the paid gate could show the interactive `USE_API` prompt instead of rejecting a request without `allow_paid_api` (§4.2 step 4).
 
 ## 7. Phases
 
@@ -130,7 +131,7 @@ Richer monitoring is out of scope (§2).
 
 - Row names: `<runtime>-<tier>-<effort>` for subscription CLI rows (`agy-flash-low`), `<provider>-<tier>` for metered rows (`gemini-flash`, `anthropic-pro`). Metered rows have no effort part because the vendor effort is pinned in `ai/model_profiles.py`.
 - `ai/model_profiles.py` derives the rows (`enabled_rows()`, `find_row()`) from `_CLI_ROWS` and `_API_MODELS`, so there is no second list to keep in sync. Entry points reach them through `ai.orchestration`, which keeps the tach rule that `ai.cli` depends only on the application boundary.
-- `bookweaver rows` prints a table; `bookweaver rows --json` prints the same fields for scripts and agents.
+- `bookweaver rows` prints a table; `bookweaver rows --json` prints the same fields for scripts and agents. The table shows a missing effort or layer as `-`.
 - `--row NAME` sets provider, tier and effort. Combining it with `--model`, `--effort` or `--provider` (abbreviations included) is an error. The separate flags remain for now.
 - A metered row does not imply consent. It uses the same paid gate as `--provider`: `--allow-paid-api`, or typing `USE_API` at the interactive prompt; a non-interactive run without the flag fails. Its evidence text says so in both the table and the JSON.
 - Metered rows show no evidence layer: they have offline contract tests only (SPEC-024) and no live probe, so they do not claim Layer 2 executability.

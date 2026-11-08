@@ -2543,7 +2543,24 @@ class TestNamedRows:
         entry_module.main(["rows"])
         lines = capsys.readouterr().out.splitlines()
         assert lines[0].split()[0] == "ROW"
-        assert lines[1].split()[:4] == ["agy-flash-low", "cli", "gemini-3.8-flash-low", "default"]
+        assert lines[1].split()[:6] == [
+            "agy-flash-low",
+            "cli",
+            "flash",
+            "low",
+            "gemini-3.8-flash-low",
+            "default",
+        ]
+
+    def test_rows_table_and_json_carry_the_same_fields(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        entry_module.main(["rows"])
+        header = capsys.readouterr().out.splitlines()[0].split()
+        entry_module.main(["rows", "--json"])
+        keys = list(json.loads(capsys.readouterr().out)[0])
+        renamed = {"ROW": "name", "TIER": "profile", "MODEL": "model_id"}
+        assert [renamed.get(column, column.lower()) for column in header] == keys
 
     def test_rows_json_is_machine_readable(self, capsys: pytest.CaptureFixture[str]) -> None:
         entry_module.main(["rows", "--json"])

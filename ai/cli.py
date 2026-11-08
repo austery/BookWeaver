@@ -142,11 +142,14 @@ def _is_model_flag_explicit(argv: list[str] | None) -> bool:
 
 def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
     """Plain table: one row per line, evidence last because it is free text."""
-    header = ("ROW", "PROVIDER", "MODEL", "STATUS", "LAYER", "EVIDENCE")
+    # Same fields as `rows --json`, in Row field order.
+    header = ("ROW", "PROVIDER", "TIER", "EFFORT", "MODEL", "STATUS", "LAYER", "EVIDENCE")
     lines = [
         (
             row.name,
             row.provider,
+            row.profile,
+            row.effort or "-",
             row.model_id,
             row.status,
             "-" if row.layer is None else str(row.layer),
