@@ -82,6 +82,17 @@ def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
     rows = model_profiles._CLI_ROWS
     with pytest.raises(RuntimeError, match="Duplicate"):
         model_profiles._validate_rows((*rows, rows[0]))
+    unnamed = model_profiles._CliRow(
+        "codex",  # type: ignore[arg-type]  # a runtime without a prefix entry
+        "flash",
+        "gpt-x",
+        "low",
+        "experiment",
+        1,
+        "",
+    )
+    with pytest.raises(RuntimeError, match="without a row-name prefix"):
+        model_profiles._validate_rows((*rows, unnamed))
     with pytest.raises(RuntimeError, match="without a row"):
         model_profiles._validate_seeds(rows, frozenset({("1.5.3", "gemini-3.1-pro-low")}))
 
@@ -107,6 +118,9 @@ def test_metered_rows_are_manual_and_carry_no_effort() -> None:
         None,
         "manual",
     )
+    # The listing must carry the paid-consent rule in the data, not only in the table.
+    assert row.layer is None
+    assert "--allow-paid-api" in row.evidence and "USE_API" in row.evidence
 
 
 def test_unknown_row_names_the_enabled_rows() -> None:

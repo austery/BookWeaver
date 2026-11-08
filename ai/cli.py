@@ -150,7 +150,7 @@ def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
             row.model_id,
             row.status,
             "-" if row.layer is None else str(row.layer),
-            row.evidence or ("paid; needs --allow-paid-api" if row.provider != "cli" else ""),
+            row.evidence,
         )
         for row in rows
     ]
@@ -235,9 +235,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.extract_glossary or args.glossary_mode or args.glossary:
             parser.error("Glossary options are EPUB-only")
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
-    model = orchestration.ModelSpec(
-        args.model, args.effort, args.row is not None or _is_model_flag_explicit(tokens)
-    )
+    model = orchestration.ModelSpec(args.model, args.effort, _is_model_flag_explicit(tokens))
     provider = orchestration.ProviderSpec(args.provider, args.allow_paid_api)
     quality = orchestration.QualityPolicy(
         not args.no_sanity_probe, args.max_batch_chars, args.max_batch_segments

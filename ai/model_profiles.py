@@ -27,6 +27,10 @@ class _CliRow:
     evidence: str
 
 
+# Short runtime names used in row names; one per CliRuntime.
+_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy"}
+
+
 # Named rows, not the Cartesian product: anything absent here is rejected before a run.
 # The family is the runtime's model family; effort is passed once through ``--effort``.
 _CLI_ROWS: tuple[_CliRow, ...] = (
@@ -91,6 +95,9 @@ def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
         raise RuntimeError(f"Duplicate CLI rows in ai/model_profiles.py: {duplicates}")
     if ("antigravity", "flash", "low") not in keys:
         raise RuntimeError("The default antigravity flash/low row is missing")
+    unnamed = sorted({row.runtime for row in rows} - set(_RUNTIME_PREFIX))
+    if unnamed:
+        raise RuntimeError(f"CLI runtimes without a row-name prefix: {unnamed}")
 
 
 # Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
@@ -155,8 +162,11 @@ class Row:
     evidence: str
 
 
-# Short runtime names used in row names; one per CliRuntime.
-_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy"}
+# The row never implies consent; the paid gate in ai/runtime_factory.py still applies.
+_METERED_EVIDENCE = (
+    "paid; consent per run: --allow-paid-api, or type USE_API at the interactive prompt; "
+    "offline contract tests only"
+)
 
 
 def enabled_rows() -> tuple[Row, ...]:
@@ -176,10 +186,18 @@ def enabled_rows() -> tuple[Row, ...]:
         for row in cli
     ]
     rows += [
-        # Metered rows are paid and run only with --allow-paid-api; effort is vendor-pinned.
-        Row(f"{provider}-{profile}", provider, profile, None, entry.model_id, "manual", None, "")
+        # Effort is vendor-pinned. No layer: only offline contract tests (SPEC-024), no live probe.
+        Row(
+            f"{provider}-{profile}",
+            provider,
+            profile,
+            None,
+            entry.model_id,
+            "manual",
+            None,
+            _METERED_EVIDENCE,
+        )
         for (provider, profile), entry in _API_MODELS.items()
-        if is_metered(provider)
     ]
     return tuple(rows)
 
