@@ -2,7 +2,7 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phases 1-4 implemented (Phase 4 on 2026-11-08); owner acceptance open: the first real run with `--row` or the API
+implementationStatus: Phases 1-4 implemented (Phase 4 on 2026-11-08), upload added (§7.5); owner acceptance open: the first real run with `--row` or the API
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-08
@@ -59,7 +59,7 @@ Lesson from the local-asr-service `/docs` page: its `model` field is `string | n
 
 What the page does not give, accepted for this scope:
 
-- No file picker: EPUB and output paths are typed as text.
+- ~~No file picker: EPUB and output paths are typed as text.~~ Superseded on 2026-11-08: §7.5 adds an upload.
 - No live progress view: the owner calls the status endpoint again to refresh it.
 
 ### 2.2 Shorter CLI as a side effect
@@ -83,6 +83,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 | Endpoint | Purpose |
 |---|---|
 | `GET /rows` | Enabled rows with runtime (quota pool), provider, tier, effort, concrete `model_id` (which names the family), status (`default`, `manual`, `experiment`), highest proven layer and evidence (§7.2) |
+| `POST /runs/upload` | Upload one EPUB and start one run (§7.5) |
 | `POST /runs` | Start one run. Body: `source`, `output`, `row` (Enum), optional prompt and glossary fields, `allow_paid_api` (default false). Returns `202` with the run's status, including its checkpoint directory |
 | `GET /runs/current` | Basic status (§4.2) |
 | `POST /runs/current/stop` | Send the same signal as Ctrl-C to the child process |
@@ -115,7 +116,7 @@ Richer monitoring is out of scope (§2).
 
 ## 6. Open items
 
-- [x] Add FastAPI and uvicorn as the optional `api` extra so the CLI install stays lean; the dev group also carries them (plus httpx) so CI runs the HTTP tests (Phase 2).
+- [x] Add FastAPI, uvicorn and (for §7.5) python-multipart as the optional `api` extra so the CLI install stays lean; the dev group also carries them (plus httpx) so CI runs the HTTP tests (Phase 2).
 - [x] Planned versus done counts: the checkpoint records only the done count (`translated_segment_count`). The server counts planned segments itself at start (§7.3 decision 3).
 - [x] Child process log location (§7.3 decision 1).
 - [x] Phase 3: start the child with a non-terminal stdin (§7.3 decision 5).
@@ -146,7 +147,7 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 - `GET /rows` returns the same objects as `bookweaver rows --json`. The OpenAPI page at `/docs` shows `runtime`, `provider`, `profile`, `effort`, `status` and `layer` as enums.
 - Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 originally listed `family`; it was dropped, and §4.1 amended, because `model_id` already names the concrete model.
 - Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
-- `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
+- `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when FastAPI, python-multipart (§7.5) or uvicorn is missing.
 
 ### 7.3 Phase 3 design and as built (owner-approved in chat, 2026-11-08)
 
@@ -194,6 +195,19 @@ Phase 4 adds tests only; no product code changed. `tests/unit/test_local_api.py`
 - Second layer: the CLI itself, with a provider key present and no `--allow-paid-api`, refuses every metered row. It builds no client and writes no output. This test runs in-process with a fake client and an empty config, because `config/config.json` in a checkout can hold a real key.
 
 Removing each check made its test fail (checked manually on 2026-11-08). To repeat this for the paid gate, use a copy of the code without `config/config.json` and with network access denied, so that a broken gate cannot make a paid call.
+
+### 7.5 Upload (owner-approved in chat, 2026-11-08)
+
+The owner tried `/docs`, expected to choose a book, and asked for a basic upload with a confirmed output name and a selectable row, in the style of the local ASR service's API page. The owner approved this design and the library location before implementation.
+
+- **Endpoint:** `POST /runs/upload`, a multipart form: `file`; `output_name` (empty means `<book name>.zh.epub`; a name with no suffix gets `.epub`); `row` (a dropdown, default the default row); `prompt` (empty means none); `allow_paid_api` (default false). It has no glossary field. `POST /runs` stays for paths and scripts.
+- **Library, new persistent files:** `~/Documents/BookWeaver/<book name>/` holds the uploaded copy and the translation. The run log and checkpoint follow the output path, so they stay in the same folder. The directory has no configuration option. Unlike the local ASR service, which deletes its upload after the request, the copy stays: a run outlives its request, and a resume needs the file.
+- **No replacement:** a new copy appears through a hard link, so it never replaces a file. Identical bytes reuse the stored copy. A resume then follows the checkpoint rules: a different prompt, profile or effort fails, and another vendor with the same profile resumes with the existing mixed-model warning. A different book with the same name returns 409, and the stored copy stays.
+- **Refusals store nothing:** consent and name checks run before the save. A symbolic link at the book folder, the stored copy or the output returns 400. A start that fails with a file system error returns 500 and removes a copy that this request created. A live run returns 409 before the save. A file over 200 MiB returns 413. A file that is not a readable EPUB returns 400, and its copy is removed, so a corrected file with the same name can follow.
+- **Names:** `file` and `output_name` must be plain file names of at most 255 bytes: no directory, no backslash, no leading dot, and no unprintable character. Finding a live run after a restart reads `ps`, which escapes those characters. A name that is too long would otherwise fail only after the whole book is translated. `output_name` must end in `.epub` and differ from the uploaded name, ignoring case and Unicode normalization.
+- **Docs page:** `/` redirects to `/docs`. `POST /runs` shows an example with only its required fields, so the template no longer fills `prompt` and `glossary` with `"string"`.
+- **Dependency:** the `api` extra gains `python-multipart`.
+- **Not included:** a download endpoint (the translation is on this Mac) and `--force-resume` through the API (a resume with a different prompt, profile or effort fails).
 
 ## 8. Verification
 

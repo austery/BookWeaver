@@ -105,6 +105,9 @@ change that adds, modifies or deletes anything under these paths has
   (`RunRecord` in `ai/local_api.py`, schema version 1), its lock file
   `current-run.lock`, and
   `<output directory>/.bookweaver_runs/<run_id>.log`.
+- **Local API book library** (SPEC-026 §7.5): `~/Documents/BookWeaver/<book name>/`
+  (`default_library_dir` in `ai/local_api.py`), which holds uploaded books. A resume
+  depends on the stored copy.
 - **Architecture decision records:** `docs/architecture/decisions/`. A new ADR records
   a significant decision reason and needs the owner's approval
   (`~/Documents/global-skills/agents/DOC-LIFECYCLE.md`, "Task closeout").

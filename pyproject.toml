@@ -13,6 +13,7 @@ bookweaver = "ai.cli:main"
 [project.optional-dependencies]
 api = [
     "fastapi>=0.162.2",
+    "python-multipart>=0.0.20",
     "uvicorn>=0.54.0",
 ]
 

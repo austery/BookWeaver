@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from httpx import Response
 
 import ai.cli as entry_module
 from ai import local_api, orchestration
@@ -77,7 +78,9 @@ def runs(tmp_path: Path) -> Iterator[tuple[TestClient, Path]]:
     script = tmp_path / "fake_child.py"
     script.write_text(FAKE_CHILD)
     app = local_api.create_app(
-        state_dir=tmp_path / "state", child_command=(sys.executable, str(script))
+        state_dir=tmp_path / "state",
+        child_command=(sys.executable, str(script)),
+        library_dir=tmp_path / "library",
     )
     with TestClient(app, base_url=BASE_URL) as test_client:
         yield test_client, tmp_path
@@ -161,7 +164,7 @@ def test_serve_rejects_an_invalid_port(capsys: pytest.CaptureFixture[str]) -> No
     assert "between 1 and 65535" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("missing", ["fastapi", "uvicorn"])
+@pytest.mark.parametrize("missing", ["fastapi", "python_multipart", "uvicorn"])
 def test_serve_without_the_api_extra_names_the_install_command(
     missing: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -760,3 +763,340 @@ def test_elapsed_time_parsing() -> None:
     assert local_api._elapsed_seconds("01:02:03") == 3723
     assert local_api._elapsed_seconds("2-01:00:00") == 2 * 86400 + 3600
     assert local_api._elapsed_seconds("garbage") is None
+
+
+def epub_bytes(tmp_path: Path, marker: str = "") -> bytes:
+    path = make_epub(tmp_path / f"upload-source{marker}.epub")
+    if marker:
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("extra.txt", marker)
+    data = path.read_bytes()
+    path.unlink()
+    return data
+
+
+def upload(client: TestClient, content: bytes, name: str = "book.epub", **form: object) -> Response:
+    return client.post(
+        "/runs/upload",
+        files={"file": (name, content, "application/epub+zip")},
+        data={key: str(value) for key, value in form.items()},
+    )
+
+
+def library_files(tmp_path: Path) -> list[str]:
+    root = tmp_path / "library"
+    if not root.exists():
+        return []
+    return sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_file())
+
+
+def test_upload_stores_the_book_and_starts_the_default_row(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    content = epub_bytes(tmp_path)
+    response = upload(client, content)
+    assert response.status_code == 202, response.text
+    status = settle(client)
+    book = tmp_path / "library" / "book"
+    assert (book / "book.epub").read_bytes() == content
+    assert child_args(status) == [
+        str(book / "book.epub"),
+        "--output",
+        str(book / "book.zh.epub"),
+        "--row",
+        "agy-flash-low",
+    ]
+    assert status["output"] == str(book / "book.zh.epub")
+    assert status["log_path"].startswith(str(book / ".bookweaver_runs"))
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [("mine.epub", "mine.epub"), ("mine", "mine.epub"), ("", "book.zh.epub")],
+)
+def test_upload_uses_the_confirmed_output_name(
+    runs: tuple[TestClient, Path], given: str, expected: str
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), output_name=given)
+    assert response.status_code == 202, response.text
+    assert response.json()["output"] == str(tmp_path / "library" / "book" / expected)
+
+
+def test_upload_passes_the_chosen_row_and_prompt(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row="agy-pro-low", prompt="-keep names")
+    assert response.status_code == 202, response.text
+    args = child_args(settle(client))
+    assert args[args.index("--row") + 1] == "agy-pro-low"
+    assert "--prompt=-keep names" in args
+
+
+def test_upload_treats_an_empty_prompt_as_none(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    assert upload(client, epub_bytes(tmp_path), prompt="").status_code == 202
+    assert not any(arg.startswith("--prompt") for arg in child_args(settle(client)))
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_upload_of_a_metered_row_needs_consent_and_stores_nothing(
+    runs: tuple[TestClient, Path], row: Row
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row=row.name)
+    assert response.status_code == 400
+    assert row.provider in response.json()["detail"] and row.model_id in response.json()["detail"]
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_upload_consent_reaches_the_child_once(runs: tuple[TestClient, Path], row: Row) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row=row.name, allow_paid_api="true")
+    assert response.status_code == 202, response.text
+    assert child_args(settle(client)).count("--allow-paid-api") == 1
+
+
+@pytest.mark.parametrize("row", SUBSCRIPTION_ROWS, ids=row_name)
+def test_upload_of_a_subscription_row_refuses_consent(
+    runs: tuple[TestClient, Path], row: Row
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row=row.name, allow_paid_api="true")
+    assert response.status_code == 400
+    assert response.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
+    assert library_files(tmp_path) == []
+
+
+def test_upload_of_the_same_bytes_reuses_the_stored_book(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    content = epub_bytes(tmp_path)
+    first = upload(client, content)
+    assert first.status_code == 202, first.text
+    settle(client)
+    second = upload(client, content)
+    assert second.status_code == 202, second.text
+    assert second.json()["source"] == first.json()["source"]
+    assert second.json()["checkpoint_dir"] == first.json()["checkpoint_dir"]
+
+
+def test_upload_never_replaces_a_different_book_with_the_same_name(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    original = epub_bytes(tmp_path)
+    assert upload(client, original).status_code == 202
+    settle(client)
+    stored = tmp_path / "library" / "book" / "book.epub"
+    response = upload(client, epub_bytes(tmp_path, "changed"))
+    assert response.status_code == 409
+    assert str(stored) in response.json()["detail"]
+    assert stored.read_bytes() == original
+    assert [name for name in library_files(tmp_path) if name.endswith(".epub")] == [
+        "book/book.epub"
+    ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../evil.epub",
+        "a/b.epub",
+        "a\\b.epub",
+        ".hidden.epub",
+        ".epub",
+        "notes.txt",
+        "zero\u200bwidth.epub",
+        f"{'x' * 251}.epub",
+    ],
+)
+def test_upload_refuses_an_unsafe_source_name(runs: tuple[TestClient, Path], name: str) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), name=name)
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+    assert not (tmp_path / "evil.epub").exists()
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../evil.epub",
+        "a/b.epub",
+        "a\\b",
+        ".hidden.epub",
+        "..",
+        "x.txt",
+        "book.epub",
+        "BOOK.EPUB",
+        "zero\u200bwidth.epub",
+        "new\nline.epub",
+        f"{'x' * 251}.epub",
+    ],
+)
+def test_upload_refuses_an_unsafe_output_name(runs: tuple[TestClient, Path], name: str) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), output_name=name)
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_upload_of_a_broken_epub_keeps_nothing_so_a_good_copy_can_follow(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    broken = upload(client, b"not a zip")
+    assert broken.status_code == 400
+    assert_nothing_started(client, tmp_path)
+    assert list((tmp_path / "library").rglob("*")) == []
+    assert upload(client, epub_bytes(tmp_path)).status_code == 202
+
+
+def test_upload_over_the_size_limit_is_refused(
+    runs: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, tmp_path = runs
+    monkeypatch.setattr(local_api, "MAX_UPLOAD_BYTES", 10)
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 413
+    assert_nothing_started(client, tmp_path)
+    assert list((tmp_path / "library").rglob("*")) == []
+
+
+def test_upload_while_a_run_is_live_stores_nothing(
+    runs: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, tmp_path = runs
+    monkeypatch.setenv("FAKE_SLEEP", "30")
+    start(client, tmp_path)
+    response = upload(client, epub_bytes(tmp_path), name="other.epub")
+    assert response.status_code == 409
+    assert library_files(tmp_path) == []
+
+
+def test_default_library_is_in_the_documents_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "fake_child.py"
+    script.write_text(FAKE_CHILD)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    app = local_api.create_app(
+        state_dir=tmp_path / "state", child_command=(sys.executable, str(script))
+    )
+    with TestClient(app, base_url=BASE_URL) as test_client:
+        response = upload(test_client, epub_bytes(tmp_path))
+        assert response.status_code == 202, response.text
+        settle(test_client)
+    assert (tmp_path / "Documents" / "BookWeaver" / "book" / "book.epub").is_file()
+
+
+def test_docs_page_offers_a_file_picker_and_a_row_dropdown(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
+    ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
+    form = schema["components"]["schemas"][ref]
+    assert form["required"] == ["file"]
+    file_field = form["properties"]["file"]
+    assert file_field.get("format") == "binary" or "contentMediaType" in file_field
+    row_ref = form["properties"]["row"]["$ref"].rsplit("/", 1)[1]
+    assert schema["components"]["schemas"][row_ref]["enum"] == [row.name for row in enabled_rows()]
+    assert form["properties"]["row"]["default"] == "agy-flash-low"
+
+
+def test_path_request_example_holds_only_the_fields_to_fill(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    body = schema["paths"]["/runs"]["post"]["requestBody"]["content"]["application/json"]
+    values = [example["value"] for example in body["examples"].values()]
+    assert values and all(set(value) == {"source", "output", "row"} for value in values)
+
+
+def test_root_path_goes_to_the_docs_page(client: TestClient) -> None:
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 307)
+    assert response.headers["location"] == "/docs"
+
+
+def test_upload_refuses_a_symlinked_book_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "library").mkdir()
+    (tmp_path / "library" / "book").symlink_to(outside)
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert list(outside.iterdir()) == []
+
+
+def test_upload_refuses_a_symlinked_output_so_another_book_is_safe(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    other = tmp_path / "other.epub"
+    other.write_bytes(b"another book")
+    book = tmp_path / "library" / "book"
+    book.mkdir(parents=True)
+    (book / "book.zh.epub").symlink_to(other)
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert other.read_bytes() == b"another book"
+    assert not (book / "book.epub").exists()
+
+
+def test_upload_that_cannot_start_keeps_nothing_so_a_corrected_copy_can_follow(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    book = tmp_path / "library" / "book"
+    book.mkdir(parents=True)
+    blocker = book / ".bookweaver_runs"
+    blocker.write_text("a file where the log folder belongs")
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 500
+    assert "Cannot start the run" in response.json()["detail"]
+    assert not (book / "book.epub").exists()
+    blocker.unlink()
+    assert upload(client, epub_bytes(tmp_path, "corrected")).status_code == 202
+
+
+def test_upload_refuses_a_default_output_name_that_would_be_too_long(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), name=f"{'x' * 248}.epub")
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_upload_refuses_a_prompt_that_no_process_can_receive(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), prompt="bad\0prompt")
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_docs_page_states_the_upload_limit(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
+    ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
+    file_field = schema["components"]["schemas"][ref]["properties"]["file"]
+    assert "200 MiB" in file_field["description"]
+
+
+def test_upload_checks_the_output_name_length_after_adding_the_suffix(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), output_name="x" * 251)
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
