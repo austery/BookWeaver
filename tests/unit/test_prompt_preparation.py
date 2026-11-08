@@ -170,7 +170,7 @@ def test_template_is_frozen_before_extraction_and_hash_matches_request(tmp_path:
             "source": signature,
             "mode": "auto",
             "max_terms": 20,
-            "model": "gemini-3.1-pro-low",
+            "model": "gemini-4-argon-low",
             "effort": "low",
             "extractor_version": 1,
         },

@@ -28,7 +28,7 @@ from ai.checkpoint_store import (
     ICheckpointStoreFactory,
     SegmentRecord,
 )
-from ai.model_profiles import is_metered, resolve_profile
+from ai.model_profiles import ResolvedModel, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
 from ai.prompt_preparation import (
@@ -248,6 +248,8 @@ class TranslationOrchestrator:
             active_provider: ITranslationProvider | None = None
             active_model = model
             active_requested_effort = options.model.effort
+            # Extraction may run on another row; keep it visible in the audit (SPEC-025 §3.8).
+            extraction_used: ResolvedModel | None = None
 
             def finalize_audit(
                 exc_type: type[BaseException] | None,
@@ -262,6 +264,13 @@ class TranslationOrchestrator:
                             "requested_effort": active_requested_effort,
                             "effective_effort": active_model.effort,
                             "provider": active_model.provider,
+                            "row_status": active_model.status,
+                            "extraction_model": extraction_used.model_id
+                            if extraction_used is not None
+                            else None,
+                            "extraction_row_status": extraction_used.status
+                            if extraction_used is not None
+                            else None,
                             "runtime_version": active_provider.runtime_version
                             if active_provider is not None
                             else None,
@@ -323,6 +332,7 @@ class TranslationOrchestrator:
                 # Cache identity includes the input and extraction request, not the output basename.
                 if store is None or not glossary_path.exists():
                     active_model = extraction_selection
+                    extraction_used = extraction_selection
                     active_requested_effort = None
                     active_provider = None
                     extractor = factory.create(

@@ -8,8 +8,10 @@ from ai.model_profiles import is_metered, resolve_profile
 def test_default_flash_is_pinned_to_low() -> None:
     selected = resolve_profile("flash")
     assert selected.model_id == "gemini-3.8-flash-low"
+    assert selected.family == "gemini-3.8-flash"
     assert selected.effort == "low"
     assert selected.profile == "flash"
+    assert selected.status == "default"
 
 
 @pytest.mark.parametrize("profile,effort", [("lite", None), ("pro", "medium"), ("flash", "max")])
@@ -18,8 +20,18 @@ def test_invalid_selection_fails_loudly(profile: str, effort: str | None) -> Non
         resolve_profile(profile, effort=effort)
 
 
-def test_pro_high_uses_a_distinct_concrete_model() -> None:
-    assert resolve_profile("pro", effort="high").model_id == "gemini-3.1-pro-high"
+def test_disabled_effort_names_the_enabled_rows() -> None:
+    with pytest.raises(ValueError, match=r"pro/medium.*enabled.*pro/low.*pro/high"):
+        resolve_profile("pro", effort="medium")
+
+
+def test_pro_is_an_experiment_row_on_gemini_4_argon() -> None:
+    selected = resolve_profile("pro", effort="high")
+    assert (selected.family, selected.model_id, selected.status) == (
+        "gemini-4-argon",
+        "gemini-4-argon-high",
+        "experiment",
+    )
 
 
 def test_paid_api_does_not_silently_accept_effort() -> None:
@@ -28,6 +40,8 @@ def test_paid_api_does_not_silently_accept_effort() -> None:
     selected = resolve_profile("flash", provider="gemini")
     assert selected.model_id == "gemini-2.5-flash"
     assert selected.effort is None
+    assert selected.family is None
+    assert selected.status == "manual"
 
 
 @pytest.mark.parametrize(
@@ -60,3 +74,13 @@ def test_metered_predicate_excludes_subscription_runtime() -> None:
         True,
         True,
     ]
+
+
+def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
+    from ai import model_profiles
+
+    rows = model_profiles._CLI_ROWS
+    with pytest.raises(RuntimeError, match="Duplicate"):
+        model_profiles._validate_rows((*rows, rows[0]))
+    with pytest.raises(RuntimeError, match="without a row"):
+        model_profiles._validate_seeds(rows, frozenset({("1.5.3", "gemini-3.1-pro-low")}))

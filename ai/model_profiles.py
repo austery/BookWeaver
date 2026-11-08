@@ -6,17 +6,114 @@ from typing import Literal
 ModelProfile = Literal["flash", "pro"]
 Effort = Literal["low", "medium", "high"]
 ProviderName = Literal["cli", "gemini", "openai", "anthropic"]
-CERTIFIED_AGY_VERSIONS = frozenset({"1.1.27"})
+# Owner policy for a row (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
+RowStatus = Literal["default", "manual", "experiment"]
+# Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
+EvidenceLayer = Literal[1, 2, 3]
+CliRuntime = Literal["antigravity"]
 METERED_PROVIDERS = frozenset({"gemini", "openai", "anthropic"})
 
-# A release changes these mappings together with its compatibility evidence.
-_CLI_MODELS: dict[tuple[ModelProfile, Effort], str] = {
-    ("flash", "low"): "gemini-3.8-flash-low",
-    ("flash", "medium"): "gemini-3.8-flash-medium",
-    ("flash", "high"): "gemini-3.8-flash-high",
-    ("pro", "low"): "gemini-3.1-pro-low",
-    ("pro", "high"): "gemini-3.1-pro-high",
-}
+
+@dataclass(frozen=True)
+class _CliRow:
+    """One owner-enabled subscription CLI combination (SPEC-025 §3.8)."""
+
+    runtime: CliRuntime
+    profile: ModelProfile
+    family: str
+    effort: Effort
+    status: RowStatus
+    layer: EvidenceLayer
+    evidence: str
+
+
+# Named rows, not the Cartesian product: anything absent here is rejected before a run.
+# The family is the runtime's model family; effort is passed once through ``--effort``.
+_CLI_ROWS: tuple[_CliRow, ...] = (
+    _CliRow(
+        "antigravity",
+        "flash",
+        "gemini-3.8-flash",
+        "low",
+        "default",
+        2,
+        "agy 1.5.3 probe 2026-11-07; one validated book on agy 1.1.27",
+    ),
+    _CliRow(
+        "antigravity",
+        "flash",
+        "gemini-3.8-flash",
+        "medium",
+        "experiment",
+        1,
+        "effort comparison only; probed automatically on first use",
+    ),
+    _CliRow(
+        "antigravity",
+        "flash",
+        "gemini-3.8-flash",
+        "high",
+        "experiment",
+        1,
+        "effort comparison only; probed automatically on first use",
+    ),
+    _CliRow(
+        "antigravity",
+        "pro",
+        "gemini-4-argon",
+        "low",
+        "experiment",
+        2,
+        "agy 1.5.3 probe 2026-11-07 (segment_tags and delimiter)",
+    ),
+    _CliRow(
+        "antigravity",
+        "pro",
+        "gemini-4-argon",
+        "high",
+        "experiment",
+        1,
+        "agy 1.5.3 roster 2026-11-07; probed automatically on first use",
+    ),
+)
+
+
+def cli_model_id(family: str, effort: str) -> str:
+    """Concrete roster ID for provenance; agy 1.5.3 lists models as ``<family>-<effort>``."""
+    return f"{family}-{effort}"
+
+
+def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
+    """Layer 1 check at import: one row per selection, and a known default."""
+    keys = [(row.runtime, row.profile, row.effort) for row in rows]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise RuntimeError(f"Duplicate CLI rows in ai/model_profiles.py: {duplicates}")
+    if ("antigravity", "flash", "low") not in keys:
+        raise RuntimeError("The default antigravity flash/low row is missing")
+
+
+# Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
+# Any other pair is probed automatically before its first book batch (SPEC-025 §3.3).
+CERTIFIED_AGY_MODELS = frozenset(
+    {
+        ("1.1.27", "gemini-3.8-flash-low"),
+        ("1.5.3", "gemini-3.8-flash-low"),
+        ("1.5.3", "gemini-4-argon-low"),
+    }
+)
+
+
+def _validate_seeds(rows: tuple[_CliRow, ...], seeds: frozenset[tuple[str, str]]) -> None:
+    """Every seeded model must belong to an enabled row; a dead seed hides a registry edit."""
+    known = {cli_model_id(row.family, row.effort) for row in rows}
+    dead = sorted(model for _, model in seeds if model not in known)
+    if dead:
+        raise RuntimeError(f"CERTIFIED_AGY_MODELS names models without a row: {dead}")
+
+
+_validate_rows(_CLI_ROWS)
+_validate_seeds(_CLI_ROWS, CERTIFIED_AGY_MODELS)
 
 
 @dataclass(frozen=True)
@@ -49,6 +146,9 @@ class ResolvedModel:
     # Metered providers only: requested output cap and vendor-pinned effort.
     output_cap: int | None = None
     api_effort: str | None = None
+    # Subscription CLI only: the family passed to the runtime with ``--effort``.
+    family: str | None = None
+    status: RowStatus = "manual"
 
 
 def is_metered(provider: str) -> bool:
@@ -83,7 +183,17 @@ def resolve_profile(
     effective = effort if effort is not None else "low"
     if effective not in ("low", "medium", "high"):
         raise ValueError("effort must be low, medium, or high")
-    model_id = _CLI_MODELS.get((profile, effective))
-    if model_id is None:
-        raise ValueError(f"Unsupported model/effort combination: {profile}/{effective}")
-    return ResolvedModel(profile, provider, model_id, effective)
+    for row in _CLI_ROWS:
+        if (row.profile, row.effort) == (profile, effective):
+            return ResolvedModel(
+                profile,
+                provider,
+                cli_model_id(row.family, row.effort),
+                row.effort,
+                family=row.family,
+                status=row.status,
+            )
+    enabled = ", ".join(f"{row.profile}/{row.effort}" for row in _CLI_ROWS)
+    raise ValueError(
+        f"Unsupported model/effort combination: {profile}/{effective}; enabled rows: {enabled}"
+    )
