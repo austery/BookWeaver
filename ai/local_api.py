@@ -383,7 +383,7 @@ def _same_file_name(first: str, second: str) -> bool:
 def _output_file_name(given: str, source_name: str) -> str:
     name = _checked_file_name(given.strip() or f"{Path(source_name).stem}.zh.epub", "output_name")
     if not Path(name).suffix:
-        name += ".epub"
+        name = _checked_file_name(f"{name}.epub", "output_name")
     if not _is_epub_name(name):
         raise HTTPException(400, f"output_name must end in .epub: {name!r}")
     if _same_file_name(name, source_name):

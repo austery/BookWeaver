@@ -1090,3 +1090,13 @@ def test_docs_page_states_the_upload_limit(client: TestClient) -> None:
     ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
     file_field = schema["components"]["schemas"][ref]["properties"]["file"]
     assert "200 MiB" in file_field["description"]
+
+
+def test_upload_checks_the_output_name_length_after_adding_the_suffix(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), output_name="x" * 251)
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []

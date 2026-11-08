@@ -207,7 +207,7 @@ The owner tried `/docs`, expected to choose a book, and asked for a basic upload
 - **Names:** `file` and `output_name` must be plain file names of at most 255 bytes: no directory, no backslash, no leading dot, and no unprintable character. Finding a live run after a restart reads `ps`, which escapes those characters. A name that is too long would otherwise fail only after the whole book is translated. `output_name` must end in `.epub` and differ from the uploaded name, ignoring case and Unicode normalization.
 - **Docs page:** `/` redirects to `/docs`. `POST /runs` shows an example with only its required fields, so the template no longer fills `prompt` and `glossary` with `"string"`.
 - **Dependency:** the `api` extra gains `python-multipart`.
-- **Not included:** a download endpoint (the translation is on this Mac) and `--force-resume` through the API (a resume with a different row or prompt fails).
+- **Not included:** a download endpoint (the translation is on this Mac) and `--force-resume` through the API (a resume with a different prompt, profile or effort fails).
 
 ## 8. Verification
 
