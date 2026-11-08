@@ -2,10 +2,10 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phases 1-2 implemented (2026-11-07); Phase 1 real-run checkpoint deferred by the owner; Phases 3-4 not started
+implementationStatus: Phases 1-2 implemented (2026-11-07); Phase 1 real-run checkpoint deferred by the owner; Phase 3 design approved (2026-11-08), in implementation; Phase 4 not started
 priority: P2 - Usability
 creationDate: 2026-11-07
-lastUpdateDate: 2026-11-07
+lastUpdateDate: 2026-11-08
 owner: User (AI-Assisted)
 relatedSpecs: [SPEC-020, SPEC-021, SPEC-024, SPEC-025]
 tags:
@@ -116,9 +116,9 @@ Richer monitoring is out of scope (§2).
 ## 6. Open items
 
 - [x] Add FastAPI and uvicorn as the optional `api` extra so the CLI install stays lean; the dev group also carries them (plus httpx) so CI runs the HTTP tests (Phase 2).
-- [ ] Confirm that the checkpoint exposes planned versus done counts without loading all segment text.
-- [ ] Decide where the child process log is written so the UI can tail it after a restart.
-- [ ] Phase 3: start the child with a non-terminal stdin. Otherwise the paid gate could show the interactive `USE_API` prompt instead of rejecting a request without `allow_paid_api` (§4.2 step 4).
+- [x] Planned versus done counts: the checkpoint records only the done count (`translated_segment_count`). The server counts planned segments itself at start (§7.3 decision 3).
+- [x] Child process log location (§7.3 decision 1).
+- [x] Phase 3: start the child with a non-terminal stdin (§7.3 decision 5).
 
 ## 7. Phases
 
@@ -147,6 +147,32 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 - Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 originally listed `family`; it was dropped, and §4.1 amended, because `model_id` already names the concrete model.
 - Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
 - `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
+
+### 7.3 Phase 3 design (owner-approved in chat, 2026-11-08)
+
+The owner approved these six decisions before implementation. Each names the persistent files it adds, as the radius map's Structure gate requires (`docs/agents/impact-radius.md`).
+
+1. **Child log.** The child's stdout and stderr go to `<output directory>/.bookweaver_runs/<run_id>.log`, beside the existing invocation audits. `run_id` is a new UUID the server generates per start; it is not the audit's run ID. The file is plain text, appended by the child, never rewritten by the server.
+2. **Run record.** The server writes one file, `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`, the same root as the runtime-certification store), atomically at start. Fields, schema version 1:
+   - `schema_version` (1), `run_id`, `pid` (the child; it leads its own process group);
+   - `source`, `output` (absolute paths), `row`, `allow_paid_api`;
+   - `started_at` (UTC ISO 8601), `log_path`, `checkpoint_dir`, `planned_segments`;
+   - `exit_code` and `ended_at`: `null` until the server observes the child exit, then written once.
+
+   A new start replaces the file. Nothing else writes it. When the server restarts while a child runs, it cannot observe the exit; status then reports `ended` with `exit_code: null` once the process is gone.
+3. **Progress.** At start, the server segments the source EPUB once through the application path and stores the count as `planned_segments`. Done segments come from `translated_segment_count` in `<checkpoint_dir>/checkpoint.json`, read without the lock (the file is replaced atomically). The checkpoint format does not change.
+4. **Request protection.** Every request must carry a `Host` of `127.0.0.1` or `localhost` (with any port); others get 400. A state-changing request (`POST`) with an `Origin` header must come from `http://127.0.0.1:<port>` or `http://localhost:<port>`; others get 403. This blocks DNS-rebinding and cross-site requests from pages in the owner's browser.
+5. **Paid consent.** A metered row with `allow_paid_api` false is rejected with 400 before anything starts, with the CLI's text (`Paid API requires --allow-paid-api when non-interactive`). A subscription row with `allow_paid_api` true is rejected with the CLI's text (`--allow-paid-api requires a metered --provider ...`). The child gets `--allow-paid-api` only when both agree, and its stdin is `/dev/null`, so the paid gate can never show the interactive `USE_API` prompt.
+6. **Stop.** `POST /runs/current/stop` sends `SIGINT` to the child's process group, the same signal as Ctrl-C in a terminal. Saved batches stay in the checkpoint and resume on the next run; the batch in flight is lost, and on a metered row it may already be paid for. The endpoint description says so.
+
+Also in this phase, from §2 and §3:
+
+- **One run at a time.** `POST /runs` returns 409 while the run record names a live process.
+- **Request body:** `source`, `output`, `row` (an Enum of the enabled rows), optional `prompt` and `glossary` (passed as `--prompt` and `--glossary`), and `allow_paid_api` (default false). Other CLI options stay CLI-only.
+- **Status:** `state` is `running`, `finished` (exit code 0), `failed` (non-zero), `stopped` (exit by `SIGINT`), or `ended` (exit not observed), plus `planned_segments`, `done_segments`, and the last 20 log lines.
+- **Child command:** the same interpreter runs `-m ai.cli <source> --output <output> --row <row> [...]`, the CLI contract `bookweaver` uses.
+
+Phase 4's rejection rule is implemented here by decision 5; Phase 4 keeps only its offline tests that no metered row starts without consent.
 
 ## 8. Verification
 
