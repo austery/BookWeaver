@@ -18,7 +18,54 @@ uv run bookweaver book.epub --output translated.epub --model pro --effort low
 uv run bookweaver book.epub --output translated.epub --extract-glossary
 ```
 
-The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro 3.1 Low. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
+The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro (`gemini-4-argon`) Low. Any other pair of `agy` version and model runs a short automatic probe before its first book batch. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
+
+## Named rows
+
+A row is a short name for one provider, model tier, and effort. List the enabled rows, with their status and evidence:
+
+```bash
+uv run bookweaver rows
+```
+
+Use `--row` in place of `--model`, `--effort`, and `--provider`. You cannot combine them.
+
+```bash
+uv run bookweaver book.epub --output translated.epub --row agy-pro-low
+```
+
+Rows that start with `agy-` use the Antigravity subscription. The `gemini-` and `anthropic-` rows are paid, and a row name does not give consent: they still need the [paid API](#paid-api) consent for each run. No real translation has run through `--row` or the local API yet ([issue #60](https://github.com/austery/BookWeaver/issues/60)).
+
+## Local API
+
+Start the local API server. It stays in the foreground of your terminal, on `127.0.0.1` only:
+
+```bash
+uv run bookweaver serve
+```
+
+Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user interface: it lists each endpoint and lets you send requests. It loads its assets from a CDN, so it is blank without network; the endpoints still work. Use `--port` to choose another port. Press Ctrl-C to stop the server.
+
+`uv sync --frozen` already installs what the server needs. An install without the dev group needs the `api` extra: `uv sync --frozen --no-dev --extra api` in a checkout, or the `bookweaver[api]` package.
+
+| Endpoint | Action |
+|---|---|
+| `GET /rows` | List the enabled rows, the same as `bookweaver rows --json`. |
+| `POST /runs` | Start one translation. Only one can run at a time. |
+| `GET /runs/current` | Show the state, progress, and last log lines of the latest run. |
+| `POST /runs/current/stop` | Stop the run, the same as Ctrl-C on the CLI. |
+
+```bash
+curl -X POST http://127.0.0.1:8765/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "row": "agy-flash-low"}'
+```
+
+- Use absolute paths. A relative path resolves against the directory where you started the server. The output directory must already exist.
+- A paid row needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing. The consent covers this run only.
+- The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
+- A stop keeps the saved batches for the next run. It loses the batch in progress, and on a paid row that batch may already be charged.
+- The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
 
 ## Batch size and fidelity
 
@@ -83,6 +130,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
 uv run tach check
+uv run python scripts/check_doc_links.py
 ```
 
 ### Checkpoint identity migration
