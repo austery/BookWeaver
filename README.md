@@ -18,7 +18,55 @@ uv run bookweaver book.epub --output translated.epub --model pro --effort low
 uv run bookweaver book.epub --output translated.epub --extract-glossary
 ```
 
-The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro 3.1 Low. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
+The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro (`gemini-4-argon`) Low. A pair of `agy` version and model with no recorded evidence runs a short automatic check before its first book batch. A model that `agy models` does not list stops the run before that check. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
+
+## Named rows
+
+A row is a short name for one provider, model profile, and effort. List the enabled rows, with their status and evidence:
+
+```bash
+uv run bookweaver rows
+```
+
+Use `--row` in place of `--model`, `--effort`, and `--provider`. You cannot combine them.
+
+```bash
+uv run bookweaver book.epub --output translated.epub --row agy-pro-low
+```
+
+Rows that start with `agy-` use the Antigravity subscription. The `gemini-` and `anthropic-` rows are paid. A row name does not give consent. Each paid run still needs the [paid API](#paid-api) consent. No real translation has run through `--row` or the local API yet ([issue #60](https://github.com/austery/BookWeaver/issues/60)).
+
+## Local API
+
+Start the local API server. It stays in the foreground of your terminal, on `127.0.0.1` only:
+
+```bash
+uv run bookweaver serve
+```
+
+Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user interface: it lists each endpoint and lets you send requests. It loads its assets from a CDN. Without network the page is blank, but the endpoints still work. Use `--port` to choose another port. Press Ctrl-C to stop the server.
+
+`uv sync --frozen` already installs what the server needs. To run without the dev tools, start the server with `uv run --no-dev --extra api bookweaver serve`. An installed package also needs the `api` extra.
+
+| Endpoint | Action |
+|---|---|
+| `GET /rows` | List the enabled rows, the same as `bookweaver rows --json`. |
+| `POST /runs` | Start one translation. Only one can run at a time. |
+| `GET /runs/current` | Show the state, progress, and last log lines of the latest run. |
+| `POST /runs/current/stop` | Stop the run, the same as Ctrl-C on the CLI. |
+
+```bash
+curl -X POST http://127.0.0.1:8765/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "row": "agy-flash-low"}'
+```
+
+- Use absolute paths. A relative path resolves against the directory where you started the server. The output directory must already exist.
+- A paid row needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing. The consent covers this run only.
+- The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
+- A stop keeps the saved batches. A later run with the same book, row, and prompt resumes from them. A different row or prompt fails, because the API has no `--force-resume`; use the CLI for that.
+- A stop loses the batch in progress. On a paid row, the vendor may already have charged for that batch.
+- The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
 
 ## Batch size and fidelity
 
@@ -56,7 +104,7 @@ CLI failure never automatically switches to an API. Metered providers are select
 | `anthropic` | `claude-sonnet-5-5` | `claude-opus-5-5` | `ANTHROPIC_API_KEY` |
 | `openai` | not yet pinned; fails before any request | | `OPENAI_API_KEY` |
 
-Paid execution needs either interactive `USE_API` confirmation or an explicit per-invocation capability:
+Paid execution needs your consent for each run: type `USE_API` at the interactive prompt, or pass `--allow-paid-api`:
 
 ```bash
 uv run bookweaver book.epub --output translated.epub --provider anthropic --allow-paid-api
@@ -83,6 +131,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest -q
 uv run tach check
+uv run python scripts/check_doc_links.py
 ```
 
 ### Checkpoint identity migration

@@ -47,7 +47,7 @@ Every test class in `tests/unit/test_cli.py` at the base is listed below. Histor
 
 The runtime correction at `70998a3` is the same patch as reviewed `661cfa5`. The second branch merges the first so its PR diff contains only the EPUB/dependency slice and final acceptance evidence. Retain both worktrees for feedback. Merge requires owner approval.
 
-Reviews: [v1](../../pr-reviews/module-depth-v1.md), [v2](../../pr-reviews/module-depth-v2.md), [v3](../../pr-reviews/module-depth-v3.md). Both review axes independently verified the corrective audit behavior. No live Provider was called.
+Reviews: [v1](https://github.com/austery/BookWeaver/blob/abbe09d/pr-reviews/module-depth-v1.md), [v2](https://github.com/austery/BookWeaver/blob/abbe09d/pr-reviews/module-depth-v2.md), [v3](https://github.com/austery/BookWeaver/blob/abbe09d/pr-reviews/module-depth-v3.md). Both review axes independently verified the corrective audit behavior. No live Provider was called.
 
 
 ## Final validation
