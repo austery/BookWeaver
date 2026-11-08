@@ -90,7 +90,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 
 ### 4.2 Start a run
 
-1. The owner reads `GET /presets` in `/docs`, then fills `POST /runs`. The `preset` field is a dropdown of enabled presets only.
+1. The owner reads `GET /presets` in `/docs`, then fills `POST /runs/upload` (§7.5, §7.7). The `preset` field is a dropdown of enabled presets only.
 2. The server validates the body with the same resolver the CLI uses. Validation errors are returned as they are, without reinterpretation.
 3. The server starts the run as a child process: `bookweaver <source> --output <output> --preset <name>`. Reasons for a child process instead of an in-process call:
    - the run survives a closed browser tab and a stopped UI server;
@@ -205,7 +205,7 @@ The owner tried `/docs`, expected to choose a book, and asked for a basic upload
 - **No replacement:** a new copy appears through a hard link, so it never replaces a file. Identical bytes reuse the stored copy. A resume then follows the checkpoint rules: a different prompt, profile or effort fails, and another vendor with the same profile resumes with the existing mixed-model warning. A different book with the same name returns 409, and the stored copy stays.
 - **Refusals store nothing:** consent and name checks run before the save. A symbolic link at the book folder, the stored copy or the output returns 400. A start that fails with a file system error returns 500 and removes a copy that this request created. A live run returns 409 before the save. A file over 200 MiB returns 413. A file that is not a readable EPUB returns 400, and its copy is removed, so a corrected file with the same name can follow.
 - **Names:** `file` and `output_name` must be plain file names of at most 255 bytes: no directory, no backslash, no leading dot, and no unprintable character. Finding a live run after a restart reads `ps`, which escapes those characters. A name that is too long would otherwise fail only after the whole book is translated. `output_name` must end in `.epub` and differ from the uploaded name, ignoring case and Unicode normalization.
-- **Docs page:** `/` redirects to `/docs`. `POST /runs` shows an example with only its required fields, so the template no longer fills `prompt` and `glossary` with `"string"`.
+- **Docs page:** `/` redirects to `/docs`. §7.7 hides `POST /runs` from this page.
 - **Dependency:** the `api` extra gains `python-multipart`.
 - **Not included:** a download endpoint (the translation is on this Mac) and `--force-resume` through the API (a resume with a different prompt, profile or effort fails).
 
@@ -217,6 +217,10 @@ The owner found that "row" names a table line in the registry, not something a u
 - **Run record:** the field `row` became `preset`, and the schema version became 2. A version 1 record returns 500 with the file path, under the existing rule in §7.3: the owner checks it and deletes it. A live child from an older version is outside this rule, so finish or stop runs before upgrading.
 - **Invocation audit:** `row_status` became `preset_status`, and `extraction_row_status` became `extraction_preset_status`. Nothing reads these fields back, and older audit files stay as they are.
 - **Checkpoint:** no change. It records the profile and effort, not the preset.
+
+### 7.7 One way to start a run on the page (owner decision, 2026-11-08)
+
+The owner opened `POST /runs` on `/docs` and saw path fields to fill, although the upload exists. Two similar endpoints side by side invite the wrong choice. `POST /runs` therefore has `include_in_schema=False`: it stays for scripts, with the same contract, but neither `/docs` nor `/openapi.json` lists it. `POST /runs/upload` is the only way to start a run on the page.
 
 ## 8. Verification
 

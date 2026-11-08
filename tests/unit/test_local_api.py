@@ -1014,11 +1014,15 @@ def test_docs_page_offers_a_file_picker_and_a_preset_dropdown(client: TestClient
     assert form["properties"]["preset"]["default"] == "agy-flash-low"
 
 
-def test_path_request_example_holds_only_the_fields_to_fill(client: TestClient) -> None:
-    schema = client.get("/openapi.json").json()
-    body = schema["paths"]["/runs"]["post"]["requestBody"]["content"]["application/json"]
-    values = [example["value"] for example in body["examples"].values()]
-    assert values and all(set(value) == {"source", "output", "preset"} for value in values)
+def test_docs_page_offers_only_the_upload_to_start_a_run(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/runs/upload" in paths
+    assert "/runs" not in paths
+    # Scripts keep the path endpoint.
+    assert start(client, tmp_path)["state"] == "running"
 
 
 def test_root_path_goes_to_the_docs_page(client: TestClient) -> None:
@@ -1126,3 +1130,10 @@ def test_upload_with_the_old_row_field_starts_nothing(
     assert "preset" in response.json()["detail"]
     assert_nothing_started(client, tmp_path)
     assert library_files(tmp_path) == []
+
+
+def test_docs_page_does_not_offer_the_old_row_field(client: TestClient) -> None:
+    schema = client.get("/openapi.json").json()
+    upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
+    ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
+    assert "row" not in schema["components"]["schemas"][ref]["properties"]
