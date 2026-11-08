@@ -1,9 +1,9 @@
 # Impact radius map
 
-**North Star (draft):** `/Users/leipeng/Documents/research-notes/01-inbox/2026-11-08_bookweaver_north-star-and-product-lineage.md`.
+**North Star (draft):** `/Users/leipeng/Documents/research-notes/05-archive/2026-11-08_bookweaver_north-star-and-product-lineage.md`.
 Agents read only its `## Current core` section. That section is still a draft
-awaiting the owner's confirmation, and the file may move to `05-archive/` once
-confirmed; update this link then.
+awaiting the owner's confirmation. Until the owner moves it to `05-archive/`, it
+is at the same file name under `01-inbox/`.
 
 Trunk below follows from the draft's mission and intended form: turn a book
 the owner wants to read into a faithful, complete, alternating bilingual EPUB,
