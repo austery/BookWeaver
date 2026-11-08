@@ -996,3 +996,47 @@ def test_root_path_goes_to_the_docs_page(client: TestClient) -> None:
     response = client.get("/", follow_redirects=False)
     assert response.status_code in (302, 307)
     assert response.headers["location"] == "/docs"
+
+
+def test_upload_refuses_a_symlinked_book_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (tmp_path / "library").mkdir()
+    (tmp_path / "library" / "book").symlink_to(outside)
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert list(outside.iterdir()) == []
+
+
+def test_upload_refuses_a_symlinked_output_so_another_book_is_safe(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    other = tmp_path / "other.epub"
+    other.write_bytes(b"another book")
+    book = tmp_path / "library" / "book"
+    book.mkdir(parents=True)
+    (book / "book.zh.epub").symlink_to(other)
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert other.read_bytes() == b"another book"
+    assert not (book / "book.epub").exists()
+
+
+def test_upload_that_cannot_start_keeps_nothing_so_a_corrected_copy_can_follow(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    book = tmp_path / "library" / "book"
+    book.mkdir(parents=True)
+    blocker = book / ".bookweaver_runs"
+    blocker.write_text("a file where the log folder belongs")
+    response = upload(client, epub_bytes(tmp_path))
+    assert response.status_code == 500
+    assert "Cannot start the run" in response.json()["detail"]
+    assert not (book / "book.epub").exists()
+    blocker.unlink()
+    assert upload(client, epub_bytes(tmp_path, "corrected")).status_code == 202

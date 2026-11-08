@@ -604,8 +604,8 @@ def create_app(
             "Choose an EPUB and press Execute. The translation starts at once and can use "
             f"quota or money, as `row` says. The book and its translation stay in `{library}/"
             "<book name>/`. Upload the same file with the same row and prompt to continue from "
-            "the saved progress; a different row or prompt fails, because this API has no "
-            "`--force-resume`. Only one run at a time."
+            "the saved progress; a different prompt, profile or effort fails, because this API "
+            "has no `--force-resume`. Only one run at a time."
         ),
     )
     def upload_run(
@@ -634,6 +634,9 @@ def create_app(
         book_dir = library / Path(source_name).stem
         source = book_dir / source_name
         output = book_dir / _output_file_name(output_name, source_name)
+        # A link here could write outside the library or replace another book.
+        if any(path.is_symlink() for path in (book_dir, source, output)):
+            raise HTTPException(400, f"{book_dir} must hold no symbolic link for this book")
         with store.lock():
             ensure_idle()
             created = False
@@ -647,11 +650,13 @@ def create_app(
                     glossary=None,
                     allow_paid_api=allow_paid_api,
                 )
-            except HTTPException:
+            except (HTTPException, OSError) as exc:
                 # A refused upload must not block a corrected copy with the same name.
                 if created:
                     source.unlink(missing_ok=True)
                 _remove_if_empty(book_dir)
+                if isinstance(exc, OSError):
+                    raise HTTPException(500, f"Cannot start the run: {exc}") from exc
                 raise
 
     @app.get(

@@ -67,7 +67,8 @@ The book and its translation stay in one folder:
 
 The run log and the saved progress are in the same folder.
 
-- Upload the same file with the same row and prompt to resume. A different row or prompt fails, because the API has no `--force-resume`; use the CLI for that.
+- Upload the same file with the same row and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
+- A row from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
 - BookWeaver never replaces a stored book. A different file with the same name returns 409. Rename the file to upload it.
 - A paid row needs `allow_paid_api` set to `true`. Without it, the server returns 400 and stores nothing. The consent covers this run only.
 
