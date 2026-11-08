@@ -20,21 +20,21 @@ _Avoid_: Alternate pipeline, secondary supported path
 The logical quality-and-workload tier a translation runs at — flash or pro — independent of which concrete provider model realizes it. It is the unit of resume compatibility; concrete provider model strings are provenance, not identity.
 _Avoid_: model, model name, alias, lite
 
-**Row**:
+**Preset**:
 A named, owner-enabled selection of model profile, effort, and provider that one run uses. It is what a person chooses; the separate settings behind it are not.
-_Avoid_: preset, mode, model
+_Avoid_: row, mode, model
 
 **Effort**:
-How much thinking a row asks of its model: low, medium, or high. It is a separate choice from the model profile.
+How much thinking a preset asks of its model: low, medium, or high. It is a separate choice from the model profile.
 _Avoid_: thinking level, reasoning level
 
 **Runtime**:
 The quota pool a run draws on: a local subscription tool or a vendor's paid API.
 _Avoid_: backend, engine
 
-**Metered Row**:
-A row whose run is billed by a vendor per request. Choosing one never counts as Paid Consent.
-_Avoid_: API row, paid model
+**Metered Preset**:
+A preset whose run is billed by a vendor per request. Choosing one never counts as Paid Consent.
+_Avoid_: API preset, paid model, metered row
 
 **Paid Consent**:
 A person's explicit permission for one run to spend money. It covers that run only and is never stored.

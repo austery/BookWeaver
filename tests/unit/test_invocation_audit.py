@@ -176,6 +176,8 @@ def test_audit_never_borrows_identity_from_another_request(
     assert audit["runtime_version"] == (None if construction_failure else "offline-runtime-1")
     assert audit["requested_effort"] == ("high" if construction_failure else None)
     assert audit["effective_effort"] == ("high" if construction_failure else "low")
-    assert audit["row_status"] == "experiment"  # flash/high and pro/low are both experiment rows
+    assert (
+        audit["preset_status"] == "experiment"
+    )  # flash/high and pro/low are both experiment presets
     assert audit["extraction_model"] == "gemini-4-argon-low"
-    assert audit["extraction_row_status"] == "experiment"
+    assert audit["extraction_preset_status"] == "experiment"

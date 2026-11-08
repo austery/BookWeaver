@@ -1,6 +1,6 @@
 """Local HTTP API over the application path (SPEC-026); its generated /docs page is the UI.
 
-Bound to 127.0.0.1 only. It reads the same named rows as the CLI and starts runs as a child
+Bound to 127.0.0.1 only. It reads the same named presets as the CLI and starts runs as a child
 ``bookweaver`` process (SPEC-026 §7.3). Its own files are the run record, its lock file,
 each run's log, and the uploaded books in the library (§7.5). Requires the optional ``api``
 extra (FastAPI, python-multipart and uvicorn), imported at module load so a missing one is
@@ -41,21 +41,24 @@ DEFAULT_PORT = 8765
 _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 _RECORD_NAME = "current-run.json"
 _LOCK_NAME = "current-run.lock"
+_RECORD_SCHEMA_VERSION = 2
 _START_TOLERANCE_S = 5
 _UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 _LOG_TAIL_LINES = 20
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 _COPY_CHUNK_BYTES = 1024 * 1024
 _MAX_FILE_NAME_BYTES = 255
-# The CLI's own wording: ai/runtime_factory.py (metered row without consent) and
-# ai/orchestration.py (consent on a subscription row). Tests keep them identical.
+# The CLI's own wording: ai/runtime_factory.py (metered preset without consent) and
+# ai/orchestration.py (consent on a subscription preset). Tests keep them identical.
 PAID_CONSENT_REQUIRED = "Paid API requires --allow-paid-api when non-interactive"
 PAID_FLAG_NEEDS_METERED = "--allow-paid-api requires a metered --provider"
 _CHILD_COMMAND: tuple[str, ...] = (sys.executable, "-m", "ai.cli")
 
-RowName = StrEnum("RowName", [(row.name, row.name) for row in orchestration.enabled_rows()])  # type: ignore[misc]
+PresetName = StrEnum(
+    "PresetName", [(preset.name, preset.name) for preset in orchestration.enabled_presets()]
+)  # type: ignore[misc]
 
-DEFAULT_ROW = RowName(orchestration.enabled_rows()[0].name)
+DEFAULT_PRESET = PresetName(orchestration.enabled_presets()[0].name)
 
 RunState = Literal["running", "finished", "failed", "stopped", "ended"]
 
@@ -75,13 +78,13 @@ def default_library_dir() -> Path:
 class RunRequest(BaseModel):
     source: str = Field(description="Path to the source EPUB.")
     output: str = Field(description="Path for the bilingual EPUB.")
-    row: RowName = Field(description="Enabled row; GET /rows lists them.")
+    preset: PresetName = Field(description="Enabled preset; GET /presets lists them.")
     prompt: str | None = Field(default=None, description="Extra translation instructions.")
     glossary: str | None = Field(default=None, description="Path to a glossary JSON file.")
     allow_paid_api: bool = Field(
         default=False,
         description=(
-            "Consent to paid calls for a metered row (GET /rows shows its provider and model), "
+            "Consent to paid calls for a metered preset (GET /presets shows its provider and model), "
             "for this run only."
         ),
     )
@@ -90,7 +93,7 @@ class RunRequest(BaseModel):
 class RunStatus(BaseModel):
     run_id: str
     state: RunState
-    row: str
+    preset: str
     source: str
     output: str
     planned_segments: int
@@ -105,7 +108,7 @@ class RunStatus(BaseModel):
 
 @dataclass(frozen=True)
 class RunRecord:
-    """Schema version 1 of ``current-run.json`` (SPEC-026 §7.3 decision 2)."""
+    """Schema version 2 of ``current-run.json`` (SPEC-026 §7.3 decision 2, §7.6)."""
 
     schema_version: int
     run_id: str
@@ -113,7 +116,7 @@ class RunRecord:
     process_start: str | None
     source: str
     output: str
-    row: str
+    preset: str
     allow_paid_api: bool
     started_at: str
     log_path: str
@@ -150,8 +153,8 @@ class _RunStore:
             return None
         except (OSError, ValueError) as exc:
             raise self._damaged(exc) from exc
-        if not isinstance(data, dict) or data.get("schema_version") != 1:
-            raise self._damaged(ValueError("not a schema-version-1 record"))
+        if not isinstance(data, dict) or data.get("schema_version") != _RECORD_SCHEMA_VERSION:
+            raise self._damaged(ValueError(f"not a schema-version-{_RECORD_SCHEMA_VERSION} record"))
         try:
             record = RunRecord(**data)
         except TypeError as exc:
@@ -193,7 +196,7 @@ _FIELD_TYPES: dict[str, tuple[type, ...]] = {
     "process_start": (str, type(None)),
     "source": (str,),
     "output": (str,),
-    "row": (str,),
+    "preset": (str,),
     "allow_paid_api": (bool,),
     "started_at": (str,),
     "log_path": (str,),
@@ -213,7 +216,7 @@ def _is(value: object, kinds: tuple[type, ...]) -> bool:
 
 def _marker(record: RunRecord) -> str:
     """The part of the child's command line that names this run."""
-    return f"{record.source} --output {record.output} --row {record.row}"
+    return f"{record.source} --output {record.output} --preset {record.preset}"
 
 
 def _ps(field: str, *, pid: int | None, locale: str) -> str:
@@ -328,7 +331,7 @@ def _status(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunStat
     return RunStatus(
         run_id=record.run_id,
         state=_state(record, child),
-        row=record.row,
+        preset=record.preset,
         source=record.source,
         output=record.output,
         planned_segments=record.planned_segments,
@@ -346,12 +349,12 @@ def _hostname(value: str) -> str:
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
-def _check_consent(row: orchestration.Row, allow_paid_api: bool) -> None:
+def _check_consent(preset: orchestration.Preset, allow_paid_api: bool) -> None:
     """The same paid-API rule for both ways to start a run; it runs before anything is stored."""
-    metered = row.provider != "cli"
+    metered = preset.provider != "cli"
     if metered and not allow_paid_api:
         raise HTTPException(
-            400, f"Metered {row.provider} API: {row.model_id}. {PAID_CONSENT_REQUIRED}"
+            400, f"Metered {preset.provider} API: {preset.model_id}. {PAID_CONSENT_REQUIRED}"
         )
     if not metered and allow_paid_api:
         raise HTTPException(400, PAID_FLAG_NEEDS_METERED)
@@ -438,7 +441,7 @@ def create_app(
     app = FastAPI(
         title="BookWeaver local API",
         description=(
-            "Lists the enabled rows, the same as `bookweaver rows`, and starts one run at a "
+            "Lists the enabled presets, the same as `bookweaver presets`, and starts one run at a "
             "time as a `bookweaver` child process. To translate a book, use `POST /runs/upload`."
         ),
         version="0.2.0",
@@ -457,16 +460,16 @@ def create_app(
         return await call_next(request)
 
     @app.get(
-        "/rows",
-        response_model=list[orchestration.Row],
-        summary="List enabled rows",
+        "/presets",
+        response_model=list[orchestration.Preset],
+        summary="List enabled presets",
         description=(
-            "Every selection a run may use, the default row first. Metered rows are paid "
+            "Every selection a run may use, the default preset first. Metered presets are paid "
             "and need per-run consent."
         ),
     )
-    def list_rows() -> list[orchestration.Row]:
-        return list(orchestration.enabled_rows())
+    def list_presets() -> list[orchestration.Preset]:
+        return list(orchestration.enabled_presets())
 
     def ensure_idle() -> None:
         """Call with the store lock held."""
@@ -475,7 +478,7 @@ def create_app(
             raise HTTPException(409, f"Run {current.run_id} is still running")
 
     def launch(
-        row: orchestration.Row,
+        preset: orchestration.Preset,
         source: Path,
         output: Path,
         *,
@@ -491,7 +494,7 @@ def create_app(
         run_id = str(uuid.uuid4())
         log_path = output.parent / ".bookweaver_runs" / f"{run_id}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        command = [*child_command, str(source), "--output", str(output), "--row", row.name]
+        command = [*child_command, str(source), "--output", str(output), "--preset", preset.name]
         if prompt is not None:
             # One token, so a prompt that starts with "-" is not read as an option.
             command.append(f"--prompt={prompt}")
@@ -502,13 +505,13 @@ def create_app(
         # Phase 1: record the run before the child exists, so a server that dies right
         # after starting it can still find the child by its arguments (_locate).
         pending = RunRecord(
-            schema_version=1,
+            schema_version=_RECORD_SCHEMA_VERSION,
             run_id=run_id,
             pid=None,
             process_start=None,
             source=str(source),
             output=str(output),
-            row=row.name,
+            preset=preset.name,
             allow_paid_api=allow_paid_api,
             started_at=_now(),
             log_path=str(log_path),
@@ -554,8 +557,8 @@ def create_app(
         response_model=RunStatus,
         summary="Start one run from paths on this Mac",
         description=(
-            "Starts `bookweaver <source> --output <output> --row <row>` in the background. "
-            "A metered row needs `allow_paid_api`. Only one run at a time. "
+            "Starts `bookweaver <source> --output <output> --preset <preset>` in the background. "
+            "A metered preset needs `allow_paid_api`. Only one run at a time. "
             "To choose a file instead of typing a path, use `POST /runs/upload`."
         ),
     )
@@ -569,15 +572,15 @@ def create_app(
                         "value": {
                             "source": "/absolute/path/book.epub",
                             "output": "/absolute/path/book.zh.epub",
-                            "row": DEFAULT_ROW.value,
+                            "preset": DEFAULT_PRESET.value,
                         },
                     }
                 }
             ),
         ],
     ) -> RunStatus:
-        row = orchestration.find_row(body.row.value)
-        _check_consent(row, body.allow_paid_api)
+        preset = orchestration.find_preset(body.preset.value)
+        _check_consent(preset, body.allow_paid_api)
         source = Path(body.source).expanduser().resolve()
         output = Path(body.output).expanduser().resolve()
         if source.suffix.lower() != ".epub" or not source.is_file():
@@ -587,7 +590,7 @@ def create_app(
         with store.lock():
             ensure_idle()
             return launch(
-                row,
+                preset,
                 source,
                 output,
                 prompt=body.prompt,
@@ -606,8 +609,8 @@ def create_app(
         summary="Upload a book and translate it",
         description=(
             "Choose an EPUB and press Execute. The translation starts at once and can use "
-            f"quota or money, as `row` says. The book and its translation stay in `{library}/"
-            "<book name>/`. Upload the same file with the same row and prompt to continue from "
+            f"quota or money, as `preset` says. The book and its translation stay in `{library}/"
+            "<book name>/`. Upload the same file with the same preset and prompt to continue from "
             "the saved progress; a different prompt, profile or effort fails, because this API "
             "has no `--force-resume`. Only one run at a time."
         ),
@@ -621,19 +624,19 @@ def create_app(
             str,
             Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
-        row: Annotated[
-            RowName,
-            Form(description="Model and effort to use, as `GET /rows` explains them."),
-        ] = DEFAULT_ROW,
+        preset: Annotated[
+            PresetName,
+            Form(description="Model and effort to use, as `GET /presets` explains them."),
+        ] = DEFAULT_PRESET,
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
         allow_paid_api: Annotated[
             bool,
-            Form(description="Consent to paid calls for this run, which paid rows require."),
+            Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
     ) -> RunStatus:
-        selected = orchestration.find_row(row.value)
+        selected = orchestration.find_preset(preset.value)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:
             raise HTTPException(400, "prompt must not contain a NUL character")
@@ -687,7 +690,7 @@ def create_app(
         summary="Stop the running run",
         description=(
             "Sends Ctrl-C (SIGINT) to the run. Saved batches resume on the next run; the batch "
-            "in flight is lost, and on a metered row it may already be paid for."
+            "in flight is lost, and on a metered preset it may already be paid for."
         ),
     )
     def stop_run() -> RunStatus:

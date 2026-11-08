@@ -20,12 +20,12 @@ def test_invalid_selection_fails_loudly(profile: str, effort: str | None) -> Non
         resolve_profile(profile, effort=effort)
 
 
-def test_disabled_effort_names_the_enabled_rows() -> None:
+def test_disabled_effort_names_the_enabled_presets() -> None:
     with pytest.raises(ValueError, match=r"pro/medium.*enabled.*pro/low.*pro/high"):
         resolve_profile("pro", effort="medium")
 
 
-def test_pro_is_an_experiment_row_on_gemini_4_argon() -> None:
+def test_pro_is_an_experiment_preset_on_gemini_4_argon() -> None:
     selected = resolve_profile("pro", effort="high")
     assert (selected.family, selected.model_id, selected.status) == (
         "gemini-4-argon",
@@ -79,10 +79,10 @@ def test_metered_predicate_excludes_subscription_runtime() -> None:
 def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
     from ai import model_profiles
 
-    rows = model_profiles._CLI_ROWS
+    presets = model_profiles._CLI_PRESETS
     with pytest.raises(RuntimeError, match="Duplicate"):
-        model_profiles._validate_rows((*rows, rows[0]))
-    unnamed = model_profiles._CliRow(
+        model_profiles._validate_presets((*presets, presets[0]))
+    unnamed = model_profiles._CliPreset(
         "codex",  # type: ignore[arg-type]  # a runtime without a prefix entry
         "flash",
         "gpt-x",
@@ -91,40 +91,40 @@ def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
         1,
         "",
     )
-    with pytest.raises(RuntimeError, match="without a row-name prefix"):
-        model_profiles._validate_rows((*rows, unnamed))
-    with pytest.raises(RuntimeError, match="without a row"):
-        model_profiles._validate_seeds(rows, frozenset({("1.5.3", "gemini-3.1-pro-low")}))
+    with pytest.raises(RuntimeError, match="without a preset-name prefix"):
+        model_profiles._validate_presets((*presets, unnamed))
+    with pytest.raises(RuntimeError, match="without a preset"):
+        model_profiles._validate_seeds(presets, frozenset({("1.5.3", "gemini-3.1-pro-low")}))
 
 
-def test_rows_are_unique_default_first_and_resolve_to_their_model() -> None:
-    from ai.model_profiles import enabled_rows
+def test_presets_are_unique_default_first_and_resolve_to_their_model() -> None:
+    from ai.model_profiles import enabled_presets
 
-    rows = enabled_rows()
-    assert rows[0].name == "agy-flash-low"
-    assert len({row.name for row in rows}) == len(rows)
-    for row in rows:
-        selected = resolve_profile(row.profile, effort=row.effort, provider=row.provider)
-        assert (selected.model_id, selected.status) == (row.model_id, row.status)
+    presets = enabled_presets()
+    assert presets[0].name == "agy-flash-low"
+    assert len({preset.name for preset in presets}) == len(presets)
+    for preset in presets:
+        selected = resolve_profile(preset.profile, effort=preset.effort, provider=preset.provider)
+        assert (selected.model_id, selected.status) == (preset.model_id, preset.status)
 
 
-def test_metered_rows_are_manual_and_carry_no_effort() -> None:
-    from ai.model_profiles import find_row
+def test_metered_presets_are_manual_and_carry_no_effort() -> None:
+    from ai.model_profiles import find_preset
 
-    row = find_row("anthropic-pro")
-    assert (row.provider, row.profile, row.effort, row.status) == (
+    preset = find_preset("anthropic-pro")
+    assert (preset.provider, preset.profile, preset.effort, preset.status) == (
         "anthropic",
         "pro",
         None,
         "manual",
     )
     # The listing must carry the paid-consent rule in the data, not only in the table.
-    assert row.layer is None
-    assert "--allow-paid-api" in row.evidence and "USE_API" in row.evidence
+    assert preset.layer is None
+    assert "--allow-paid-api" in preset.evidence and "USE_API" in preset.evidence
 
 
-def test_unknown_row_names_the_enabled_rows() -> None:
-    from ai.model_profiles import find_row
+def test_unknown_preset_names_the_enabled_presets() -> None:
+    from ai.model_profiles import find_preset
 
-    with pytest.raises(ValueError, match=r"Unknown row 'agy-pro-medium'.*agy-flash-low"):
-        find_row("agy-pro-medium")
+    with pytest.raises(ValueError, match=r"Unknown preset 'agy-pro-medium'.*agy-flash-low"):
+        find_preset("agy-pro-medium")

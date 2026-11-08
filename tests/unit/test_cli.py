@@ -2482,8 +2482,8 @@ class TestRunProgressLogging:
         assert "[progress:error] stage=translate" in captured.err
 
 
-class TestNamedRows:
-    """`--row` and `bookweaver rows` (SPEC-026 Phase 1)."""
+class TestNamedPresets:
+    """`--preset` and `bookweaver presets` (SPEC-026 Phase 1)."""
 
     @staticmethod
     def _capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
@@ -2500,9 +2500,11 @@ class TestNamedRows:
         )
         return captured
 
-    def test_row_selects_provider_profile_and_effort(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_preset_selects_provider_profile_and_effort(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         captured = self._capture(monkeypatch)
-        entry_module.main(["book.epub", "--output", "out.epub", "--row", "agy-pro-high"])
+        entry_module.main(["book.epub", "--output", "out.epub", "--preset", "agy-pro-high"])
         assert captured == {
             "model": "pro",
             "effort": "high",
@@ -2510,11 +2512,11 @@ class TestNamedRows:
             "allow_paid_api": False,
         }
 
-    def test_metered_row_keeps_the_paid_consent_flag_separate(
+    def test_metered_preset_keeps_the_paid_consent_flag_separate(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         captured = self._capture(monkeypatch)
-        entry_module.main(["book.epub", "--output", "out.epub", "--row", "gemini-flash"])
+        entry_module.main(["book.epub", "--output", "out.epub", "--preset", "gemini-flash"])
         assert (captured["provider"], captured["effort"], captured["allow_paid_api"]) == (
             "gemini",
             None,
@@ -2525,24 +2527,28 @@ class TestNamedRows:
         "extra",
         [["--model", "flash"], ["--effort", "low"], ["--provider", "cli"], ["--mod", "pro"]],
     )
-    def test_row_rejects_separate_selection_flags(
+    def test_preset_rejects_separate_selection_flags(
         self, extra: list[str], capsys: pytest.CaptureFixture[str]
     ) -> None:
         with pytest.raises(SystemExit):
-            entry_module.main(["book.epub", "--output", "o.epub", "--row", "agy-flash-low", *extra])
-        assert "pass only --row" in capsys.readouterr().err
+            entry_module.main(
+                ["book.epub", "--output", "o.epub", "--preset", "agy-flash-low", *extra]
+            )
+        assert "pass only --preset" in capsys.readouterr().err
 
-    def test_unknown_row_lists_the_enabled_rows(self, capsys: pytest.CaptureFixture[str]) -> None:
-        with pytest.raises(SystemExit):
-            entry_module.main(["book.epub", "--output", "o.epub", "--row", "agy-pro-medium"])
-        assert "agy-flash-low" in capsys.readouterr().err
-
-    def test_rows_command_lists_the_default_row_first(
+    def test_unknown_preset_lists_the_enabled_presets(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        entry_module.main(["rows"])
+        with pytest.raises(SystemExit):
+            entry_module.main(["book.epub", "--output", "o.epub", "--preset", "agy-pro-medium"])
+        assert "agy-flash-low" in capsys.readouterr().err
+
+    def test_presets_command_lists_the_default_preset_first(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        entry_module.main(["presets"])
         lines = capsys.readouterr().out.splitlines()
-        assert lines[0].split()[0] == "ROW"
+        assert lines[0].split()[0] == "PRESET"
         assert lines[1].split()[:7] == [
             "agy-flash-low",
             "antigravity",
@@ -2553,18 +2559,24 @@ class TestNamedRows:
             "default",
         ]
 
-    def test_rows_table_and_json_carry_the_same_fields(
+    def test_presets_table_and_json_carry_the_same_fields(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        entry_module.main(["rows"])
+        entry_module.main(["presets"])
         header = capsys.readouterr().out.splitlines()[0].split()
-        entry_module.main(["rows", "--json"])
+        entry_module.main(["presets", "--json"])
         keys = list(json.loads(capsys.readouterr().out)[0])
-        renamed = {"ROW": "name", "TIER": "profile", "MODEL": "model_id"}
+        renamed = {"PRESET": "name", "TIER": "profile", "MODEL": "model_id"}
         assert [renamed.get(column, column.lower()) for column in header] == keys
 
-    def test_rows_json_is_machine_readable(self, capsys: pytest.CaptureFixture[str]) -> None:
-        entry_module.main(["rows", "--json"])
-        rows = json.loads(capsys.readouterr().out)
-        assert {"agy-flash-low", "anthropic-pro"} <= {row["name"] for row in rows}
-        assert rows[0]["status"] == "default"
+    def test_presets_json_is_machine_readable(self, capsys: pytest.CaptureFixture[str]) -> None:
+        entry_module.main(["presets", "--json"])
+        presets = json.loads(capsys.readouterr().out)
+        assert {"agy-flash-low", "anthropic-pro"} <= {preset["name"] for preset in presets}
+        assert presets[0]["status"] == "default"
+
+
+def test_the_old_row_flag_is_gone(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        entry_module.main(["book.epub", "--output", "out.epub", "--row", "agy-flash-low"])
+    assert "--row" in capsys.readouterr().err
