@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
+import threading
 import time
 import zipfile
 from collections.abc import Iterator
@@ -221,13 +223,13 @@ def test_run_starts_the_cli_contract_and_reports_progress(
         str(tmp_path / "book.zh.epub"),
         "--row",
         "agy-flash-low",
-        "--prompt",
-        "Keep it formal.",
+        "--prompt=Keep it formal.",
     ]
     log = Path(str(status["log_path"]))
     assert log.parent == tmp_path / ".bookweaver_runs"
     record = json.loads((tmp_path / "state" / "current-run.json").read_text())
     assert record["schema_version"] == 1 and record["checkpoint_dir"] == str(checkpoint)
+    assert started["checkpoint_dir"] == str(checkpoint)
 
 
 def test_failed_child_is_reported(
@@ -251,7 +253,9 @@ def test_metered_row_without_consent_starts_nothing(runs: tuple[TestClient, Path
         },
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == local_api.PAID_CONSENT_REQUIRED
+    detail = response.json()["detail"]
+    assert detail.startswith("Metered gemini API: ") and "gemini" in detail.split(":")[1]
+    assert detail.endswith(local_api.PAID_CONSENT_REQUIRED)
     assert client.get("/runs/current").status_code == 404
 
 
@@ -276,7 +280,21 @@ def test_metered_row_with_consent_passes_the_flag(runs: tuple[TestClient, Path])
     assert child_args(settle(client))[-3:] == ["--row", "gemini-flash", "--allow-paid-api"]
 
 
-def test_rejection_texts_match_the_cli_paid_gate() -> None:
+def test_rejection_texts_match_the_cli_paid_gate(tmp_path: Path) -> None:
+    # Consent on a subscription row: the CLI itself raises this before any provider exists.
+    with pytest.raises(ValueError) as cli_error:
+        entry_module.main(
+            [
+                str(make_epub(tmp_path / "b.epub")),
+                "--output",
+                str(tmp_path / "o.epub"),
+                "--row",
+                "agy-flash-low",
+                "--allow-paid-api",
+            ]
+        )
+    assert str(cli_error.value) == local_api.PAID_FLAG_NEEDS_METERED
+    # Metered row without consent, non-interactive: the paid gate's own text.
     factory = DefaultProviderFactory()
     with pytest.raises(PaidAuthorizationError) as missing:
         factory.create(
@@ -287,15 +305,6 @@ def test_rejection_texts_match_the_cli_paid_gate() -> None:
             remaining_chars=1,
         )
     assert str(missing.value) == local_api.PAID_CONSENT_REQUIRED
-    with pytest.raises(PaidAuthorizationError) as wrong:
-        factory.create(
-            resolve_profile("flash"),
-            protocol="segment_tags",
-            config={},
-            allow_paid_api=True,
-            remaining_chars=1,
-        )
-    assert str(wrong.value) == local_api.PAID_FLAG_NEEDS_METERED
 
 
 def test_non_epub_source_is_rejected(runs: tuple[TestClient, Path]) -> None:
@@ -376,6 +385,14 @@ def test_restarted_server_reports_an_unobserved_exit_as_ended(tmp_path: Path) ->
     assert status["state"] == "ended" and status["done_segments"] == 0
 
 
+def test_prompt_starting_with_a_dash_reaches_the_child(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    start(client, tmp_path, prompt="-formal")
+    status = settle(client)
+    assert status["state"] == "finished"
+    assert "--prompt=-formal" in child_args(status)
+
+
 def test_no_run_yet_is_404(runs: tuple[TestClient, Path]) -> None:
     client, _ = runs
     assert client.get("/runs/current").status_code == 404
@@ -408,3 +425,96 @@ def test_reused_pid_is_never_signalled(tmp_path: Path) -> None:
     client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
     assert client.get("/runs/current").json()["state"] == "ended"
     assert client.post("/runs/current/stop").status_code == 409
+
+
+def test_reused_pid_with_a_matching_command_line_is_never_signalled(tmp_path: Path) -> None:
+    # Worst case: the reused PID's command line even contains the recorded source path.
+    own_command = subprocess.run(
+        ["ps", "-o", "command=", "-p", str(os.getpid())], capture_output=True, text=True
+    ).stdout.split()[0]
+    state = tmp_path / "state"
+    state.mkdir()
+    record = {
+        "schema_version": 1,
+        "run_id": "r3",
+        "pid": os.getpid(),
+        "source": own_command,
+        "output": "/b.zh.epub",
+        "row": "agy-flash-low",
+        "allow_paid_api": False,
+        "started_at": "2020-01-01T00:00:00+00:00",
+        "log_path": str(tmp_path / "none.log"),
+        "checkpoint_dir": str(tmp_path / "none"),
+        "planned_segments": 5,
+        "exit_code": None,
+        "ended_at": None,
+    }
+    (state / "current-run.json").write_text(json.dumps(record))
+    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
+    assert client.get("/runs/current").json()["state"] == "ended"
+    assert client.post("/runs/current/stop").status_code == 409
+
+
+def test_unrecordable_run_is_stopped(
+    runs: tuple[TestClient, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, tmp_path = runs
+    monkeypatch.setenv("FAKE_SLEEP", "30")
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    (state / "current-run.lock").touch()
+    state.chmod(0o500)
+    try:
+        response = client.post(
+            "/runs",
+            json={
+                "source": str(make_epub(tmp_path / "book.epub")),
+                "output": str(tmp_path / "book.zh.epub"),
+                "row": "agy-flash-low",
+            },
+        )
+    finally:
+        state.chmod(0o700)
+    assert response.status_code == 500
+    script = str(tmp_path / "fake_child.py")
+    survivors = subprocess.run(["pgrep", "-f", script], capture_output=True, text=True).stdout
+    assert survivors.strip() == ""
+
+
+def test_two_servers_never_start_two_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    script = tmp_path / "fake_child.py"
+    script.write_text(FAKE_CHILD)
+    monkeypatch.setenv("FAKE_SLEEP", "30")
+    state = tmp_path / "state"
+    clients = [
+        TestClient(
+            local_api.create_app(
+                port=port, state_dir=state, child_command=(sys.executable, str(script))
+            ),
+            base_url=f"http://127.0.0.1:{port}",
+        )
+        for port in (8765, 8766)
+    ]
+    books = [make_epub(tmp_path / f"book{index}.epub") for index in (0, 1)]
+    barrier = threading.Barrier(2)
+    codes: list[int] = []
+
+    def post(index: int) -> None:
+        barrier.wait()
+        body = {
+            "source": str(books[index]),
+            "output": str(tmp_path / f"out{index}.epub"),
+            "row": "agy-flash-low",
+        }
+        codes.append(clients[index].post("/runs", json=body).status_code)
+
+    threads = [threading.Thread(target=post, args=(index,)) for index in (0, 1)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    try:
+        assert sorted(codes) == [202, 409]
+    finally:
+        for test_client in clients:
+            test_client.post("/runs/current/stop")

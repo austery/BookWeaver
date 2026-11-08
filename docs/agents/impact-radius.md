@@ -102,7 +102,8 @@ change that adds, modifies or deletes anything under these paths has
   `persist_audit` in `ai/runtime_factory.py`), the checkpoint `paid_usage_by_run`
   field, and `warnings.json` / `<output>.warnings.json` (`ai/orchestration.py:424`).
 - **Local API run record and child log** (SPEC-026 §7.3): `$XDG_STATE_HOME/bookweaver/current-run.json`
-  (`RunRecord` in `ai/local_api.py`, schema version 1) and
+  (`RunRecord` in `ai/local_api.py`, schema version 1), its lock file
+  `current-run.lock`, and
   `<output directory>/.bookweaver_runs/<run_id>.log`.
 - **EPUB output format:** the bilingual EPUB that `ai/epub_package.py` writes is
   the product the owner keeps and reads in other apps.

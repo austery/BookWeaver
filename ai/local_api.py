@@ -8,6 +8,7 @@ reported by the CLI before anything starts.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
@@ -16,7 +17,8 @@ import sys
 import tempfile
 import threading
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
@@ -34,12 +36,13 @@ HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 _LOCAL_HOSTNAMES = ("127.0.0.1", "localhost")
 _RECORD_NAME = "current-run.json"
+_LOCK_NAME = "current-run.lock"
+_START_TOLERANCE_S = 5
 _LOG_TAIL_LINES = 20
-# The CLI paid gate's own wording (ai/runtime_factory.py); a test keeps them identical.
+# The CLI's own wording: ai/runtime_factory.py (metered row without consent) and
+# ai/orchestration.py (consent on a subscription row). Tests keep them identical.
 PAID_CONSENT_REQUIRED = "Paid API requires --allow-paid-api when non-interactive"
-PAID_FLAG_NEEDS_METERED = (
-    "--allow-paid-api requires a metered --provider (gemini, openai, or anthropic)"
-)
+PAID_FLAG_NEEDS_METERED = "--allow-paid-api requires a metered --provider"
 _CHILD_COMMAND: tuple[str, ...] = (sys.executable, "-m", "ai.cli")
 
 RowName = StrEnum("RowName", [(row.name, row.name) for row in orchestration.enabled_rows()])  # type: ignore[misc]
@@ -61,7 +64,11 @@ class RunRequest(BaseModel):
     prompt: str | None = Field(default=None, description="Extra translation instructions.")
     glossary: str | None = Field(default=None, description="Path to a glossary JSON file.")
     allow_paid_api: bool = Field(
-        default=False, description="Consent to paid calls for a metered row, for this run only."
+        default=False,
+        description=(
+            "Consent to paid calls for a metered row (GET /rows shows its provider and model), "
+            "for this run only."
+        ),
     )
 
 
@@ -73,6 +80,7 @@ class RunStatus(BaseModel):
     output: str
     planned_segments: int
     done_segments: int | None = Field(description="From the checkpoint; null if unreadable.")
+    checkpoint_dir: str
     exit_code: int | None
     started_at: str
     ended_at: str | None
@@ -106,7 +114,18 @@ def _now() -> str:
 class _RunStore:
     def __init__(self, state_dir: Path) -> None:
         self.path = state_dir / _RECORD_NAME
-        self.lock = threading.Lock()
+        self._thread_lock = threading.Lock()
+
+    @contextmanager
+    def lock(self) -> Iterator[None]:
+        """Exclusive across threads and across `serve` processes sharing this state directory."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._thread_lock, (self.path.parent / _LOCK_NAME).open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def read(self) -> RunRecord | None:
         try:
@@ -126,7 +145,7 @@ class _RunStore:
         os.replace(stream.name, self.path)
 
     def finish(self, run_id: str, exit_code: int) -> None:
-        with self.lock:
+        with self.lock():
             record = self.read()
             if record is not None and record.run_id == run_id and record.exit_code is None:
                 self.write(replace(record, exit_code=exit_code, ended_at=_now()))
@@ -136,21 +155,29 @@ def _alive(record: RunRecord) -> bool:
     """True only while the record's own child runs; a reused PID must never count.
 
     After a server restart the PID may belong to an unrelated process, and stop would send
-    it SIGINT. The child's command line always carries the run's source path, so check it.
+    it SIGINT. The child started within seconds of ``started_at``, and its command line
+    carries the run's source path; a reused PID started later, so require both.
     """
     try:
         os.kill(record.pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
+    except (ProcessLookupError, PermissionError):
         return False
     listing = subprocess.run(
-        ["ps", "-o", "command=", "-p", str(record.pid)],
+        ["ps", "-o", "lstart=,command=", "-p", str(record.pid)],
         capture_output=True,
         text=True,
         check=False,
+        env={**os.environ, "LC_ALL": "C"},
     )
-    return record.source in listing.stdout
+    line = listing.stdout.strip()
+    try:
+        # `lstart` is a fixed 24-character local time, for example "Sun Nov  8 09:36:09 2026".
+        process_start = datetime.strptime(line[:24], "%a %b %d %H:%M:%S %Y").astimezone()
+        recorded_start = datetime.fromisoformat(record.started_at)
+    except ValueError:
+        return False
+    close_in_time = abs((process_start - recorded_start).total_seconds()) <= _START_TOLERANCE_S
+    return close_in_time and record.source in line[24:]
 
 
 def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState:
@@ -204,6 +231,7 @@ def _status(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunStat
         started_at=record.started_at,
         ended_at=record.ended_at,
         log_path=record.log_path,
+        checkpoint_dir=record.checkpoint_dir,
         log_tail=_log_tail(record.log_path),
     )
 
@@ -269,7 +297,9 @@ def create_app(
         row = orchestration.find_row(body.row.value)
         metered = row.provider != "cli"
         if metered and not body.allow_paid_api:
-            raise HTTPException(400, PAID_CONSENT_REQUIRED)
+            raise HTTPException(
+                400, f"Metered {row.provider} API: {row.model_id}. {PAID_CONSENT_REQUIRED}"
+            )
         if not metered and body.allow_paid_api:
             raise HTTPException(400, PAID_FLAG_NEEDS_METERED)
         source = Path(body.source).expanduser().resolve()
@@ -278,7 +308,7 @@ def create_app(
             raise HTTPException(400, f"Source must be an existing EPUB file: {source}")
         if not output.parent.is_dir():
             raise HTTPException(400, f"Output directory does not exist: {output.parent}")
-        with store.lock:
+        with store.lock():
             current = store.read()
             if current is not None and _state(current, children.get(current.run_id)) == "running":
                 raise HTTPException(409, f"Run {current.run_id} is still running")
@@ -291,7 +321,8 @@ def create_app(
             log_path.parent.mkdir(parents=True, exist_ok=True)
             command = [*child_command, str(source), "--output", str(output), "--row", row.name]
             if body.prompt is not None:
-                command += ["--prompt", body.prompt]
+                # One token, so a prompt that starts with "-" is not read as an option.
+                command.append(f"--prompt={body.prompt}")
             if body.glossary is not None:
                 command += ["--glossary", str(Path(body.glossary).expanduser().resolve())]
             if body.allow_paid_api:
@@ -319,7 +350,19 @@ def create_app(
                 exit_code=None,
                 ended_at=None,
             )
-            store.write(record)
+            try:
+                store.write(record)
+            except OSError as exc:
+                # An unrecorded child could not be watched or stopped; stop it now.
+                os.killpg(child.pid, signal.SIGINT)
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(child.pid, signal.SIGKILL)
+                    child.wait()
+                raise HTTPException(
+                    500, f"Cannot write the run record; run stopped: {exc}"
+                ) from exc
             children[run_id] = child
         threading.Thread(
             target=lambda: store.finish(run_id, child.wait()), daemon=True, name=f"run-{run_id}"

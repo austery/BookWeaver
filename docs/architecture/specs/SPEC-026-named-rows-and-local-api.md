@@ -2,7 +2,7 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phases 1-2 implemented (2026-11-07); Phase 1 real-run checkpoint deferred by the owner; Phase 3 design approved (2026-11-08), in implementation; Phase 4 not started
+implementationStatus: Phases 1-3 implemented (Phase 3 on 2026-11-08); Phase 1 real-run checkpoint deferred by the owner; Phase 4 offline tests only remain
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-08
@@ -71,10 +71,10 @@ Once SPEC-025 rows have names, the CLI accepts `--row <name>` in place of the se
 Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in-the-ai-era` (the local ASR service drifted into a general gateway) and `2026-10-08_puresubs_poc-to-complexity-explosion-retrospective` (parallel state grew around the core task).
 
 - **The UI is another entry point, not a new system.** It builds the same typed options the CLI builds and calls the same application path.
-- **The checkpoint stays the only run state.** No job table, no queue, no second progress store. Status is read from the checkpoint and the run process.
-- **One run at a time** is already enforced by the checkpoint's exclusive run lock. The UI does not add its own lock.
+- **The checkpoint stays the only run state.** No job table, no queue, no second progress store. Status is read from the checkpoint and the run process. (§7.3 adds one small run record, so the server can find the current child and its planned segment count; it holds no translation progress.)
+- **One run at a time.** The checkpoint's exclusive run lock covers one book. §7.3 adds the server-wide rule: `POST /runs` refuses a second run, on any book, while one runs.
 - **No long-lived service.** `uv run bookweaver serve` starts the local API on demand; stopping it does not stop a translation that is running.
-- **Paid rows keep their consent rule.** A metered row (SPEC-020, SPEC-024) needs an explicit per-run confirmation in the UI that shows the provider, model and the paid-API warning text the CLI prints. No stored "always allow".
+- **Paid rows keep their consent rule.** A metered row (SPEC-020, SPEC-024) needs an explicit per-run confirmation in the UI (`allow_paid_api`); a rejection names the provider and model and carries the CLI's paid-API text. No stored "always allow".
 
 ## 4. Behavior
 
@@ -83,7 +83,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 | Endpoint | Purpose |
 |---|---|
 | `GET /rows` | Enabled rows with runtime (quota pool), provider, tier, effort, concrete `model_id` (which names the family), status (`default`, `manual`, `experiment`), highest proven layer and evidence (§7.2) |
-| `POST /runs` | Start one run. Body: `source`, `output`, `row` (Enum), optional prompt and glossary fields, `allow_paid_api` (default false). Returns `202` with the run's checkpoint path |
+| `POST /runs` | Start one run. Body: `source`, `output`, `row` (Enum), optional prompt and glossary fields, `allow_paid_api` (default false). Returns `202` with the run's status, including its checkpoint directory |
 | `GET /runs/current` | Basic status (§4.2) |
 | `POST /runs/current/stop` | Send the same signal as Ctrl-C to the child process |
 
@@ -148,7 +148,7 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 - Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
 - `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
 
-### 7.3 Phase 3 design (owner-approved in chat, 2026-11-08)
+### 7.3 Phase 3 design and as built (owner-approved in chat, 2026-11-08)
 
 The owner approved these six decisions before implementation. Each names the persistent files it adds, as the radius map's Structure gate requires (`docs/agents/impact-radius.md`).
 
@@ -160,16 +160,20 @@ The owner approved these six decisions before implementation. Each names the per
    - `exit_code` and `ended_at`: `null` until the server observes the child exit, then written once.
 
    A new start replaces the file. Nothing else writes it. When the server restarts while a child runs, it cannot observe the exit; status then reports `ended` with `exit_code: null` once the process is gone.
+
+   An empty lock file, `current-run.lock` in the same directory, serializes starts and record updates across threads and across `serve` processes that share the state directory (`flock`), so two servers cannot start two runs. If the record cannot be written after the child starts, the server stops the child and returns 500: an unrecorded run could not be watched or stopped.
+
+   A recorded PID counts as this run's child only while the process started within 5 seconds of `started_at` and its command line contains `source`. After a restart, a reused PID therefore reads as `ended` and is never signalled.
 3. **Progress.** At start, the server segments the source EPUB once through the application path and stores the count as `planned_segments`. Done segments come from `translated_segment_count` in `<checkpoint_dir>/checkpoint.json`, read without the lock (the file is replaced atomically). The checkpoint format does not change.
 4. **Request protection.** Every request must carry a `Host` of `127.0.0.1` or `localhost` (with any port); others get 400. A state-changing request (`POST`) with an `Origin` header must come from `http://127.0.0.1:<port>` or `http://localhost:<port>`; others get 403. This blocks DNS-rebinding and cross-site requests from pages in the owner's browser.
-5. **Paid consent.** A metered row with `allow_paid_api` false is rejected with 400 before anything starts, with the CLI's text (`Paid API requires --allow-paid-api when non-interactive`). A subscription row with `allow_paid_api` true is rejected with the CLI's text (`--allow-paid-api requires a metered --provider ...`). The child gets `--allow-paid-api` only when both agree, and its stdin is `/dev/null`, so the paid gate can never show the interactive `USE_API` prompt.
+5. **Paid consent.** A metered row with `allow_paid_api` false is rejected with 400 before anything starts: `Metered <provider> API: <model_id>.` followed by the paid gate's text (`Paid API requires --allow-paid-api when non-interactive`). A subscription row with `allow_paid_api` true is rejected with 400 and the CLI's text (`--allow-paid-api requires a metered --provider`). The child gets `--allow-paid-api` only when both agree, and its stdin is `/dev/null`, so the paid gate can never show the interactive `USE_API` prompt.
 6. **Stop.** `POST /runs/current/stop` sends `SIGINT` to the child's process group, the same signal as Ctrl-C in a terminal. Saved batches stay in the checkpoint and resume on the next run; the batch in flight is lost, and on a metered row it may already be paid for. The endpoint description says so.
 
 Also in this phase, from §2 and §3:
 
 - **One run at a time.** `POST /runs` returns 409 while the run record names a live process.
-- **Request body:** `source`, `output`, `row` (an Enum of the enabled rows), optional `prompt` and `glossary` (passed as `--prompt` and `--glossary`), and `allow_paid_api` (default false). Other CLI options stay CLI-only.
-- **Status:** `state` is `running`, `finished` (exit code 0), `failed` (non-zero), `stopped` (exit by `SIGINT`), or `ended` (exit not observed), plus `planned_segments`, `done_segments`, and the last 20 log lines.
+- **Request body:** `source`, `output`, `row` (an Enum of the enabled rows), optional `prompt` and `glossary` (passed as `--prompt=<text>`, one token so a leading dash is safe, and `--glossary`), and `allow_paid_api` (default false). Other CLI options stay CLI-only.
+- **Status:** `state` is `running`, `finished` (exit code 0), `failed` (non-zero), `stopped` (exit by `SIGINT`), or `ended` (exit not observed), plus `planned_segments`, `done_segments`, `checkpoint_dir`, `log_path`, and the last 20 log lines.
 - **Child command:** the same interpreter runs `-m ai.cli <source> --output <output> --row <row> [...]`, the CLI contract `bookweaver` uses.
 
 Phase 4's rejection rule is implemented here by decision 5; Phase 4 keeps only its offline tests that no metered row starts without consent.
