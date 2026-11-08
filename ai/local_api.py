@@ -96,7 +96,8 @@ class RunRecord:
 
     schema_version: int
     run_id: str
-    pid: int
+    pid: int | None
+    process_start: str | None
     source: str
     output: str
     row: str
@@ -142,8 +143,9 @@ class _RunStore:
             record = RunRecord(**data)
         except TypeError as exc:
             raise self._damaged(exc) from exc
-        if not isinstance(record.pid, int) or not isinstance(record.source, str):
-            raise self._damaged(ValueError("pid or source has the wrong type"))
+        wrong = [name for name, kinds in _FIELD_TYPES.items() if not _is(data[name], kinds)]
+        if wrong:
+            raise self._damaged(ValueError("wrong type: " + ", ".join(wrong)))
         return record
 
     def _damaged(self, cause: Exception) -> HTTPException:
@@ -172,40 +174,103 @@ class _RunStore:
                 self.write(replace(record, exit_code=exit_code, ended_at=_now()))
 
 
-def _alive(record: RunRecord) -> bool:
-    """True only while the record's own child runs; a reused PID must never count.
+_FIELD_TYPES: dict[str, tuple[type, ...]] = {
+    "run_id": (str,),
+    "pid": (int, type(None)),
+    "process_start": (str, type(None)),
+    "source": (str,),
+    "output": (str,),
+    "row": (str,),
+    "allow_paid_api": (bool,),
+    "started_at": (str,),
+    "log_path": (str,),
+    "checkpoint_dir": (str,),
+    "planned_segments": (int,),
+    "exit_code": (int, type(None)),
+    "ended_at": (str, type(None)),
+}
 
-    After a server restart the PID may belong to an unrelated process, and stop would send
-    it SIGINT. The child started within seconds of ``started_at``, and its command line
-    carries the run's source path; a reused PID started later, so require both.
+
+def _is(value: object, kinds: tuple[type, ...]) -> bool:
+    # bool is a subclass of int; a JSON true must not pass as a PID or a count.
+    if isinstance(value, bool) and bool not in kinds:
+        return False
+    return isinstance(value, kinds)
+
+
+def _marker(record: RunRecord) -> str:
+    """The part of the child's command line that names this run."""
+    return f"{record.source} --output {record.output} --row {record.row}"
+
+
+def _ps(field: str, *, pid: int | None, locale: str) -> str:
+    """One `ps` column for one PID, or for every process when ``pid`` is None.
+
+    `lstart` is read in the C locale so it is stable text; the command line in a UTF-8
+    locale, because under C, ps escapes non-ASCII paths.
     """
-    try:
-        os.kill(record.pid, 0)
-    except (ProcessLookupError, PermissionError):
-        return False
-    # Start time in the C locale, so day and month names parse; for example
-    # "Sun Nov  8 09:36:09 2026" (local time).
-    started = _ps(record.pid, "lstart=", {"LC_ALL": "C"})
-    # Command line in a UTF-8 locale; under C, ps escapes non-ASCII paths and never matches.
-    command = _ps(record.pid, "command=", {"LC_ALL": _UTF8_LOCALE})
-    try:
-        process_start = datetime.strptime(started, "%a %b %d %H:%M:%S %Y").astimezone()
-        recorded_start = datetime.fromisoformat(record.started_at)
-    except ValueError:
-        return False
-    close_in_time = abs((process_start - recorded_start).total_seconds()) <= _START_TOLERANCE_S
-    return close_in_time and record.source in command
-
-
-def _ps(pid: int, field: str, locale: dict[str, str]) -> str:
+    target = ["-p", str(pid)] if pid is not None else ["-ax"]
     listing = subprocess.run(
-        ["ps", "-o", field, "-p", str(pid)],
+        ["ps", "-o", field, *target],
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, **locale},
+        env={**os.environ, "LC_ALL": locale},
     )
     return listing.stdout.strip()
+
+
+def _process_start(pid: int) -> str:
+    """The kernel's start time for ``pid`` as `ps` prints it; equal text means the same process."""
+    return _ps("lstart=", pid=pid, locale="C")
+
+
+def _elapsed_seconds(text: str) -> int | None:
+    """Parse `ps -o etime` ([[dd-]hh:]mm:ss); independent of time zones and daylight saving."""
+    days, _, clock = text.strip().rpartition("-")
+    parts = clock.split(":")
+    try:
+        numbers = [int(part) for part in parts]
+        whole_days = int(days) if days else 0
+    except ValueError:
+        return None
+    while len(numbers) < 3:
+        numbers.insert(0, 0)
+    hours, minutes, seconds = numbers[-3:]
+    return ((whole_days * 24 + hours) * 60 + minutes) * 60 + seconds
+
+
+def _locate(record: RunRecord) -> int | None:
+    """PID of this run's child while it runs; None otherwise. A reused PID never matches.
+
+    With a PID on record, the process must have the exact recorded start time and carry the
+    run's arguments. Without one (the server died between starting the child and recording
+    its PID), find the process that carries the run's arguments and started within a few
+    seconds of ``started_at``.
+    """
+    marker = _marker(record)
+    if record.pid is not None:
+        if record.process_start is None or _process_start(record.pid) != record.process_start:
+            return None
+        command = _ps("command=", pid=record.pid, locale=_UTF8_LOCALE)
+        return record.pid if marker in command else None
+    try:
+        recorded = datetime.fromisoformat(record.started_at)
+    except ValueError:
+        return None
+    now = datetime.now(timezone.utc)
+    matches: list[int] = []
+    for line in _ps("pid=,command=", pid=None, locale=_UTF8_LOCALE).splitlines():
+        pid_text, _, command = line.strip().partition(" ")
+        if marker not in command or not pid_text.isdigit():
+            continue
+        elapsed = _elapsed_seconds(_ps("etime=", pid=int(pid_text), locale="C"))
+        if elapsed is None:
+            continue
+        started = now.timestamp() - elapsed
+        if abs(started - recorded.timestamp()) <= _START_TOLERANCE_S:
+            matches.append(int(pid_text))
+    return matches[0] if len(matches) == 1 else None
 
 
 def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState:
@@ -216,7 +281,7 @@ def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState
         if exit_code is None:
             return "running"
     if exit_code is None:
-        return "running" if _alive(record) else "ended"
+        return "running" if _locate(record) is not None else "ended"
     if exit_code == 0:
         return "finished"
     if exit_code in (-signal.SIGINT, 128 + signal.SIGINT):
@@ -355,18 +420,13 @@ def create_app(
                 command += ["--glossary", str(Path(body.glossary).expanduser().resolve())]
             if body.allow_paid_api:
                 command.append("--allow-paid-api")
-            with log_path.open("ab") as log:
-                child = subprocess.Popen(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
-                )
-            record = RunRecord(
+            # Phase 1: record the run before the child exists, so a server that dies right
+            # after starting it can still find the child by its arguments (_locate).
+            pending = RunRecord(
                 schema_version=1,
                 run_id=run_id,
-                pid=child.pid,
+                pid=None,
+                process_start=None,
                 source=str(source),
                 output=str(output),
                 row=row.name,
@@ -378,6 +438,20 @@ def create_app(
                 exit_code=None,
                 ended_at=None,
             )
+            try:
+                store.write(pending)
+            except OSError as exc:
+                raise HTTPException(500, f"Cannot write the run record: {exc}") from exc
+            with log_path.open("ab") as log:
+                child = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+            # Phase 2: the exact kernel start time makes a later PID reuse detectable.
+            record = replace(pending, pid=child.pid, process_start=_process_start(child.pid))
             try:
                 store.write(record)
             except OSError as exc:
@@ -424,8 +498,11 @@ def create_app(
         child = children.get(record.run_id) if record is not None else None
         if record is None or _state(record, child) != "running":
             raise HTTPException(409, "No run is running")
+        pid = child.pid if child is not None else _locate(record)
+        if pid is None:
+            raise HTTPException(409, "No run is running")
         try:
-            os.killpg(record.pid, signal.SIGINT)
+            os.killpg(pid, signal.SIGINT)
         except ProcessLookupError:
             raise HTTPException(409, "No run is running") from None
         return _status(record, child)

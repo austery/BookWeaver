@@ -153,17 +153,22 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 The owner approved these six decisions before implementation. Each names the persistent files it adds, as the radius map's Structure gate requires (`docs/agents/impact-radius.md`).
 
 1. **Child log.** The child's stdout and stderr go to `<output directory>/.bookweaver_runs/<run_id>.log`, beside the existing invocation audits. `run_id` is a new UUID the server generates per start; it is not the audit's run ID. The file is plain text, appended by the child, never rewritten by the server.
-2. **Run record.** The server writes one file, `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`, the same root as the runtime-certification store), atomically at start. Fields, schema version 1:
-   - `schema_version` (1), `run_id`, `pid` (the child; it leads its own process group);
+2. **Run record.** The server writes one file, `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`, the same root as the runtime-certification store), atomically. Fields, schema version 1:
+   - `schema_version` (1), `run_id`;
+   - `pid` (the child; it leads its own process group) and `process_start` (the child's start time exactly as `ps -o lstart=` prints it in the C locale); both `null` until the child exists;
    - `source`, `output` (absolute paths), `row`, `allow_paid_api`;
    - `started_at` (UTC ISO 8601), `log_path`, `checkpoint_dir`, `planned_segments`;
    - `exit_code` and `ended_at`: `null` until the server observes the child exit, then written once.
 
-   A new start replaces the file. Nothing else writes it. When the server restarts while a child runs, it cannot observe the exit; status then reports `ended` with `exit_code: null` once the process is gone.
+   A start writes the record twice: first without `pid` and `process_start`, before the child exists; then with them, right after it starts. A new start replaces the file. Nothing else writes it. When the server restarts while a child runs, it cannot observe the exit; status then reports `ended` with `exit_code: null` once the process is gone.
 
-   An empty lock file, `current-run.lock` in the same directory, serializes starts and record updates across threads and across `serve` processes that share the state directory (`flock`), so two servers cannot start two runs. If the record cannot be written after the child starts, the server stops the child and returns 500: an unrecorded run could not be watched or stopped.
+   **Lock.** An empty lock file, `current-run.lock` in the same directory, serializes starts and record updates across threads and across `serve` processes that share the state directory (`flock`), so two servers cannot start two runs.
 
-   A recorded PID counts as this run's child only while the process started within 5 seconds of `started_at` and its command line contains `source`. After a restart, a reused PID therefore reads as `ended` and is never signalled.
+   **Identity.** A process counts as this run's child only while its command line carries `<source> --output <output> --row <row>` and either:
+   - its PID and `ps` start text both equal `pid` and `process_start` (a reused PID has a different start time, so it is never signalled); or
+   - when the record has no `pid` yet (the server died between starting the child and recording it), it is the only such process and it started within 5 seconds of `started_at`, measured from `ps -o etime=` (elapsed time, so time zones and daylight saving do not matter).
+
+   **Failures.** If the first write fails, nothing starts (500). If the second write fails, the server stops the child and returns 500, because an unrecorded run could not be watched or stopped. A record that is not valid JSON, not schema version 1, or has a missing, extra or wrongly typed field makes every run endpoint return 500 with the file path: whether a run is live is unknown, so the owner checks and deletes the file.
 3. **Progress.** At start, the server segments the source EPUB once through the application path and stores the count as `planned_segments`. Done segments come from `translated_segment_count` in `<checkpoint_dir>/checkpoint.json`, read without the lock (the file is replaced atomically). The checkpoint format does not change.
 4. **Request protection.** Every request must carry a `Host` of `127.0.0.1` or `localhost` (with any port); others get 400. A state-changing request (`POST`) with an `Origin` header must come from `http://127.0.0.1:<port>` or `http://localhost:<port>`; others get 403. This blocks DNS-rebinding and cross-site requests from pages in the owner's browser.
 5. **Paid consent.** A metered row with `allow_paid_api` false is rejected with 400 before anything starts: `Metered <provider> API: <model_id>.` followed by the paid gate's text (`Paid API requires --allow-paid-api when non-interactive`). A subscription row with `allow_paid_api` true is rejected with 400 and the CLI's text (`--allow-paid-api requires a metered --provider`). The child gets `--allow-paid-api` only when both agree, and its stdin is `/dev/null`, so the paid gate can never show the interactive `USE_API` prompt.

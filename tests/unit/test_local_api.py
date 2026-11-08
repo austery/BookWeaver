@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
 import time
 import zipfile
 from collections.abc import Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -94,6 +96,16 @@ def settle(client: TestClient, *, timeout: float = 10.0) -> dict[str, object]:
         if status["state"] != "running" or time.monotonic() > deadline:
             return status
         time.sleep(0.05)
+
+
+def wait_until_started(client: TestClient, *, timeout: float = 10.0) -> None:
+    """Wait for the fake child to print its arguments, so Python has finished starting."""
+    deadline = time.monotonic() + timeout
+    while not any(
+        line.startswith("ARGS ") for line in client.get("/runs/current").json()["log_tail"]
+    ):
+        assert time.monotonic() < deadline, "fake child never started"
+        time.sleep(0.02)
 
 
 def child_args(status: dict[str, object]) -> list[str]:
@@ -358,34 +370,11 @@ def test_stop_sends_ctrl_c(runs: tuple[TestClient, Path], monkeypatch: pytest.Mo
     client, tmp_path = runs
     monkeypatch.setenv("FAKE_SLEEP", "30")
     start(client, tmp_path)
+    wait_until_started(client)
     assert client.post("/runs/current/stop").status_code == 202
     status = settle(client)
     assert status["state"] == "stopped"
     assert client.post("/runs/current/stop").status_code == 409
-
-
-def test_restarted_server_reports_an_unobserved_exit_as_ended(tmp_path: Path) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
-    record = {
-        "schema_version": 1,
-        "run_id": "r1",
-        "pid": 2**22 + 12345,
-        "source": "/b.epub",
-        "output": "/b.zh.epub",
-        "row": "agy-flash-low",
-        "allow_paid_api": False,
-        "started_at": "2026-11-08T00:00:00+00:00",
-        "log_path": str(tmp_path / "none.log"),
-        "checkpoint_dir": str(tmp_path / "none"),
-        "planned_segments": 5,
-        "exit_code": None,
-        "ended_at": None,
-    }
-    (state / "current-run.json").write_text(json.dumps(record))
-    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
-    status = client.get("/runs/current").json()
-    assert status["state"] == "ended" and status["done_segments"] == 0
 
 
 def test_prompt_starting_with_a_dash_reaches_the_child(runs: tuple[TestClient, Path]) -> None:
@@ -404,6 +393,7 @@ def test_restarted_server_still_controls_a_live_child(
     monkeypatch.setenv("FAKE_SLEEP", "30")
     script = tmp_path / "fake_child.py"
     start(client, tmp_path, source=str(make_epub(tmp_path / "书.epub")))
+    wait_until_started(client)
     restarted = TestClient(
         local_api.create_app(
             state_dir=tmp_path / "state", child_command=(sys.executable, str(script))
@@ -432,59 +422,6 @@ def test_no_run_yet_is_404(runs: tuple[TestClient, Path]) -> None:
 
 def test_state_dir_shares_the_certification_root() -> None:
     assert local_api.default_state_dir() == default_certification_path().parent
-
-
-def test_reused_pid_is_never_signalled(tmp_path: Path) -> None:
-    # After a restart the recorded PID may belong to another process (here: this test run).
-    state = tmp_path / "state"
-    state.mkdir()
-    record = {
-        "schema_version": 1,
-        "run_id": "r2",
-        "pid": os.getpid(),
-        "source": str(tmp_path / "not-this-process.epub"),
-        "output": "/b.zh.epub",
-        "row": "agy-flash-low",
-        "allow_paid_api": False,
-        "started_at": "2026-11-08T00:00:00+00:00",
-        "log_path": str(tmp_path / "none.log"),
-        "checkpoint_dir": str(tmp_path / "none"),
-        "planned_segments": 5,
-        "exit_code": None,
-        "ended_at": None,
-    }
-    (state / "current-run.json").write_text(json.dumps(record))
-    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
-    assert client.get("/runs/current").json()["state"] == "ended"
-    assert client.post("/runs/current/stop").status_code == 409
-
-
-def test_reused_pid_with_a_matching_command_line_is_never_signalled(tmp_path: Path) -> None:
-    # Worst case: the reused PID's command line even contains the recorded source path.
-    own_command = subprocess.run(
-        ["ps", "-o", "command=", "-p", str(os.getpid())], capture_output=True, text=True
-    ).stdout.split()[0]
-    state = tmp_path / "state"
-    state.mkdir()
-    record = {
-        "schema_version": 1,
-        "run_id": "r3",
-        "pid": os.getpid(),
-        "source": own_command,
-        "output": "/b.zh.epub",
-        "row": "agy-flash-low",
-        "allow_paid_api": False,
-        "started_at": "2020-01-01T00:00:00+00:00",
-        "log_path": str(tmp_path / "none.log"),
-        "checkpoint_dir": str(tmp_path / "none"),
-        "planned_segments": 5,
-        "exit_code": None,
-        "ended_at": None,
-    }
-    (state / "current-run.json").write_text(json.dumps(record))
-    client = TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
-    assert client.get("/runs/current").json()["state"] == "ended"
-    assert client.post("/runs/current/stop").status_code == 409
 
 
 def test_unrecordable_run_is_stopped(
@@ -550,3 +487,128 @@ def test_two_servers_never_start_two_runs(tmp_path: Path, monkeypatch: pytest.Mo
     finally:
         for test_client in clients:
             test_client.post("/runs/current/stop")
+
+
+# ── Identity of the child after a restart (§7.3 decision 2) ──────────────────
+
+
+def write_record(state: Path, **fields: object) -> None:
+    record: dict[str, object] = {
+        "schema_version": 1,
+        "run_id": "r1",
+        "pid": None,
+        "process_start": None,
+        "source": "/books/b.epub",
+        "output": "/books/b.zh.epub",
+        "row": "agy-flash-low",
+        "allow_paid_api": False,
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "log_path": str(state / "none.log"),
+        "checkpoint_dir": str(state / "none"),
+        "planned_segments": 5,
+        "exit_code": None,
+        "ended_at": None,
+    }
+    record.update(fields)
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "current-run.json").write_text(json.dumps(record))
+
+
+def spawn_lookalike(tmp_path: Path) -> subprocess.Popen[bytes]:
+    """A sleeping process whose command line carries a run's arguments."""
+    return subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(30)",
+            str(tmp_path / "b.epub"),
+            "--output",
+            str(tmp_path / "b.zh.epub"),
+            "--row",
+            "agy-flash-low",
+        ],
+        start_new_session=True,
+    )
+
+
+def restarted(state: Path) -> TestClient:
+    return TestClient(local_api.create_app(state_dir=state), base_url=BASE_URL)
+
+
+def test_restarted_server_reports_an_unobserved_exit_as_ended(tmp_path: Path) -> None:
+    write_record(tmp_path / "state", pid=2**22 + 12345, process_start="Thu Jan  1 00:00:00 2026")
+    status = restarted(tmp_path / "state").get("/runs/current").json()
+    assert status["state"] == "ended" and status["done_segments"] == 0
+
+
+def test_reused_pid_with_the_same_arguments_is_never_signalled(tmp_path: Path) -> None:
+    # Worst case: the reused PID even carries the run's arguments; only its start time differs.
+    lookalike = spawn_lookalike(tmp_path)
+    try:
+        write_record(
+            tmp_path / "state",
+            pid=lookalike.pid,
+            process_start="Thu Jan  1 00:00:00 2026",
+            source=str(tmp_path / "b.epub"),
+            output=str(tmp_path / "b.zh.epub"),
+        )
+        client = restarted(tmp_path / "state")
+        assert client.get("/runs/current").json()["state"] == "ended"
+        assert client.post("/runs/current/stop").status_code == 409
+        assert lookalike.poll() is None
+    finally:
+        lookalike.kill()
+        lookalike.wait()
+
+
+def test_unrelated_process_with_the_recorded_start_is_never_signalled(tmp_path: Path) -> None:
+    # Same PID and start time can only be the same process; here the arguments differ.
+    write_record(
+        tmp_path / "state",
+        pid=os.getpid(),
+        process_start=local_api._process_start(os.getpid()),
+    )
+    client = restarted(tmp_path / "state")
+    assert client.get("/runs/current").json()["state"] == "ended"
+    assert client.post("/runs/current/stop").status_code == 409
+
+
+def test_child_started_before_its_pid_was_recorded_is_found_and_stopped(tmp_path: Path) -> None:
+    # The server died between starting the child and recording its PID (phase 1 record only).
+    lookalike = spawn_lookalike(tmp_path)
+    try:
+        write_record(
+            tmp_path / "state",
+            source=str(tmp_path / "b.epub"),
+            output=str(tmp_path / "b.zh.epub"),
+        )
+        client = restarted(tmp_path / "state")
+        assert client.get("/runs/current").json()["state"] == "running"
+        conflict = client.post(
+            "/runs",
+            json={
+                "source": str(make_epub(tmp_path / "c.epub")),
+                "output": str(tmp_path / "c.zh.epub"),
+                "row": "agy-flash-low",
+            },
+        )
+        assert conflict.status_code == 409
+        assert client.post("/runs/current/stop").status_code == 202
+        assert lookalike.wait(timeout=10) == -signal.SIGINT
+    finally:
+        if lookalike.poll() is None:
+            lookalike.kill()
+            lookalike.wait()
+
+
+def test_record_with_a_wrong_field_type_is_refused(tmp_path: Path) -> None:
+    write_record(tmp_path / "state", started_at=12345)
+    response = restarted(tmp_path / "state").get("/runs/current")
+    assert response.status_code == 500 and "started_at" in response.json()["detail"]
+
+
+def test_elapsed_time_parsing() -> None:
+    assert local_api._elapsed_seconds("00:05") == 5
+    assert local_api._elapsed_seconds("01:02:03") == 3723
+    assert local_api._elapsed_seconds("2-01:00:00") == 2 * 86400 + 3600
+    assert local_api._elapsed_seconds("garbage") is None
