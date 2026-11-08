@@ -31,26 +31,48 @@ change that adds, modifies or deletes anything under these paths has
   and its provenance values).
 - **Inputs to the checkpoint identity.** A change to the values these produce
   changes whether existing checkpoints resume:
+  - The source signatures and the checkpoint location, in the helpers that the
+    current path calls from the lower half of `ai/orchestration.py`:
+    `_compute_content_signature` (the hard identity field `input_signature`,
+    also the glossary cache `source`), `_compute_input_signature` (matched by the
+    v1 import), `_resolve_checkpoint_dir` and `_CHECKPOINT_ROOT`. A renamed
+    checkpoint directory silently starts every book fresh.
   - The EPUB system prompt: `ai/prompt_preparation.py` (`_SYSTEM_PROMPT_TEMPLATE`,
     `build_system_prompt`, `render`). Its SHA-256 becomes
-    `CheckpointIdentity.system_prompt_hash` (`ai/orchestration.py:368`).
-  - `config/prompts/` (prompt templates that `render` can use instead).
+    `CheckpointIdentity.system_prompt_hash` (`ai/orchestration.py:368`). The
+    field is a soft identity field (not in the hard tuple at
+    `ai/checkpoint_store.py:207`), so after a change, existing checkpoints resume
+    only with `--force-resume`.
+  - The glossary block that `render` puts into that prompt:
+    `GlossaryManager.format_block` and `_priority_rank` in `ai/core/glossary.py`,
+    and `GlossaryInjector.format_block` in `ai/glossary_injector.py`.
   - Segmenter output and its signature: `ai/epub_package.py`,
     `ai/adapters/sources/epub_adapter.py`, and `_ACTIVE_EPUB_SEGMENTER_SIGNATURE`
     in `ai/orchestration.py`. Checkpoints are keyed by segment ID, and
     `CheckpointStore.load` rejects unknown IDs.
   - The batch bounds and protocol name written into the identity in
-    `ai/orchestration.py:240-252` (`batch_chars`, `SEPARATOR_OVERHEAD`,
-    `max_batch_segments`, `"segment_tags"`), and `ai/core/batcher.py`.
+    `ai/orchestration.py:240-252`: `batch_chars` (from
+    `_resolve_default_batch_chars` and `_DEFAULT_BATCH_CHARS_*_EPUB`),
+    `SEPARATOR_OVERHEAD` (derived from `_BATCH_SEPARATOR` in
+    `ai/adapters/providers/_delimiter.py`), `max_batch_segments`, and
+    `"segment_tags"`. Also `ai/core/batcher.py`.
   - The `profile` and `effort` values that `ai/model_profiles.py` resolves.
-- **Glossary cache identity:** `glossary_cache_path` in
-  `ai/prompt_preparation.py` (`.bookweaver_glossaries/<sha256>.json`, with
-  `extractor_version: 1`) and the glossary JSON format in `ai/glossary_extractor.py`
-  and `config/schemas/glossary_schema.json`. The cached glossary feeds the
-  rendered prompt, so it also feeds `system_prompt_hash`.
+  - CLI defaults that become identity values: `--output-lang` (`output_lang` and
+    the prompt language) and `--model` (`profile`) in `ai/cli.py`.
+- **Glossary cache identity and format:** `glossary_cache_path` in
+  `ai/prompt_preparation.py` (`.bookweaver_glossaries/<sha256>.json`, keyed on
+  source signature, `mode`, `max_terms`, `model_id`, `effort` and
+  `extractor_version: 1`). Its inputs include `resolve_glossary_request`
+  (`ai/core/glossary_resolution.py`, which decides `mode`) and every `model_id`
+  in `_CLI_ROWS` and `_API_MODELS`: a model-ID-only change makes every cache
+  miss, and the next run re-extracts. The file format is written by
+  `ai/glossary_extractor.py` and read by `_validate_glossary_payload` and
+  `_load_glossary_json_file` in `ai/core/glossary.py`. The cached glossary
+  feeds the rendered prompt, so it also feeds `system_prompt_hash`.
 - **Runtime configuration schema:** `ai/config_schema.json`,
-  `ai/runtime_config.py`, and `config/config.json.example`. The owner's ignored
-  `config/config.json` and `~/.config/bookweaver/config.json` must still
+  `ai/runtime_config.py`, `ai/core/config.py` (`_deep_merge`, which decides how
+  the configuration files merge), and `config/config.json.example`. The owner's
+  ignored `config/config.json` and `~/.config/bookweaver/config.json` must still
   validate. `AGENTS.md` forbids rewriting them automatically.
 - **Runtime-certification store:** `$XDG_STATE_HOME/bookweaver/runtime-certifications.json`
   (`default_certification_path` and its entry format `_ENTRY_KEYS` in
@@ -89,31 +111,40 @@ checkpoint, prompt and source modules it depends on.
 
 | Radius | In this repository |
 | --- | --- |
-| **Trunk** | **Application composition:** `TranslationOrchestrator` and `translate_epub` / `translate_markdown` / `translate_pdf` in `ai/orchestration.py:146-540`. Every entry point (`ai/cli.py`, `ai/local_api.py`) reaches every format through it, and it depends on 11 tach modules. **Checkpoint and resume:** `ai/checkpoint_store.py` and the identity inputs listed under Structure paths. Every book's resume depends on them. **Prompt:** `ai/prompt_preparation.py` and `config/prompts/`. Every EPUB request carries this prompt, and its hash decides whether existing checkpoints resume. **Paid-API gate and runtime selection:** `ai/runtime_factory.py` (authorization, the any-llm adapter, the usage audit), `is_metered` and `METERED_PROVIDERS` in `ai/model_profiles.py`, and their call sites in `ai/orchestration.py`. A wrong value can start a paid call. **Model registry:** `ai/model_profiles.py` (`_CLI_ROWS`, `_API_MODELS`, `resolve_profile`, `CERTIFIED_AGY_MODELS`). The CLI, the local API, the runtime factory and the checkpoint identity read it. **Transport framing:** `ai/adapters/providers/_delimiter.py` (`segment_tags`, `augment_prompt_for_batch`, response parsing). Every batch on every provider is framed and parsed here, and a parse error can misalign translations. **Antigravity runtime:** `ai/antigravity_provider.py`, the default runtime for every subscription run, and its version gate. **Translation engine core:** `ai/core/engine.py`, `ai/core/batcher.py`, and the ports in `ai/ports/`. Every adapter depends on the ports (tach `ai.ports`). **EPUB package handling:** `ai/epub_package.py`. Reading, segmentation and writing for every EPUB, plus glossary extraction (tach: `ai.adapters`, `ai.glossary_extractor`). **Runtime configuration:** `ai/runtime_config.py`, `ai/config_schema.json`, `ai/core/config.py`. **Dependencies and build:** `pyproject.toml` dependency bounds, the Python baseline, and major upgrades in `uv.lock`. The CLI wheel and `scripts/verify_installed_runtime.py` depend on them. **Boundaries:** `tach.toml`. |
-| **Branch** | **CLI argument handling** in `ai/cli.py` behind an unchanged `orchestration` contract: one flag, its help text, or `rows` output formatting. Consumers: the owner and scripts that call the CLI. Containment: tach allows `ai.cli` to depend only on `ai.orchestration` and `ai.local_api`. **Local API endpoints** in `ai/local_api.py` that only read (today `GET /rows`). Containment: imported lazily, only by `serve`; bound to `127.0.0.1`. An endpoint that starts a run or accepts `allow_paid_api` is Trunk (it reaches the paid gate). **One isolated source adapter** behind an unchanged `IBookSource` port: `ai/adapters/sources/markdown_adapter.py` or `ai/adapters/sources/pdf_adapter.py`, which run only with `--allow-isolated-format`. `epub_adapter.py` is not Branch, because its segment IDs are checkpoint keys. **Glossary extraction internals** (`ai/glossary_extractor.py`, `ai/glossary_injector.py`, `ai/core/glossary*.py`, `ai/core/index_signal_scorer.py`, `ai/core/local_glossary_candidates.py`), when the glossary JSON format, the cache identity and the rendered prompt block stay unchanged. **Sanity probe heuristics** (`_SanityProbeConfig` and the CJK checks in `ai/orchestration.py:574-815`), when the warning file format stays unchanged. |
-| **Leaf** | Test additions under `tests/` that leave existing assertions, fixtures and thresholds unchanged. Documentation that states no rule: plans under `docs/plans/`, `README.md`, and typo or link fixes outside specs, `AGENTS.md`, `CONTEXT.md` and `docs/agents/`. `scripts/probe_antigravity_version.py`, run by hand and read by no module. It leaves the certification store untouched (`scripts/probe_antigravity_version.py:78`). |
+| **Trunk** | **Application composition:** `ai/orchestration.py` as a whole: `TranslationOrchestrator` and `translate_epub` / `translate_markdown` / `translate_pdf` (lines 146-545), the module-level imports (a broken import breaks every command), and the current-path helpers in the lower half listed under Structure paths. `ai/cli.py` reaches every format through it, and `ai/local_api.py` reads the rows through it. tach lists 11 dependencies for it, 9 of them enforced modules. **Checkpoint and resume:** `ai/checkpoint_store.py` and the identity inputs listed under Structure paths. Every book's resume depends on them. **Prompt and glossary block:** `ai/prompt_preparation.py`, `ai/core/glossary.py` and `ai/glossary_injector.py`. Every EPUB request carries this prompt, and its hash decides whether existing checkpoints resume. A prompt change also trips the golden-bytes test in `tests/unit/test_prompt_preparation.py`. **Paid-API gate and runtime selection:** `ai/runtime_factory.py` (authorization, the any-llm adapter, the usage audit), `is_metered` and `METERED_PROVIDERS` in `ai/model_profiles.py`, and their call sites in `ai/orchestration.py`. A wrong value can start a paid call. **Model registry:** `ai/model_profiles.py` (`_CLI_ROWS`, `_API_MODELS`, `resolve_profile`, `CERTIFIED_AGY_MODELS`). The CLI, the local API, the runtime factory and the checkpoint identity read it. **Transport framing:** `ai/adapters/providers/_delimiter.py` (`segment_tags`, `augment_prompt_for_batch`, response parsing). Every batch on every provider is framed and parsed here, and a parse error can misalign translations. **Antigravity runtime:** `ai/antigravity_provider.py`, the default runtime for every subscription run, and its version gate. **Translation engine core:** `ai/core/engine.py`, `ai/core/batcher.py`, and the ports in `ai/ports/`. Every adapter depends on the ports (tach `ai.ports`). **EPUB package handling:** `ai/epub_package.py`. Reading, segmentation and writing for every EPUB, plus glossary extraction (tach: `ai.adapters`, `ai.glossary_extractor`). **Runtime configuration:** `ai/runtime_config.py`, `ai/config_schema.json`, `ai/core/config.py`. **Dependencies and build:** `pyproject.toml` dependency bounds, the Python baseline, and major upgrades in `uv.lock`. The CLI wheel and `scripts/verify_installed_runtime.py` depend on them. **Boundaries:** `tach.toml`. |
+| **Branch** | **CLI argument handling** in `ai/cli.py` behind an unchanged `orchestration` contract: help text, `rows` output formatting, or a new flag. Consumers: the owner and scripts that call the CLI. Containment: tach allows `ai.cli` to depend only on `ai.orchestration` and `ai.local_api`. A changed default is not Branch: `--output-lang` and `--model` defaults are identity inputs (Structure), and the `--provider`, `--allow-paid-api` and `--resume` defaults reach the paid gate or resume (Trunk). **Local API endpoints** in `ai/local_api.py` that only read static registry data (today `GET /rows`). Containment: imported lazily, only by `serve`; bound to `127.0.0.1`. An endpoint that reads book text or checkpoints is Branch only after Host-header and cross-origin protection exists, because a DNS-rebinding page can read `127.0.0.1`; without it, Unknown. An endpoint that starts a run or accepts `allow_paid_api` is Trunk (it reaches the paid gate). **One isolated source adapter** behind an unchanged `IBookSource` port: `ai/adapters/sources/markdown_adapter.py` or `ai/adapters/sources/pdf_adapter.py`, which run only with `--allow-isolated-format`. `epub_adapter.py` is not Branch, because its segment IDs are checkpoint keys. **Glossary candidate selection** (`ai/core/index_signal_scorer.py`, `ai/core/local_glossary_candidates.py`, and the term-selection code in `ai/glossary_extractor.py`). Its output reaches only newly extracted glossaries; existing caches are reused by path. The files listed under Structure paths (cache identity, payload validation, block formatting) are not Branch. **Sanity probe heuristics** (`_SanityProbeConfig` and the CJK checks in `ai/orchestration.py:574-815`), when the warning file format stays unchanged. |
+| **Leaf** | Test additions under `tests/` that leave existing assertions, fixtures and thresholds unchanged. Documentation that states no rule and backs no decision: `README.md`, design and implementation plans under `docs/plans/`, and typo or link fixes outside specs, `AGENTS.md`, `CONTEXT.md` and `docs/agents/`. Evidence records under `docs/plans/` are Always stop (below). |
 
 Not yet mapped, so treat these as **Unknown** and name the missing evidence in
 the PR:
 
 - **Legacy code pending retirement** (`AGENTS.md`, "Migration status"):
-  - the historical helpers in `ai/orchestration.py` from `CheckpointMetadata` (about line 832) down,
-    including `resolve_model` and `create_provider`;
+  - the historical helpers in the lower half of `ai/orchestration.py`, such as
+    `CheckpointMetadata`, `resolve_model`, `create_provider` and the v1
+    checkpoint writers. The same region also holds current-path helpers
+    (Structure paths above), so check each function's callers; never retire by
+    line range;
   - `ai/model_resolver.py`, `ai/model_probe.py` and `ai/provider_factory.py`,
     used by those helpers;
-  - `ai/gemini_provider.py`, `ai/gemini_api_provider.py`,
-    `ai/adapters/providers/gemini_*_adapter.py`, `ai/model_selector.py`,
+  - `ai/gemini_provider.py`, `ai/gemini_api_provider.py`, `ai/model_selector.py`,
     `ai/quota_tracker.py`, `ai/bilingual_merger.py` and the orphaned
     `ai/epub_translate_roundtrip.py`;
+  - `ai/adapters/providers/gemini_*_adapter.py`. `ai/orchestration.py:53-54`
+    imports them at module load, so a broken adapter breaks every command;
   - the root `0*_*.py` scripts, `translatebook.sh`, `benchmark_models.py`,
-    `generate_test_epub.py` and `pipeline_utils.py`.
+    `generate_test_epub.py`, `pipeline_utils.py`, and the committed
+    `glossary_auto.json` (no runtime reader found by search).
 
   Missing evidence: no complete consumer map exists. Legacy tests import some of
   these files (`tests/unit/test_translate_step3_refactor.py`,
   `tests/unit/test_epub_baseline_cli.py`). Deleting them is a retirement
   decision for the owner, not a Leaf cleanup. `08_epub_roundtrip_baseline.py`
   is an evaluation asset (Always stop).
-- `CONTEXT.md` (it may state rules) and any path this table does not name.
+- `config/prompts/`: no code references it by path, and both files contain the
+  `START`/`END` markers that `PromptPreparation.from_config` rejects for EPUB.
+  A user configuration may still name one as a template.
+- Minor-version upgrades in `uv.lock` (major upgrades are Trunk).
+- Any path this table does not name.
 
 ## One-way effects in this repository
 
@@ -125,8 +156,10 @@ the PR:
   (`AGENTS.md`).
 - **Invalidating the owner's unfinished checkpoints or glossary caches** without
   a recovery path. Retranslation costs quota, money or time, and the new text can
-  differ in voice and terminology. Example: a prompt or identity change merged
-  while a book is half translated.
+  differ in voice and terminology. A soft identity change (such as
+  `system_prompt_hash`) can be recovered with `--force-resume`, at the cost of
+  mixed prompts in one book. A hard identity change (`input_signature`,
+  `input_format`, `segmenter_signature`) cannot.
 - **Rewriting or deleting files outside the repository:** the owner's
   `~/.config/bookweaver/config.json`, the runtime-certification store,
   checkpoints under an output directory, and finished EPUBs.
@@ -137,34 +170,38 @@ the PR:
 
 - **Verifier changes:**
   - `.github/workflows/`;
-  - `scripts/verify_installed_runtime.py`;
+  - `scripts/verify_installed_runtime.py` and `scripts/probe_antigravity_version.py`
+    (the documented tool to run before seeding a version);
   - the verification commands in `AGENTS.md`;
-  - the `[tool.ruff]`, `[tool.pytest]` and `tach.toml` rules or exclusions;
+  - the `[tool.ruff]` rules in `pyproject.toml`, and `tach.toml` rules or exclusions;
   - existing test assertions, fixtures (`tests/fixtures/`, `tests/runtime_fakes.py`,
     `tests/conftest.py`), thresholds, skips and golden values;
   - the sanity-probe thresholds when a change only makes a failing book pass.
 
   Adding coverage for an approved behavior change is not a verifier change.
   Weakening or removing a check is.
-- **Evaluation and baseline assets:** `08_epub_roundtrip_baseline.py`, the
-  evaluation specs (SPEC-004, SPEC-005) and their plans, and the book-validation
-  evidence under `docs/plans/` (`2026-09-07-*`). Editorial provenance must stay
-  separate (`AGENTS.md`).
+- **Evaluation, baseline and evidence records:** `08_epub_roundtrip_baseline.py`,
+  the evaluation specs (SPEC-004, SPEC-005) and their plans, and the evidence
+  records under `docs/plans/` that back a default, a seed or a quality claim:
+  the A/B and batch-size reports (`2026-04-03-*`), the book-validation and
+  protocol-probe records (`2026-09-07-*`), and the compatibility probe
+  (`2026-11-07-antigravity-1.5.3-compatibility-probe.md`, cited by
+  `ai/model_profiles.py`). Editorial provenance must stay separate (`AGENTS.md`).
 - **Paid-API gating:** `ai/runtime_factory.py` authorization, `--allow-paid-api`
   and the `USE_API` prompt, `is_metered` / `METERED_PROVIDERS`, and any API
   field that grants paid consent. This is also Trunk.
 - **The Antigravity version gate:** `CERTIFIED_AGY_MODELS` and the probe pass
-  criteria (`probe_problems` in `ai/antigravity_provider.py`). Seeding a new
+  criteria (`probe_problems` and `PROBE_SAMPLES` in `ai/antigravity_provider.py`). Seeding a new
   pair needs probe evidence.
 - **Policy text:** `AGENTS.md`, `CONTEXT.md`, `docs/agents/`, and approved specs
-  and ADRs under `docs/architecture/`.
+  under `docs/architecture/specs/` (and ADRs, if a decisions folder is added).
 
 ## Review depth
 
 | Classification | Delivery and review | Owner involvement |
 | --- | --- | --- |
-| Leaf, Two-way, Structure untouched | One implementation, one independent review (Standards, Spec, Risk), then merge | None, once automatic merge prerequisites hold |
-| Controlled Branch, Two-way, Structure untouched | The author records consumers and failure propagation; the independent review verifies that evidence | Only when author and reviewer disagree |
+| Leaf, Two-way, Structure untouched | One implementation; L1 review: same-vendor Standards and Spec, plus Risk on the vendor that did not author the change (policy "Review tiers"); then merge | None, once automatic merge prerequisites hold |
+| Controlled Branch, Two-way, Structure untouched | The author records consumers and failure propagation; the L1 review (as above) verifies that evidence. A Branch without that evidence is not controlled and stops (`risk_not_low`) | Only when author and reviewer disagree |
 | Structure touched, within the approved design | Independent review, plus evidence that existing checkpoints, caches or configuration behave as the design says | Design approval before work; at merge, only when the review finds a difference from the design |
 | Trunk, One-way, Unknown, Structure outside the design, or an "Always stop" item | Owner design approval before implementation; independent review plus L2 cross-vendor review (Codex for Claude Code's work). For runtime changes, evidence from a real run when the owner authorizes one; mocked tests alone are not proof of book quality (`AGENTS.md`) | Design approval before work, decision before merge |
 
@@ -189,15 +226,17 @@ It splits like this:
 
    The log and the run record are new persistent structures, so the design
    names their formats, and this map adds their paths.
-2. **Branch ticket, Structure untouched.** `GET /runs/current` reads the existing
-   checkpoint document without changing `ai/checkpoint_store.py`. Independent
-   review, then merge.
+2. **Trunk ticket.** Host-header and cross-origin protection for the whole
+   API, then `POST /runs`, which starts a child process that can reach the paid
+   gate. The tests prove that a metered row without `allow_paid_api` is
+   rejected, and that a cross-origin or foreign-Host request is refused. Owner
+   decision before merge.
 3. **Structure ticket, within the design.** The run record and log writer, at
    the paths and formats the design named. Review plus fixture evidence.
-4. **Trunk ticket.** `POST /runs` starts a child process that can reach the paid
-   gate. The tests prove that a metered row without `allow_paid_api` is
-   rejected, and that a cross-origin request is refused. Owner decision before
-   merge.
+4. **Branch ticket, Structure untouched, after ticket 2.** `GET /runs/current`
+   and `POST /runs/current/stop` read the run record and the existing checkpoint
+   document without changing `ai/checkpoint_store.py`. They read book-derived
+   state, so they rely on the protection from ticket 2. Review, then merge.
 5. **Stops.** Adding a progress field to `checkpoint.json` changes the checkpoint
    schema: it needs its own design approval. Any live run to demonstrate Phase 3
    spends quota (One-way) and needs separate authorization.
