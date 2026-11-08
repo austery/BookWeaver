@@ -1,4 +1,4 @@
-"""Local API contract at the HTTP boundary (SPEC-026 Phases 2-3)."""
+"""Local API contract at the HTTP boundary (SPEC-026 Phases 2-4)."""
 
 from __future__ import annotations
 
@@ -20,10 +20,17 @@ from fastapi.testclient import TestClient
 import ai.cli as entry_module
 from ai import local_api
 from ai.antigravity_provider import default_certification_path
-from ai.model_profiles import resolve_profile
+from ai.model_profiles import Row, enabled_rows, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
 
 BASE_URL = "http://127.0.0.1:8765"
+METERED_ROWS = [row for row in enabled_rows() if is_metered(row.provider)]
+SUBSCRIPTION_ROWS = [row for row in enabled_rows() if not is_metered(row.provider)]
+
+
+def row_name(row: Row) -> str:
+    return row.name
+
 
 # A stand-in for `python -m ai.cli`: echoes its arguments, optionally writes a checkpoint,
 # then sleeps or exits as the test asks through environment variables.
@@ -31,6 +38,7 @@ FAKE_CHILD = """
 import json, os, sys, time
 from pathlib import Path
 print("ARGS " + json.dumps(sys.argv[1:]), flush=True)
+print("STDIN_IS_DEVNULL " + str(os.path.samestat(os.fstat(0), os.stat(os.devnull))), flush=True)
 checkpoint = os.environ.get("FAKE_CHECKPOINT")
 if checkpoint:
     Path(checkpoint).mkdir(parents=True, exist_ok=True)
@@ -290,6 +298,155 @@ def test_metered_row_with_consent_passes_the_flag(runs: tuple[TestClient, Path])
     client, tmp_path = runs
     start(client, tmp_path, row="gemini-flash", allow_paid_api=True)
     assert child_args(settle(client))[-3:] == ["--row", "gemini-flash", "--allow-paid-api"]
+
+
+def test_the_consent_tests_cover_metered_and_subscription_rows() -> None:
+    assert {"gemini", "anthropic"} <= {row.provider for row in METERED_ROWS}
+    assert SUBSCRIPTION_ROWS
+
+
+def assert_nothing_started(client: TestClient, tmp_path: Path) -> None:
+    assert client.get("/runs/current").status_code == 404
+    assert not (tmp_path / "state" / "current-run.json").exists()
+    assert not (tmp_path / ".bookweaver_runs").exists()
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+@pytest.mark.parametrize("consent", [{}, {"allow_paid_api": False}], ids=["omitted", "false"])
+def test_no_metered_row_starts_without_consent(
+    runs: tuple[TestClient, Path], row: Row, consent: dict[str, object]
+) -> None:
+    client, tmp_path = runs
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": row.name,
+            **consent,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        f"Metered {row.provider} API: {row.model_id}. {local_api.PAID_CONSENT_REQUIRED}"
+    )
+    assert_nothing_started(client, tmp_path)
+
+
+def test_null_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": METERED_ROWS[0].name,
+            "allow_paid_api": None,
+        },
+    )
+    assert response.status_code == 422
+    assert_nothing_started(client, tmp_path)
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_consent_reaches_the_child_once(runs: tuple[TestClient, Path], row: Row) -> None:
+    client, tmp_path = runs
+    start(client, tmp_path, row=row.name, allow_paid_api=True)
+    status = settle(client)
+    arguments = child_args(status)
+    assert arguments[arguments.index("--row") + 1] == row.name
+    assert arguments.count("--allow-paid-api") == 1
+
+
+def test_child_never_inherits_the_server_stdin(runs: tuple[TestClient, Path]) -> None:
+    """The paid gate prompts only on a terminal; the server's own stdin must not reach it."""
+    client, tmp_path = runs
+    read_end, write_end = os.pipe()
+    saved_stdin = os.dup(0)
+    os.dup2(read_end, 0)  # pytest's fd 0 is already /dev/null, which would hide inheritance
+    try:
+        start(client, tmp_path)
+        status = settle(client)
+    finally:
+        os.dup2(saved_stdin, 0)
+        for descriptor in (saved_stdin, read_end, write_end):
+            os.close(descriptor)
+    assert "STDIN_IS_DEVNULL True" in status["log_tail"]
+
+
+def test_consent_is_not_remembered_for_the_next_run(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    row = METERED_ROWS[0].name
+    start(client, tmp_path, row=row, allow_paid_api=True)
+    settle(client)
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(tmp_path / "book.epub"),
+            "output": str(tmp_path / "book.zh.epub"),
+            "row": row,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"].endswith(local_api.PAID_CONSENT_REQUIRED)
+
+
+@pytest.mark.parametrize("row", SUBSCRIPTION_ROWS, ids=row_name)
+def test_subscription_rows_never_carry_the_paid_flag(
+    runs: tuple[TestClient, Path], row: Row
+) -> None:
+    client, tmp_path = runs
+    refused = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": row.name,
+            "allow_paid_api": True,
+        },
+    )
+    assert refused.status_code == 400
+    assert_nothing_started(client, tmp_path)
+    start(client, tmp_path, row=row.name)
+    assert "--allow-paid-api" not in child_args(settle(client))
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_real_cli_child_refuses_a_metered_row_without_the_flag(tmp_path: Path, row: Row) -> None:
+    """The second layer: what the API's child would do if the server check were bypassed.
+
+    The real CLI runs with the API's stdin. Provider keys are removed and the working
+    directory is empty, so a broken gate fails on the missing key and still makes no call.
+    """
+    output = tmp_path / "o.epub"
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.endswith(("_API_KEY", "_AUTH_TOKEN"))
+    }
+    environment["XDG_STATE_HOME"] = str(tmp_path / "state")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "ai.cli",
+            str(make_epub(tmp_path / "b.epub")),
+            "--output",
+            str(output),
+            "--row",
+            row.name,
+        ],
+        cwd=tmp_path,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert local_api.PAID_CONSENT_REQUIRED in result.stderr
+    assert not output.exists()
 
 
 def test_rejection_texts_match_the_cli_paid_gate(
