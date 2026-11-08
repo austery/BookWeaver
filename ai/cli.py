@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+import json
+from dataclasses import asdict
 from pathlib import Path
+
 from ai import orchestration
 
 
@@ -13,6 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bookweaver",
         description="Translate EPUB books through Antigravity or a metered model API.",
+        epilog="List the named rows for --row with: bookweaver rows",
     )
     p.add_argument(
         "input_path",
@@ -27,6 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Logical model profile (default: flash)",
     )
     p.add_argument("--effort", choices=["low", "medium", "high"], default=None)
+    p.add_argument(
+        "--row",
+        choices=[row.name for row in orchestration.enabled_rows()],
+        metavar="NAME",
+        default=None,
+        help="Named row in place of --model, --effort and --provider; list with `bookweaver rows`",
+    )
     p.add_argument("--allow-paid-api", action="store_true")
     p.add_argument(
         "--allow-isolated-format",
@@ -129,11 +140,76 @@ def _is_model_flag_explicit(argv: list[str] | None) -> bool:
     return any(token == "--model" or token.startswith("--model=") for token in args)
 
 
+def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
+    """Plain table: one row per line, evidence last because it is free text."""
+    header = ("ROW", "PROVIDER", "MODEL", "STATUS", "LAYER", "EVIDENCE")
+    lines = [
+        (
+            row.name,
+            row.provider,
+            row.model_id,
+            row.status,
+            "-" if row.layer is None else str(row.layer),
+            row.evidence or ("paid; needs --allow-paid-api" if row.provider != "cli" else ""),
+        )
+        for row in rows
+    ]
+    widths = [max(len(line[i]) for line in (header, *lines)) for i in range(len(header) - 1)]
+    return "\n".join(
+        "  ".join(cell.ljust(width) for cell, width in zip(line, widths, strict=False))
+        + "  "
+        + line[-1]
+        for line in (header, *lines)
+    )
+
+
+def rows_main(tokens: list[str]) -> None:
+    """`bookweaver rows`: list the enabled named rows."""
+    parser = argparse.ArgumentParser(
+        prog="bookweaver rows", description="List the enabled named rows for --row."
+    )
+    parser.add_argument("--json", action="store_true", help="Print rows as JSON")
+    args = parser.parse_args(tokens)
+    rows = orchestration.enabled_rows()
+    if args.json:
+        print(json.dumps([asdict(row) for row in rows], indent=2))
+    else:
+        print(_format_rows(rows))
+
+
+def _apply_row(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, tokens: list[str]
+) -> None:
+    """Replace --model/--effort/--provider with the named row; reject mixing them."""
+    # Reparse with empty defaults so explicit flags are detected even when abbreviated.
+    probe = build_parser()
+    probe.set_defaults(model=None, provider=None)
+    explicit = probe.parse_args(tokens)
+    mixed = [
+        flag
+        for flag, value in (
+            ("--model", explicit.model),
+            ("--effort", explicit.effort),
+            ("--provider", explicit.provider),
+        )
+        if value is not None
+    ]
+    if mixed:
+        parser.error(f"--row replaces {', '.join(mixed)}; pass only --row")
+    row = orchestration.find_row(args.row)
+    args.model, args.effort, args.provider = row.profile, row.effort, row.provider
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse intent and dispatch to a format-specific application boundary."""
     tokens = argv if argv is not None else sys.argv[1:]
+    if tokens[:1] == ["rows"]:
+        rows_main(tokens[1:])
+        return
     parser = build_parser()
     args = parser.parse_args(tokens)
+    if args.row is not None:
+        _apply_row(parser, args, tokens)
     if args.provider == "api":
         parser.error("--provider api was renamed; use --provider gemini")
     if args.cli_api_fallback:
@@ -159,7 +235,9 @@ def main(argv: list[str] | None = None) -> None:
         if args.extract_glossary or args.glossary_mode or args.glossary:
             parser.error("Glossary options are EPUB-only")
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
-    model = orchestration.ModelSpec(args.model, args.effort, _is_model_flag_explicit(tokens))
+    model = orchestration.ModelSpec(
+        args.model, args.effort, args.row is not None or _is_model_flag_explicit(tokens)
+    )
     provider = orchestration.ProviderSpec(args.provider, args.allow_paid_api)
     quality = orchestration.QualityPolicy(
         not args.no_sanity_probe, args.max_batch_chars, args.max_batch_segments

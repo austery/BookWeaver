@@ -84,3 +84,33 @@ def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
         model_profiles._validate_rows((*rows, rows[0]))
     with pytest.raises(RuntimeError, match="without a row"):
         model_profiles._validate_seeds(rows, frozenset({("1.5.3", "gemini-3.1-pro-low")}))
+
+
+def test_rows_are_unique_default_first_and_resolve_to_their_model() -> None:
+    from ai.model_profiles import enabled_rows
+
+    rows = enabled_rows()
+    assert rows[0].name == "agy-flash-low"
+    assert len({row.name for row in rows}) == len(rows)
+    for row in rows:
+        selected = resolve_profile(row.profile, effort=row.effort, provider=row.provider)
+        assert (selected.model_id, selected.status) == (row.model_id, row.status)
+
+
+def test_metered_rows_are_manual_and_carry_no_effort() -> None:
+    from ai.model_profiles import find_row
+
+    row = find_row("anthropic-pro")
+    assert (row.provider, row.profile, row.effort, row.status) == (
+        "anthropic",
+        "pro",
+        None,
+        "manual",
+    )
+
+
+def test_unknown_row_names_the_enabled_rows() -> None:
+    from ai.model_profiles import find_row
+
+    with pytest.raises(ValueError, match=r"Unknown row 'agy-pro-medium'.*agy-flash-low"):
+        find_row("agy-pro-medium")
