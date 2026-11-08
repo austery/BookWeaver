@@ -1,15 +1,16 @@
 """Local HTTP API over the application path (SPEC-026); its generated /docs page is the UI.
 
 Bound to 127.0.0.1 only. It reads the same named rows as the CLI and starts runs as a child
-``bookweaver`` process (SPEC-026 §7.3). Its own files are the run record, its lock file, and
-each run's log. Requires the
-optional ``api`` extra (FastAPI and uvicorn), imported at module load so a missing one is
+``bookweaver`` process (SPEC-026 §7.3). Its own files are the run record, its lock file,
+each run's log, and the uploaded books in the library (§7.5). Requires the optional ``api``
+extra (FastAPI, python-multipart and uvicorn), imported at module load so a missing one is
 reported by the CLI before anything starts.
 """
 
 from __future__ import annotations
 
 import fcntl
+import filecmp
 import json
 import os
 import signal
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -24,11 +26,12 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
+import python_multipart  # noqa: F401 - Form fields need it; a missing one must fail at import.
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import PlainTextResponse
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from ai import orchestration
@@ -41,6 +44,8 @@ _LOCK_NAME = "current-run.lock"
 _START_TOLERANCE_S = 5
 _UTF8_LOCALE = "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"
 _LOG_TAIL_LINES = 20
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+_COPY_CHUNK_BYTES = 1024 * 1024
 # The CLI's own wording: ai/runtime_factory.py (metered row without consent) and
 # ai/orchestration.py (consent on a subscription row). Tests keep them identical.
 PAID_CONSENT_REQUIRED = "Paid API requires --allow-paid-api when non-interactive"
@@ -48,6 +53,8 @@ PAID_FLAG_NEEDS_METERED = "--allow-paid-api requires a metered --provider"
 _CHILD_COMMAND: tuple[str, ...] = (sys.executable, "-m", "ai.cli")
 
 RowName = StrEnum("RowName", [(row.name, row.name) for row in orchestration.enabled_rows()])  # type: ignore[misc]
+
+DEFAULT_ROW = RowName(orchestration.enabled_rows()[0].name)
 
 RunState = Literal["running", "finished", "failed", "stopped", "ended"]
 
@@ -57,6 +64,11 @@ def default_state_dir() -> Path:
     state_home = os.environ.get("XDG_STATE_HOME", "")
     root = Path(state_home) if os.path.isabs(state_home) else Path.home() / ".local" / "state"
     return root / "bookweaver"
+
+
+def default_library_dir() -> Path:
+    """Where uploaded books and their translations live, one folder per book (§7.5)."""
+    return Path.home() / "Documents" / "BookWeaver"
 
 
 class RunRequest(BaseModel):
@@ -333,21 +345,97 @@ def _hostname(value: str) -> str:
     return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
 
 
+def _check_consent(row: orchestration.Row, allow_paid_api: bool) -> None:
+    """The same paid-API rule for both ways to start a run; it runs before anything is stored."""
+    metered = row.provider != "cli"
+    if metered and not allow_paid_api:
+        raise HTTPException(
+            400, f"Metered {row.provider} API: {row.model_id}. {PAID_CONSENT_REQUIRED}"
+        )
+    if not metered and allow_paid_api:
+        raise HTTPException(400, PAID_FLAG_NEEDS_METERED)
+
+
+def _checked_file_name(name: str, label: str) -> str:
+    """A name that stays inside its book folder: no directories and no hidden files."""
+    is_plain = name == Path(name).name and not any(mark in name for mark in ("\\", "\0"))
+    if not name or not is_plain or name.startswith("."):
+        raise HTTPException(400, f"{label} must be a plain file name: {name!r}")
+    return name
+
+
+def _is_epub_name(name: str) -> bool:
+    return Path(name).suffix.lower() == ".epub"
+
+
+def _same_file_name(first: str, second: str) -> bool:
+    """macOS file systems usually ignore case and Unicode normalization."""
+    return (
+        unicodedata.normalize("NFC", first).casefold()
+        == unicodedata.normalize("NFC", second).casefold()
+    )
+
+
+def _output_file_name(given: str, source_name: str) -> str:
+    name = _checked_file_name(given.strip() or f"{Path(source_name).stem}.zh.epub", "output_name")
+    if not Path(name).suffix:
+        name += ".epub"
+    if not _is_epub_name(name):
+        raise HTTPException(400, f"output_name must end in .epub: {name!r}")
+    if _same_file_name(name, source_name):
+        raise HTTPException(400, f"output_name must differ from the uploaded file: {name!r}")
+    return name
+
+
+def _remove_if_empty(directory: Path) -> None:
+    try:
+        directory.rmdir()
+    except OSError:
+        pass
+
+
+def _store_upload(upload: UploadFile, destination: Path) -> bool:
+    """Save the upload without ever replacing a file; True when this call created it."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    partial = destination.parent / f".upload-{uuid.uuid4()}.part"
+    try:
+        size = 0
+        with partial.open("wb") as saved:
+            while chunk := upload.file.read(_COPY_CHUNK_BYTES):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, f"The file is over {MAX_UPLOAD_BYTES} bytes")
+                saved.write(chunk)
+        try:
+            os.link(partial, destination)
+        except FileExistsError:
+            if filecmp.cmp(partial, destination, shallow=False):
+                return False
+            raise HTTPException(
+                409, f"A different book is already stored at {destination}; rename your file"
+            ) from None
+        return True
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def create_app(
     *,
     port: int = DEFAULT_PORT,
     state_dir: Path | None = None,
     child_command: Sequence[str] = _CHILD_COMMAND,
+    library_dir: Path | None = None,
 ) -> FastAPI:
     """Build the API; separate from ``serve`` so tests can call it without a socket."""
     store = _RunStore(state_dir or default_state_dir())
+    library = library_dir or default_library_dir()
     children: dict[str, subprocess.Popen[bytes]] = {}
     allowed_origins = {f"http://{name}:{port}" for name in _LOCAL_HOSTNAMES}
     app = FastAPI(
         title="BookWeaver local API",
         description=(
             "Lists the enabled rows, the same as `bookweaver rows`, and starts one run at a "
-            "time as a `bookweaver` child process."
+            "time as a `bookweaver` child process. To translate a book, use `POST /runs/upload`."
         ),
         version="0.2.0",
     )
@@ -376,25 +464,116 @@ def create_app(
     def list_rows() -> list[orchestration.Row]:
         return list(orchestration.enabled_rows())
 
+    def ensure_idle() -> None:
+        """Call with the store lock held."""
+        current = store.read()
+        if current is not None and _state(current, children.get(current.run_id)) == "running":
+            raise HTTPException(409, f"Run {current.run_id} is still running")
+
+    def launch(
+        row: orchestration.Row,
+        source: Path,
+        output: Path,
+        *,
+        prompt: str | None,
+        glossary: str | None,
+        allow_paid_api: bool,
+    ) -> RunStatus:
+        """Call with the store lock held."""
+        try:
+            planned = orchestration.count_epub_segments(source)
+        except Exception as exc:  # noqa: BLE001 - any parse failure is a bad request here.
+            raise HTTPException(400, f"Cannot read the EPUB: {exc}") from exc
+        run_id = str(uuid.uuid4())
+        log_path = output.parent / ".bookweaver_runs" / f"{run_id}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [*child_command, str(source), "--output", str(output), "--row", row.name]
+        if prompt is not None:
+            # One token, so a prompt that starts with "-" is not read as an option.
+            command.append(f"--prompt={prompt}")
+        if glossary is not None:
+            command += ["--glossary", str(Path(glossary).expanduser().resolve())]
+        if allow_paid_api:
+            command.append("--allow-paid-api")
+        # Phase 1: record the run before the child exists, so a server that dies right
+        # after starting it can still find the child by its arguments (_locate).
+        pending = RunRecord(
+            schema_version=1,
+            run_id=run_id,
+            pid=None,
+            process_start=None,
+            source=str(source),
+            output=str(output),
+            row=row.name,
+            allow_paid_api=allow_paid_api,
+            started_at=_now(),
+            log_path=str(log_path),
+            checkpoint_dir=str(orchestration.default_epub_checkpoint_dir(source, output)),
+            planned_segments=planned,
+            exit_code=None,
+            ended_at=None,
+        )
+        try:
+            store.write(pending)
+        except OSError as exc:
+            raise HTTPException(500, f"Cannot write the run record: {exc}") from exc
+        with log_path.open("ab") as log:
+            child = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        # Phase 2: the exact kernel start time makes a later PID reuse detectable.
+        record = replace(pending, pid=child.pid, process_start=_process_start(child.pid))
+        try:
+            store.write(record)
+        except OSError as exc:
+            # An unrecorded child could not be watched or stopped; stop it now.
+            os.killpg(child.pid, signal.SIGINT)
+            try:
+                child.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(child.pid, signal.SIGKILL)
+                child.wait()
+            raise HTTPException(500, f"Cannot write the run record; run stopped: {exc}") from exc
+        children[run_id] = child
+        threading.Thread(
+            target=lambda: store.finish(run_id, child.wait()), daemon=True, name=f"run-{run_id}"
+        ).start()
+        return _status(record, child)
+
     @app.post(
         "/runs",
         status_code=202,
         response_model=RunStatus,
-        summary="Start one run",
+        summary="Start one run from paths on this Mac",
         description=(
             "Starts `bookweaver <source> --output <output> --row <row>` in the background. "
-            "A metered row needs `allow_paid_api`. Only one run at a time."
+            "A metered row needs `allow_paid_api`. Only one run at a time. "
+            "To choose a file instead of typing a path, use `POST /runs/upload`."
         ),
     )
-    def start_run(body: RunRequest) -> RunStatus:
+    def start_run(
+        body: Annotated[
+            RunRequest,
+            Body(
+                openapi_examples={
+                    "default": {
+                        "summary": "Required fields only",
+                        "value": {
+                            "source": "/absolute/path/book.epub",
+                            "output": "/absolute/path/book.zh.epub",
+                            "row": DEFAULT_ROW.value,
+                        },
+                    }
+                }
+            ),
+        ],
+    ) -> RunStatus:
         row = orchestration.find_row(body.row.value)
-        metered = row.provider != "cli"
-        if metered and not body.allow_paid_api:
-            raise HTTPException(
-                400, f"Metered {row.provider} API: {row.model_id}. {PAID_CONSENT_REQUIRED}"
-            )
-        if not metered and body.allow_paid_api:
-            raise HTTPException(400, PAID_FLAG_NEEDS_METERED)
+        _check_consent(row, body.allow_paid_api)
         source = Path(body.source).expanduser().resolve()
         output = Path(body.output).expanduser().resolve()
         if source.suffix.lower() != ".epub" or not source.is_file():
@@ -402,74 +581,78 @@ def create_app(
         if not output.parent.is_dir():
             raise HTTPException(400, f"Output directory does not exist: {output.parent}")
         with store.lock():
-            current = store.read()
-            if current is not None and _state(current, children.get(current.run_id)) == "running":
-                raise HTTPException(409, f"Run {current.run_id} is still running")
-            try:
-                planned = orchestration.count_epub_segments(source)
-            except Exception as exc:  # noqa: BLE001 - any parse failure is a bad request here.
-                raise HTTPException(400, f"Cannot read the EPUB: {exc}") from exc
-            run_id = str(uuid.uuid4())
-            log_path = output.parent / ".bookweaver_runs" / f"{run_id}.log"
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            command = [*child_command, str(source), "--output", str(output), "--row", row.name]
-            if body.prompt is not None:
-                # One token, so a prompt that starts with "-" is not read as an option.
-                command.append(f"--prompt={body.prompt}")
-            if body.glossary is not None:
-                command += ["--glossary", str(Path(body.glossary).expanduser().resolve())]
-            if body.allow_paid_api:
-                command.append("--allow-paid-api")
-            # Phase 1: record the run before the child exists, so a server that dies right
-            # after starting it can still find the child by its arguments (_locate).
-            pending = RunRecord(
-                schema_version=1,
-                run_id=run_id,
-                pid=None,
-                process_start=None,
-                source=str(source),
-                output=str(output),
-                row=row.name,
+            ensure_idle()
+            return launch(
+                row,
+                source,
+                output,
+                prompt=body.prompt,
+                glossary=body.glossary,
                 allow_paid_api=body.allow_paid_api,
-                started_at=_now(),
-                log_path=str(log_path),
-                checkpoint_dir=str(orchestration.default_epub_checkpoint_dir(source, output)),
-                planned_segments=planned,
-                exit_code=None,
-                ended_at=None,
             )
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse("/docs")
+
+    @app.post(
+        "/runs/upload",
+        status_code=202,
+        response_model=RunStatus,
+        summary="Upload a book and translate it",
+        description=(
+            "Choose an EPUB and press Execute. The translation starts at once and can use "
+            f"quota or money, as `row` says. The book and its translation stay in `{library}/"
+            "<book name>/`. Upload the same file with the same row and prompt to continue from "
+            "the saved progress; a different row or prompt fails, because this API has no "
+            "`--force-resume`. Only one run at a time."
+        ),
+    )
+    def upload_run(
+        file: Annotated[UploadFile, File(description="The source EPUB, at most 200 MiB.")],
+        output_name: Annotated[
+            str,
+            Form(description="Name of the translated file. Empty means `<book name>.zh.epub`."),
+        ] = "",
+        row: Annotated[
+            RowName,
+            Form(description="Model and effort to use. `GET /rows` explains each row."),
+        ] = DEFAULT_ROW,
+        prompt: Annotated[
+            str, Form(description="Extra translation instructions. Empty means none.")
+        ] = "",
+        allow_paid_api: Annotated[
+            bool,
+            Form(description="Consent to paid calls for this run. Paid rows require it."),
+        ] = False,
+    ) -> RunStatus:
+        selected = orchestration.find_row(row.value)
+        _check_consent(selected, allow_paid_api)
+        source_name = _checked_file_name(file.filename or "", "The uploaded file")
+        if not _is_epub_name(source_name):
+            raise HTTPException(400, f"The uploaded file must be an EPUB: {source_name!r}")
+        book_dir = library / Path(source_name).stem
+        source = book_dir / source_name
+        output = book_dir / _output_file_name(output_name, source_name)
+        with store.lock():
+            ensure_idle()
+            created = False
             try:
-                store.write(pending)
-            except OSError as exc:
-                raise HTTPException(500, f"Cannot write the run record: {exc}") from exc
-            with log_path.open("ab") as log:
-                child = subprocess.Popen(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    start_new_session=True,
+                created = _store_upload(file, source)
+                return launch(
+                    selected,
+                    source,
+                    output,
+                    prompt=prompt or None,
+                    glossary=None,
+                    allow_paid_api=allow_paid_api,
                 )
-            # Phase 2: the exact kernel start time makes a later PID reuse detectable.
-            record = replace(pending, pid=child.pid, process_start=_process_start(child.pid))
-            try:
-                store.write(record)
-            except OSError as exc:
-                # An unrecorded child could not be watched or stopped; stop it now.
-                os.killpg(child.pid, signal.SIGINT)
-                try:
-                    child.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    os.killpg(child.pid, signal.SIGKILL)
-                    child.wait()
-                raise HTTPException(
-                    500, f"Cannot write the run record; run stopped: {exc}"
-                ) from exc
-            children[run_id] = child
-        threading.Thread(
-            target=lambda: store.finish(run_id, child.wait()), daemon=True, name=f"run-{run_id}"
-        ).start()
-        return _status(record, child)
+            except HTTPException:
+                # A refused upload must not block a corrected copy with the same name.
+                if created:
+                    source.unlink(missing_ok=True)
+                _remove_if_empty(book_dir)
+                raise
 
     @app.get(
         "/runs/current",
