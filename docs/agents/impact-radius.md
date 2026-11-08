@@ -105,6 +105,9 @@ change that adds, modifies or deletes anything under these paths has
   (`RunRecord` in `ai/local_api.py`, schema version 1), its lock file
   `current-run.lock`, and
   `<output directory>/.bookweaver_runs/<run_id>.log`.
+- **Architecture decision records:** `docs/architecture/decisions/`. A new ADR records
+  a significant decision reason and needs the owner's approval
+  (`~/Documents/global-skills/agents/DOC-LIFECYCLE.md`, "Task closeout").
 - **EPUB output format:** the bilingual EPUB that `ai/epub_package.py` writes is
   the product the owner keeps and reads in other apps.
 - **Isolated-format artifacts** (Markdown and PDF, run only with
@@ -201,7 +204,8 @@ the PR:
 
 - **Verifier changes:**
   - `.github/workflows/`;
-  - `scripts/verify_installed_runtime.py` and `scripts/probe_antigravity_version.py`
+  - `scripts/verify_installed_runtime.py`, `scripts/check_doc_links.py` and
+    `scripts/probe_antigravity_version.py`
     (the documented tool to run before seeding a version);
   - the verification commands in `AGENTS.md`;
   - the `[tool.ruff]` rules in `pyproject.toml`, and `tach.toml` rules or exclusions;
@@ -225,7 +229,7 @@ the PR:
   criteria (`probe_problems` and `PROBE_SAMPLES` in `ai/antigravity_provider.py`). Seeding a new
   pair needs probe evidence.
 - **Policy text:** `AGENTS.md`, `CONTEXT.md`, `docs/agents/`, and approved specs
-  under `docs/architecture/specs/` (and ADRs, if a decisions folder is added).
+  under `docs/architecture/specs/`; ADRs under `docs/architecture/decisions/`.
 
 ## Review depth
 
