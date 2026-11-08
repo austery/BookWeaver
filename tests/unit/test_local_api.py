@@ -456,6 +456,8 @@ def test_rejection_texts_match_the_cli_paid_gate(
         )
     assert str(cli_error.value) == local_api.PAID_FLAG_NEEDS_METERED
     # Metered row without consent, non-interactive: the paid gate's own text.
+    # A fake client keeps this offline even when the gate is broken and a real key is set.
+    install_fake_any_llm(monkeypatch, lambda _model: "", calls=[], constructed=[])
     factory = DefaultProviderFactory()
     with pytest.raises(PaidAuthorizationError) as missing:
         factory.create(
