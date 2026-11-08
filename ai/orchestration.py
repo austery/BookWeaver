@@ -29,12 +29,12 @@ from ai.checkpoint_store import (
     SegmentRecord,
 )
 
-# Row, enabled_rows and find_row are the named-row surface for entry points (SPEC-026).
+# Preset, enabled_presets and find_preset are the named-preset surface for entry points (SPEC-026).
 from ai.model_profiles import (
     ResolvedModel,
-    Row as Row,
-    enabled_rows as enabled_rows,
-    find_row as find_row,
+    Preset as Preset,
+    enabled_presets as enabled_presets,
+    find_preset as find_preset,
     is_metered,
     resolve_profile,
 )
@@ -257,7 +257,7 @@ class TranslationOrchestrator:
             active_provider: ITranslationProvider | None = None
             active_model = model
             active_requested_effort = options.model.effort
-            # Extraction may run on another row; keep it visible in the audit (SPEC-025 §3.8).
+            # Extraction may run on another preset; keep it visible in the audit (SPEC-025 §3.8).
             extraction_used: ResolvedModel | None = None
 
             def finalize_audit(
@@ -273,11 +273,11 @@ class TranslationOrchestrator:
                             "requested_effort": active_requested_effort,
                             "effective_effort": active_model.effort,
                             "provider": active_model.provider,
-                            "row_status": active_model.status,
+                            "preset_status": active_model.status,
                             "extraction_model": extraction_used.model_id
                             if extraction_used is not None
                             else None,
-                            "extraction_row_status": extraction_used.status
+                            "extraction_preset_status": extraction_used.status
                             if extraction_used is not None
                             else None,
                             "runtime_version": active_provider.runtime_version

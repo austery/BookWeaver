@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bookweaver",
         description="Translate EPUB books through Antigravity or a metered model API.",
-        epilog="List the named rows for --row with: bookweaver rows. Start the local API with: bookweaver serve",
+        epilog="List the named presets for --preset with: bookweaver presets. Start the local API with: bookweaver serve",
     )
     p.add_argument(
         "input_path",
@@ -32,11 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--effort", choices=["low", "medium", "high"], default=None)
     p.add_argument(
-        "--row",
-        choices=[row.name for row in orchestration.enabled_rows()],
+        "--preset",
+        choices=[preset.name for preset in orchestration.enabled_presets()],
         metavar="NAME",
         default=None,
-        help="Named row in place of --model, --effort and --provider; list with `bookweaver rows`",
+        help="Named preset in place of --model, --effort and --provider; list with `bookweaver presets`",
     )
     p.add_argument("--allow-paid-api", action="store_true")
     p.add_argument(
@@ -140,11 +140,11 @@ def _is_model_flag_explicit(argv: list[str] | None) -> bool:
     return any(token == "--model" or token.startswith("--model=") for token in args)
 
 
-def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
-    """Plain table: one row per line, evidence last because it is free text."""
-    # Same fields as `rows --json`, in Row field order.
+def _format_presets(presets: tuple[orchestration.Preset, ...]) -> str:
+    """Plain table: one preset per line, evidence last because it is free text."""
+    # Same fields as `presets --json`, in Preset field order.
     header = (
-        "ROW",
+        "PRESET",
         "RUNTIME",
         "PROVIDER",
         "TIER",
@@ -156,17 +156,17 @@ def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
     )
     lines = [
         (
-            row.name,
-            row.runtime,
-            row.provider,
-            row.profile,
-            row.effort or "-",
-            row.model_id,
-            row.status,
-            "-" if row.layer is None else str(row.layer),
-            row.evidence,
+            preset.name,
+            preset.runtime,
+            preset.provider,
+            preset.profile,
+            preset.effort or "-",
+            preset.model_id,
+            preset.status,
+            "-" if preset.layer is None else str(preset.layer),
+            preset.evidence,
         )
-        for row in rows
+        for preset in presets
     ]
     widths = [max(len(line[i]) for line in (header, *lines)) for i in range(len(header) - 1)]
     return "\n".join(
@@ -177,18 +177,18 @@ def _format_rows(rows: tuple[orchestration.Row, ...]) -> str:
     )
 
 
-def rows_main(tokens: list[str]) -> None:
-    """`bookweaver rows`: list the enabled named rows."""
+def presets_main(tokens: list[str]) -> None:
+    """`bookweaver presets`: list the enabled named presets."""
     parser = argparse.ArgumentParser(
-        prog="bookweaver rows", description="List the enabled named rows for --row."
+        prog="bookweaver presets", description="List the enabled named presets for --preset."
     )
-    parser.add_argument("--json", action="store_true", help="Print rows as JSON")
+    parser.add_argument("--json", action="store_true", help="Print presets as JSON")
     args = parser.parse_args(tokens)
-    rows = orchestration.enabled_rows()
+    presets = orchestration.enabled_presets()
     if args.json:
-        print(json.dumps([asdict(row) for row in rows], indent=2))
+        print(json.dumps([asdict(preset) for preset in presets], indent=2))
     else:
-        print(_format_rows(rows))
+        print(_format_presets(presets))
 
 
 def serve_main(tokens: list[str]) -> None:
@@ -212,10 +212,10 @@ def serve_main(tokens: list[str]) -> None:
     local_api.serve(args.port)
 
 
-def _apply_row(
+def _apply_preset(
     parser: argparse.ArgumentParser, args: argparse.Namespace, tokens: list[str]
 ) -> None:
-    """Replace --model/--effort/--provider with the named row; reject mixing them."""
+    """Replace --model/--effort/--provider with the named preset; reject mixing them."""
     # Reparse with empty defaults so explicit flags are detected even when abbreviated.
     probe = build_parser()
     probe.set_defaults(model=None, provider=None)
@@ -230,24 +230,24 @@ def _apply_row(
         if value is not None
     ]
     if mixed:
-        parser.error(f"--row replaces {', '.join(mixed)}; pass only --row")
-    row = orchestration.find_row(args.row)
-    args.model, args.effort, args.provider = row.profile, row.effort, row.provider
+        parser.error(f"--preset replaces {', '.join(mixed)}; pass only --preset")
+    preset = orchestration.find_preset(args.preset)
+    args.model, args.effort, args.provider = preset.profile, preset.effort, preset.provider
 
 
 def main(argv: list[str] | None = None) -> None:
     """Parse intent and dispatch to a format-specific application boundary."""
     tokens = argv if argv is not None else sys.argv[1:]
-    if tokens[:1] == ["rows"]:
-        rows_main(tokens[1:])
+    if tokens[:1] == ["presets"]:
+        presets_main(tokens[1:])
         return
     if tokens[:1] == ["serve"]:
         serve_main(tokens[1:])
         return
     parser = build_parser()
     args = parser.parse_args(tokens)
-    if args.row is not None:
-        _apply_row(parser, args, tokens)
+    if args.preset is not None:
+        _apply_preset(parser, args, tokens)
     if args.provider == "api":
         parser.error("--provider api was renamed; use --provider gemini")
     if args.cli_api_fallback:

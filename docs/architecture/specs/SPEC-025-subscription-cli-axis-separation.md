@@ -60,7 +60,7 @@ The `1.5.3` roster also lists `claude-opus-5-5-*`, `claude-sonnet-5-5-*` and `gp
 ### 3.1 Axis separation (owner-confirmed direction)
 
 - The user selects `provider`, `tier` and `effort`. These stay the CLI and config contract.
-- The registry maps `(runtime, tier)` to a model **family** plus the owner-enabled efforts. Example: `("antigravity", "flash") -> family "gemini-3.8-flash"`, with one row per enabled effort (§3.8 table).
+- The registry maps `(runtime, tier)` to a model **family** plus the owner-enabled efforts. Example: `("antigravity", "flash") -> family "gemini-3.8-flash"`, with one preset per enabled effort (§3.8 table).
 - The provider passes effort exactly once, through the runtime's own effort option.
 - The runtime still decides whether a `family + effort` pair exists; BookWeaver does not copy the vendor's naming or validity table. The enabled-effort list is a product decision (§3.8), not a copy of vendor rules.
 - `ResolvedModel.model_id` keeps the concrete ID (`gemini-3.8-flash-low`) for checkpoint provenance and mixed-model resume warnings. A new `family` field carries the argv value. Existing checkpoints stay compatible.
@@ -77,7 +77,7 @@ The gate guards protocol drift; roster checks already guard model absence.
 
 - Seed certifications are `(version, model_id)` pairs with recorded probe evidence (`CERTIFIED_AGY_MODELS`). A seeded version does not exempt other models: any unseeded pair is probed before its first book batch.
 - An uncertified `(version, model_id, protocol)` triggers the probe in the provider package: one call with three synthetic passages through the production framing, invocation and `split_response` path. Translation (`segment_tags`) uses the run's own production prompt and checks protocol only (segment count and order, non-empty, no fences or artifact links inside any segment). An outer Markdown fence around the whole response is not a probe failure: the production parser removes it by design (`_strip_fenced_wrapper` in `ai/adapters/providers/_delimiter.py`), so it does not break translation, because the target language is not known to the provider. Glossary extraction (`delimiter`) uses a fixed Chinese translation prompt and also requires Chinese output, because the extraction prompt returns terms, not translations. No book passages are sent. The run's prompt may carry its glossary terms; they go only to the same runtime that is about to translate the book.
-- Pass: record `(runtime, version, model_id, protocol, timestamp, result)` in the user-local certification cache `~/.local/state/bookweaver/runtime-certifications.json` (or `$XDG_STATE_HOME/bookweaver/`), then continue. The cache is the probe record; the run audit records `runtime_version` and `row_status`. The probe runs per framing protocol, because glossary extraction uses `delimiter` and translation uses `segment_tags`.
+- Pass: record `(runtime, version, model_id, protocol, timestamp, result)` in the user-local certification cache `~/.local/state/bookweaver/runtime-certifications.json` (or `$XDG_STATE_HOME/bookweaver/`), then continue. The cache is the probe record; the run audit records `runtime_version` and `preset_status`. The probe runs per framing protocol, because glossary extraction uses `delimiter` and translation uses `segment_tags`.
 - Fail: stop before any book batch, with the probe diagnosis.
 - Cost: one short subscription call per new `(version, model_id, protocol)`, so at most two per model. No metered API is ever used for this probe.
 - The old version-only `CERTIFIED_AGY_VERSIONS` list is replaced by the per-pair seed `CERTIFIED_AGY_MODELS` above.
@@ -140,33 +140,33 @@ Principles (the detailed design belongs in a separate evaluation spec):
 
 The AGENTS.md note "Codex comparison is deferred" is lifted by this spec.
 
-### 3.8 Supported combinations: named rows, not the Cartesian product
+### 3.8 Supported combinations: named presets, not the Cartesian product
 
 Source principle: research note `2026-11-04_puresubs_static-complexity-review-handoff` ("配置组合：四个不同层次"; "用合法性检查与已验证组合限制实验范围").
 
 The theoretical space is large: 6 runtimes (agy, Codex, Claude Code, Gemini/OpenAI/Anthropic API) × 2 tiers × up to 5 efforts × each runtime's version. That number describes what could be configured, not what is supported. BookWeaver does not test the product, and an untested combination is not valid by default.
 
-The registry is a short list of **named rows**. Each row is one `(runtime, tier, family, effort)` that the owner chose to enable. Anything not in the list is rejected before the run starts, with a message that names the enabled rows.
+The registry is a short list of **named presets**. Each preset is one `(runtime, tier, family, effort)` that the owner chose to enable. Anything not in the list is rejected before the run starts, with a message that names the enabled presets.
 
-Each row records which of four layers it has proven. The layers are separate; passing one does not imply the next.
+Each preset records which of four layers it has proven. The layers are separate; passing one does not imply the next.
 
 | Layer | Question | Evidence | Who decides |
 |---|---|---|---|
 | 1. Legal | Do the fields and references exist? | Registry validation at startup | Code |
 | 2. Executable | Does the full path run on this runtime version? | Fake-executable contract test per runtime spec + live three-passage probe per `(runtime, version, model_id)` (§3.3) | Code + probe |
 | 3. Qualified | Is the output good enough for books? | Fixed-corpus evaluation, human + AI judge (§3.7) | Owner |
-| 4. Allowed | May it be used, and how? | `default`, `manual`, or `experiment` status in the row | Owner |
+| 4. Allowed | May it be used, and how? | `default`, `manual`, or `experiment` status in the preset | Owner |
 
 Rules:
 
-- Contract tests cover each **adapter branch** (argv, output parsing, error classes) with one representative row, not every row. The CI note `2026-11-07_devops_how-heavy-should-ci-be` gives the same rule: representative samples per code branch, not the full product.
-- Layer 2 live probes run only for enabled rows, and only on a new runtime version (§3.3).
-- Layer 3 evaluation runs only for rows the owner wants to promote to `default` or to rely on for a whole book.
-- A row with status `experiment` can run, but the run audit marks it as not qualified.
-- Adding a row is an explicit change with its evidence. Adding a runtime does not enable every tier and effort on it.
+- Contract tests cover each **adapter branch** (argv, output parsing, error classes) with one representative preset, not every preset. The CI note `2026-11-07_devops_how-heavy-should-ci-be` gives the same rule: representative samples per code branch, not the full product.
+- Layer 2 live probes run only for enabled presets, and only on a new runtime version (§3.3).
+- Layer 3 evaluation runs only for presets the owner wants to promote to `default` or to rely on for a whole book.
+- A preset with status `experiment` can run, but the run audit marks it as not qualified.
+- Adding a preset is an explicit change with its evidence. Adding a runtime does not enable every tier and effort on it.
 - Quality comparison changes one variable at a time (runtime, model, or effort) against a fixed corpus and prompt; otherwise the result cannot be attributed.
 
-Initial rows (proposal for owner review):
+Initial presets (proposal for owner review):
 
 | Runtime | Tier | Family | Effort | Status | Proven to |
 |---|---|---|---|---|---|
@@ -183,7 +183,7 @@ Initial rows (proposal for owner review):
 - Detailed evaluation design (corpus, sample size, judge prompt, agreement threshold): a separate spec after Phase 3.
 - Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today.
 - Async batch APIs (previously planned as SPEC-025; renumber to SPEC-027).
-- Named rows on the CLI and the local API: SPEC-026, built on the §3.8 registry after Phase 1.
+- Named presets on the CLI and the local API: SPEC-026, built on the §3.8 registry after Phase 1.
 
 ## 5. Open items before implementation
 
@@ -195,7 +195,7 @@ Initial rows (proposal for owner review):
 
 ## 6. Phases
 
-1. **Antigravity axis separation + named-row registry (§3.8) + Argon pro + automatic probe.** Fixes both observed failures. Offline tests through the provider boundary with a fake `agy` executable: argv carries the family once and effort once; unknown version triggers probe; probe failure stops before book batches; checkpoint `model_id` is unchanged for existing flash runs.
+1. **Antigravity axis separation + named-preset registry (§3.8) + Argon pro + automatic probe.** Fixes both observed failures. Offline tests through the provider boundary with a fake `agy` executable: argv carries the family once and effort once; unknown version triggers probe; probe failure stops before book batches; checkpoint `model_id` is unchanged for existing flash runs.
 2. **`SubscriptionCliProvider` extraction.** Antigravity moves onto the shared adapter with no behavior change; same tests stay green.
 3. **Codex and Claude Code specs + `runtime` provenance field.** After §5 items are resolved. Fake-executable tests, then one owner-run three-passage probe per runtime.
 4. **Evaluation spec, then quality comparison** on one already-validated book: human sample plus cross-vendor AI judge.

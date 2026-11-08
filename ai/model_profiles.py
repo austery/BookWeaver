@@ -7,37 +7,37 @@ ModelProfile = Literal["flash", "pro"]
 Effort = Literal["low", "medium", "high"]
 MeteredProvider = Literal["gemini", "openai", "anthropic"]
 ProviderName = Literal["cli", MeteredProvider]
-# Owner policy for a row (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
-RowStatus = Literal["default", "manual", "experiment"]
+# Owner policy for a preset (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
+PresetStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
 CliRuntime = Literal["antigravity"]
-# Runtime = quota pool: a subscription CLI, or the metered vendor for API rows.
-RowRuntime = Literal[CliRuntime, MeteredProvider]
+# Runtime = quota pool: a subscription CLI, or the metered vendor for API presets.
+PresetRuntime = Literal[CliRuntime, MeteredProvider]
 METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))
 
 
 @dataclass(frozen=True)
-class _CliRow:
+class _CliPreset:
     """One owner-enabled subscription CLI combination (SPEC-025 §3.8)."""
 
     runtime: CliRuntime
     profile: ModelProfile
     family: str
     effort: Effort
-    status: RowStatus
+    status: PresetStatus
     layer: EvidenceLayer
     evidence: str
 
 
-# Short runtime names used in row names; one per CliRuntime.
+# Short runtime names used in preset names; one per CliRuntime.
 _RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy"}
 
 
-# Named rows, not the Cartesian product: anything absent here is rejected before a run.
+# Named presets, not the Cartesian product: anything absent here is rejected before a run.
 # The family is the runtime's model family; effort is passed once through ``--effort``.
-_CLI_ROWS: tuple[_CliRow, ...] = (
-    _CliRow(
+_CLI_PRESETS: tuple[_CliPreset, ...] = (
+    _CliPreset(
         "antigravity",
         "flash",
         "gemini-3.8-flash",
@@ -46,7 +46,7 @@ _CLI_ROWS: tuple[_CliRow, ...] = (
         2,
         "agy 1.5.3 probe 2026-11-07; one validated book on agy 1.1.27",
     ),
-    _CliRow(
+    _CliPreset(
         "antigravity",
         "flash",
         "gemini-3.8-flash",
@@ -55,7 +55,7 @@ _CLI_ROWS: tuple[_CliRow, ...] = (
         1,
         "effort comparison only; probed automatically on first use",
     ),
-    _CliRow(
+    _CliPreset(
         "antigravity",
         "flash",
         "gemini-3.8-flash",
@@ -64,7 +64,7 @@ _CLI_ROWS: tuple[_CliRow, ...] = (
         1,
         "effort comparison only; probed automatically on first use",
     ),
-    _CliRow(
+    _CliPreset(
         "antigravity",
         "pro",
         "gemini-4-argon",
@@ -73,7 +73,7 @@ _CLI_ROWS: tuple[_CliRow, ...] = (
         2,
         "agy 1.5.3 probe 2026-11-07 (segment_tags and delimiter)",
     ),
-    _CliRow(
+    _CliPreset(
         "antigravity",
         "pro",
         "gemini-4-argon",
@@ -90,17 +90,17 @@ def cli_model_id(family: str, effort: str) -> str:
     return f"{family}-{effort}"
 
 
-def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
-    """Layer 1 check at import: one row per selection, and a known default."""
-    keys = [(row.runtime, row.profile, row.effort) for row in rows]
+def _validate_presets(presets: tuple[_CliPreset, ...]) -> None:
+    """Layer 1 check at import: one preset per selection, and a known default."""
+    keys = [(preset.runtime, preset.profile, preset.effort) for preset in presets]
     duplicates = sorted({key for key in keys if keys.count(key) > 1})
     if duplicates:
-        raise RuntimeError(f"Duplicate CLI rows in ai/model_profiles.py: {duplicates}")
+        raise RuntimeError(f"Duplicate CLI presets in ai/model_profiles.py: {duplicates}")
     if ("antigravity", "flash", "low") not in keys:
-        raise RuntimeError("The default antigravity flash/low row is missing")
-    unnamed = sorted({row.runtime for row in rows} - set(_RUNTIME_PREFIX))
+        raise RuntimeError("The default antigravity flash/low preset is missing")
+    unnamed = sorted({preset.runtime for preset in presets} - set(_RUNTIME_PREFIX))
     if unnamed:
-        raise RuntimeError(f"CLI runtimes without a row-name prefix: {unnamed}")
+        raise RuntimeError(f"CLI runtimes without a preset-name prefix: {unnamed}")
 
 
 # Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
@@ -114,16 +114,16 @@ CERTIFIED_AGY_MODELS = frozenset(
 )
 
 
-def _validate_seeds(rows: tuple[_CliRow, ...], seeds: frozenset[tuple[str, str]]) -> None:
-    """Every seeded model must belong to an enabled row; a dead seed hides a registry edit."""
-    known = {cli_model_id(row.family, row.effort) for row in rows}
+def _validate_seeds(presets: tuple[_CliPreset, ...], seeds: frozenset[tuple[str, str]]) -> None:
+    """Every seeded model must belong to an enabled preset; a dead seed hides a registry edit."""
+    known = {cli_model_id(preset.family, preset.effort) for preset in presets}
     dead = sorted(model for _, model in seeds if model not in known)
     if dead:
-        raise RuntimeError(f"CERTIFIED_AGY_MODELS names models without a row: {dead}")
+        raise RuntimeError(f"CERTIFIED_AGY_MODELS names models without a preset: {dead}")
 
 
-_validate_rows(_CLI_ROWS)
-_validate_seeds(_CLI_ROWS, CERTIFIED_AGY_MODELS)
+_validate_presets(_CLI_PRESETS)
+_validate_seeds(_CLI_PRESETS, CERTIFIED_AGY_MODELS)
 
 
 @dataclass(frozen=True)
@@ -133,8 +133,8 @@ class _MeteredEntry:
     api_effort: str | None
 
 
-# Metered API models (SPEC-024 §6.2). Each row cites its vendor source and read date;
-# a provider without a row fails before any request instead of guessing a model.
+# Metered API models (SPEC-024 §6.2). Each entry cites its vendor source and read date;
+# a provider without an entry fails before any request instead of guessing a model.
 _API_MODELS: dict[tuple[MeteredProvider, ModelProfile], _MeteredEntry] = {
     # Output cap 65,536 as listed in LiteLLM 1.108.2's model map, inspected 2026-11-07;
     # not yet checked against ai.google.dev, which was unreachable from that environment.
@@ -146,57 +146,57 @@ _API_MODELS: dict[tuple[MeteredProvider, ModelProfile], _MeteredEntry] = {
     # OpenAI: unfilled until its model documentation can be cited (SPEC-024 §11 Phase 3).
 }
 
-# Every metered entry becomes a paid row; a non-metered key would mislabel a free runtime.
+# Every metered entry becomes a paid preset; a non-metered key would mislabel a free runtime.
 if any(provider not in METERED_PROVIDERS for provider, _ in _API_MODELS):
     raise RuntimeError("_API_MODELS may contain only metered providers")
 
 
 @dataclass(frozen=True)
-class Row:
+class Preset:
     """One named, owner-enabled selection shown to users (SPEC-026 §2.2).
 
-    A row fixes provider, tier and effort; ``--row`` and the local API resolve it to the
+    A preset fixes provider, tier and effort; ``--preset`` and the local API resolve it to the
     same selection the separate flags produce.
     """
 
     name: str
-    runtime: RowRuntime
+    runtime: PresetRuntime
     provider: ProviderName
     profile: ModelProfile
     effort: Effort | None
     model_id: str
-    status: RowStatus
+    status: PresetStatus
     layer: EvidenceLayer | None
     evidence: str
 
 
-# The row never implies consent; the paid gate in ai/runtime_factory.py still applies.
+# The preset never implies consent; the paid gate in ai/runtime_factory.py still applies.
 _METERED_EVIDENCE = (
     "paid; consent per run: --allow-paid-api, or type USE_API at the interactive prompt; "
     "offline contract tests only"
 )
 
 
-def enabled_rows() -> tuple[Row, ...]:
-    """Every selection a run may use, subscription CLI rows first, the default row first."""
-    cli = sorted(_CLI_ROWS, key=lambda row: row.status != "default")
-    rows = [
-        Row(
-            f"{_RUNTIME_PREFIX[row.runtime]}-{row.profile}-{row.effort}",
-            row.runtime,
+def enabled_presets() -> tuple[Preset, ...]:
+    """Every selection a run may use, subscription CLI presets first, the default preset first."""
+    cli = sorted(_CLI_PRESETS, key=lambda preset: preset.status != "default")
+    presets = [
+        Preset(
+            f"{_RUNTIME_PREFIX[preset.runtime]}-{preset.profile}-{preset.effort}",
+            preset.runtime,
             "cli",
-            row.profile,
-            row.effort,
-            cli_model_id(row.family, row.effort),
-            row.status,
-            row.layer,
-            row.evidence,
+            preset.profile,
+            preset.effort,
+            cli_model_id(preset.family, preset.effort),
+            preset.status,
+            preset.layer,
+            preset.evidence,
         )
-        for row in cli
+        for preset in cli
     ]
-    rows += [
+    presets += [
         # Effort is vendor-pinned. No layer: only offline contract tests (SPEC-024), no live probe.
-        Row(
+        Preset(
             f"{provider}-{profile}",
             provider,  # runtime: the vendor is the quota pool
             provider,
@@ -209,16 +209,18 @@ def enabled_rows() -> tuple[Row, ...]:
         )
         for (provider, profile), entry in _API_MODELS.items()
     ]
-    return tuple(rows)
+    return tuple(presets)
 
 
-def find_row(name: str) -> Row:
-    """The enabled row with this name; unknown names fail with the enabled list."""
-    rows = enabled_rows()
-    for row in rows:
-        if row.name == name:
-            return row
-    raise ValueError(f"Unknown row {name!r}; enabled rows: {', '.join(r.name for r in rows)}")
+def find_preset(name: str) -> Preset:
+    """The enabled preset with this name; unknown names fail with the enabled list."""
+    presets = enabled_presets()
+    for preset in presets:
+        if preset.name == name:
+            return preset
+    raise ValueError(
+        f"Unknown preset {name!r}; enabled presets: {', '.join(r.name for r in presets)}"
+    )
 
 
 @dataclass(frozen=True)
@@ -232,7 +234,7 @@ class ResolvedModel:
     api_effort: str | None = None
     # Subscription CLI only: the family passed to the runtime with ``--effort``.
     family: str | None = None
-    status: RowStatus = "manual"
+    status: PresetStatus = "manual"
 
 
 def is_metered(provider: str) -> bool:
@@ -267,17 +269,17 @@ def resolve_profile(
     effective = effort if effort is not None else "low"
     if effective not in ("low", "medium", "high"):
         raise ValueError("effort must be low, medium, or high")
-    for row in _CLI_ROWS:
-        if (row.profile, row.effort) == (profile, effective):
+    for preset in _CLI_PRESETS:
+        if (preset.profile, preset.effort) == (profile, effective):
             return ResolvedModel(
                 profile,
                 provider,
-                cli_model_id(row.family, row.effort),
-                row.effort,
-                family=row.family,
-                status=row.status,
+                cli_model_id(preset.family, preset.effort),
+                preset.effort,
+                family=preset.family,
+                status=preset.status,
             )
-    enabled = ", ".join(f"{row.profile}/{row.effort}" for row in _CLI_ROWS)
+    enabled = ", ".join(f"{preset.profile}/{preset.effort}" for preset in _CLI_PRESETS)
     raise ValueError(
-        f"Unsupported model/effort combination: {profile}/{effective}; enabled rows: {enabled}"
+        f"Unsupported model/effort combination: {profile}/{effective}; enabled presets: {enabled}"
     )

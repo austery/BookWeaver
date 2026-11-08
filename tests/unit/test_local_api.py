@@ -21,17 +21,17 @@ from httpx import Response
 import ai.cli as entry_module
 from ai import local_api, orchestration
 from ai.antigravity_provider import default_certification_path
-from ai.model_profiles import Row, enabled_rows, is_metered, resolve_profile
+from ai.model_profiles import Preset, enabled_presets, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
 from tests.runtime_fakes import install_fake_any_llm
 
 BASE_URL = "http://127.0.0.1:8765"
-METERED_ROWS = [row for row in enabled_rows() if is_metered(row.provider)]
-SUBSCRIPTION_ROWS = [row for row in enabled_rows() if not is_metered(row.provider)]
+METERED_PRESETS = [preset for preset in enabled_presets() if is_metered(preset.provider)]
+SUBSCRIPTION_PRESETS = [preset for preset in enabled_presets() if not is_metered(preset.provider)]
 
 
-def row_name(row: Row) -> str:
-    return row.name
+def preset_name(preset: Preset) -> str:
+    return preset.name
 
 
 # A stand-in for `python -m ai.cli`: echoes its arguments, optionally writes a checkpoint,
@@ -93,7 +93,7 @@ def start(client: TestClient, tmp_path: Path, **fields: object) -> dict[str, obj
     body: dict[str, object] = {
         "source": str(make_epub(tmp_path / "book.epub")),
         "output": str(tmp_path / "book.zh.epub"),
-        "row": "agy-flash-low",
+        "preset": "agy-flash-low",
     }
     body.update(fields)
     response = client.post("/runs", json=body)
@@ -127,22 +127,22 @@ def child_args(status: dict[str, object]) -> list[str]:
     raise AssertionError(f"no ARGS line in {status['log_tail']}")
 
 
-def test_rows_endpoint_matches_the_cli_listing(
+def test_presets_endpoint_matches_the_cli_listing(
     client: TestClient, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    response = client.get("/rows")
+    response = client.get("/presets")
     assert response.status_code == 200
-    entry_module.main(["rows", "--json"])
+    entry_module.main(["presets", "--json"])
     assert response.json() == json.loads(capsys.readouterr().out)
     assert response.json()[0]["name"] == "agy-flash-low"
 
 
-def test_rows_schema_lists_choices_as_enums(client: TestClient) -> None:
+def test_presets_schema_lists_choices_as_enums(client: TestClient) -> None:
     schemas = client.get("/openapi.json").json()["components"]["schemas"]
-    row = schemas["Row"]["properties"]
-    assert row["status"]["enum"] == ["default", "manual", "experiment"]
-    assert "antigravity" in row["runtime"]["enum"]
-    assert "agy-flash-low" in schemas["RowName"]["enum"]
+    preset = schemas["Preset"]["properties"]
+    assert preset["status"]["enum"] == ["default", "manual", "experiment"]
+    assert "antigravity" in preset["runtime"]["enum"]
+    assert "agy-flash-low" in schemas["PresetName"]["enum"]
 
 
 def test_docs_page_is_served(client: TestClient) -> None:
@@ -190,12 +190,12 @@ def test_serve_without_the_api_extra_names_the_install_command(
 
 
 def test_foreign_host_is_refused(client: TestClient) -> None:
-    response = client.get("/rows", headers={"Host": "attacker.example:8765"})
+    response = client.get("/presets", headers={"Host": "attacker.example:8765"})
     assert response.status_code == 400
 
 
 def test_localhost_host_is_accepted(client: TestClient) -> None:
-    assert client.get("/rows", headers={"Host": "localhost:8765"}).status_code == 200
+    assert client.get("/presets", headers={"Host": "localhost:8765"}).status_code == 200
 
 
 def test_cross_origin_post_is_refused(runs: tuple[TestClient, Path]) -> None:
@@ -205,7 +205,7 @@ def test_cross_origin_post_is_refused(runs: tuple[TestClient, Path]) -> None:
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": "agy-flash-low",
+            "preset": "agy-flash-low",
         },
         headers={"Origin": "http://attacker.example"},
     )
@@ -220,7 +220,7 @@ def test_same_origin_post_is_accepted(runs: tuple[TestClient, Path]) -> None:
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": "agy-flash-low",
+            "preset": "agy-flash-low",
         },
         headers={"Origin": "http://127.0.0.1:8765"},
     )
@@ -245,14 +245,14 @@ def test_run_starts_the_cli_contract_and_reports_progress(
         str(tmp_path / "book.epub"),
         "--output",
         str(tmp_path / "book.zh.epub"),
-        "--row",
+        "--preset",
         "agy-flash-low",
         "--prompt=Keep it formal.",
     ]
     log = Path(str(status["log_path"]))
     assert log.parent == tmp_path / ".bookweaver_runs"
     record = json.loads((tmp_path / "state" / "current-run.json").read_text())
-    assert record["schema_version"] == 1 and record["checkpoint_dir"] == str(checkpoint)
+    assert record["schema_version"] == 2 and record["checkpoint_dir"] == str(checkpoint)
     assert started["checkpoint_dir"] == str(checkpoint)
 
 
@@ -266,14 +266,14 @@ def test_failed_child_is_reported(
     assert status["state"] == "failed" and status["exit_code"] == 3
 
 
-def test_metered_row_without_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
+def test_metered_preset_without_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
     response = client.post(
         "/runs",
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": "gemini-flash",
+            "preset": "gemini-flash",
         },
     )
     assert response.status_code == 400
@@ -283,14 +283,14 @@ def test_metered_row_without_consent_starts_nothing(runs: tuple[TestClient, Path
     assert client.get("/runs/current").status_code == 404
 
 
-def test_subscription_row_rejects_paid_consent(runs: tuple[TestClient, Path]) -> None:
+def test_subscription_preset_rejects_paid_consent(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
     response = client.post(
         "/runs",
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": "agy-flash-low",
+            "preset": "agy-flash-low",
             "allow_paid_api": True,
         },
     )
@@ -298,15 +298,15 @@ def test_subscription_row_rejects_paid_consent(runs: tuple[TestClient, Path]) ->
     assert response.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
 
 
-def test_metered_row_with_consent_passes_the_flag(runs: tuple[TestClient, Path]) -> None:
+def test_metered_preset_with_consent_passes_the_flag(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
-    start(client, tmp_path, row="gemini-flash", allow_paid_api=True)
-    assert child_args(settle(client))[-3:] == ["--row", "gemini-flash", "--allow-paid-api"]
+    start(client, tmp_path, preset="gemini-flash", allow_paid_api=True)
+    assert child_args(settle(client))[-3:] == ["--preset", "gemini-flash", "--allow-paid-api"]
 
 
-def test_the_consent_tests_cover_metered_and_subscription_rows() -> None:
-    assert {"gemini", "anthropic"} <= {row.provider for row in METERED_ROWS}
-    assert SUBSCRIPTION_ROWS
+def test_the_consent_tests_cover_metered_and_subscription_presets() -> None:
+    assert {"gemini", "anthropic"} <= {preset.provider for preset in METERED_PRESETS}
+    assert SUBSCRIPTION_PRESETS
 
 
 def assert_nothing_started(client: TestClient, tmp_path: Path) -> None:
@@ -315,10 +315,10 @@ def assert_nothing_started(client: TestClient, tmp_path: Path) -> None:
     assert not (tmp_path / ".bookweaver_runs").exists()
 
 
-@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+@pytest.mark.parametrize("preset", METERED_PRESETS, ids=preset_name)
 @pytest.mark.parametrize("consent", [{}, {"allow_paid_api": False}], ids=["omitted", "false"])
-def test_no_metered_row_starts_without_consent(
-    runs: tuple[TestClient, Path], row: Row, consent: dict[str, object]
+def test_no_metered_preset_starts_without_consent(
+    runs: tuple[TestClient, Path], preset: Preset, consent: dict[str, object]
 ) -> None:
     client, tmp_path = runs
     response = client.post(
@@ -326,13 +326,13 @@ def test_no_metered_row_starts_without_consent(
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": row.name,
+            "preset": preset.name,
             **consent,
         },
     )
     assert response.status_code == 400
     assert response.json()["detail"] == (
-        f"Metered {row.provider} API: {row.model_id}. {local_api.PAID_CONSENT_REQUIRED}"
+        f"Metered {preset.provider} API: {preset.model_id}. {local_api.PAID_CONSENT_REQUIRED}"
     )
     assert_nothing_started(client, tmp_path)
 
@@ -344,7 +344,7 @@ def test_null_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": METERED_ROWS[0].name,
+            "preset": METERED_PRESETS[0].name,
             "allow_paid_api": None,
         },
     )
@@ -352,13 +352,13 @@ def test_null_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
     assert_nothing_started(client, tmp_path)
 
 
-@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
-def test_consent_reaches_the_child_once(runs: tuple[TestClient, Path], row: Row) -> None:
+@pytest.mark.parametrize("preset", METERED_PRESETS, ids=preset_name)
+def test_consent_reaches_the_child_once(runs: tuple[TestClient, Path], preset: Preset) -> None:
     client, tmp_path = runs
-    start(client, tmp_path, row=row.name, allow_paid_api=True)
+    start(client, tmp_path, preset=preset.name, allow_paid_api=True)
     status = settle(client)
     arguments = child_args(status)
-    assert arguments[arguments.index("--row") + 1] == row.name
+    assert arguments[arguments.index("--preset") + 1] == preset.name
     assert arguments.count("--allow-paid-api") == 1
 
 
@@ -380,24 +380,24 @@ def test_child_never_inherits_the_server_stdin(runs: tuple[TestClient, Path]) ->
 
 def test_consent_is_not_remembered_for_the_next_run(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
-    row = METERED_ROWS[0].name
-    start(client, tmp_path, row=row, allow_paid_api=True)
+    preset = METERED_PRESETS[0].name
+    start(client, tmp_path, preset=preset, allow_paid_api=True)
     settle(client)
     response = client.post(
         "/runs",
         json={
             "source": str(tmp_path / "book.epub"),
             "output": str(tmp_path / "book.zh.epub"),
-            "row": row,
+            "preset": preset,
         },
     )
     assert response.status_code == 400
     assert response.json()["detail"].endswith(local_api.PAID_CONSENT_REQUIRED)
 
 
-@pytest.mark.parametrize("row", SUBSCRIPTION_ROWS, ids=row_name)
-def test_subscription_rows_never_carry_the_paid_flag(
-    runs: tuple[TestClient, Path], row: Row
+@pytest.mark.parametrize("preset", SUBSCRIPTION_PRESETS, ids=preset_name)
+def test_subscription_presets_never_carry_the_paid_flag(
+    runs: tuple[TestClient, Path], preset: Preset
 ) -> None:
     client, tmp_path = runs
     refused = client.post(
@@ -405,20 +405,20 @@ def test_subscription_rows_never_carry_the_paid_flag(
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": row.name,
+            "preset": preset.name,
             "allow_paid_api": True,
         },
     )
     assert refused.status_code == 400
     assert refused.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
     assert_nothing_started(client, tmp_path)
-    start(client, tmp_path, row=row.name)
+    start(client, tmp_path, preset=preset.name)
     assert "--allow-paid-api" not in child_args(settle(client))
 
 
-@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
-def test_cli_refuses_a_metered_row_without_the_flag_even_with_a_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row: Row
+@pytest.mark.parametrize("preset", METERED_PRESETS, ids=preset_name)
+def test_cli_refuses_a_metered_preset_without_the_flag_even_with_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preset: Preset
 ) -> None:
     """The second layer: what the API's child does if the server check were bypassed.
 
@@ -429,12 +429,12 @@ def test_cli_refuses_a_metered_row_without_the_flag_even_with_a_key(
     constructed: list[dict[str, object]] = []
     install_fake_any_llm(monkeypatch, lambda _model: "", calls=calls, constructed=constructed)
     monkeypatch.setattr(orchestration, "load_runtime_config", lambda: {})
-    monkeypatch.setenv(f"{row.provider.upper()}_API_KEY", "test-only-not-a-secret")
+    monkeypatch.setenv(f"{preset.provider.upper()}_API_KEY", "test-only-not-a-secret")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
     output = tmp_path / "o.epub"
     with pytest.raises(PaidAuthorizationError) as refused:
         entry_module.main(
-            [str(make_epub(tmp_path / "b.epub")), "--output", str(output), "--row", row.name]
+            [str(make_epub(tmp_path / "b.epub")), "--output", str(output), "--preset", preset.name]
         )
     assert str(refused.value) == local_api.PAID_CONSENT_REQUIRED
     assert not constructed and not calls
@@ -445,20 +445,20 @@ def test_rejection_texts_match_the_cli_paid_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
-    # Consent on a subscription row: the CLI itself raises this before any provider exists.
+    # Consent on a subscription preset: the CLI itself raises this before any provider exists.
     with pytest.raises(ValueError) as cli_error:
         entry_module.main(
             [
                 str(make_epub(tmp_path / "b.epub")),
                 "--output",
                 str(tmp_path / "o.epub"),
-                "--row",
+                "--preset",
                 "agy-flash-low",
                 "--allow-paid-api",
             ]
         )
     assert str(cli_error.value) == local_api.PAID_FLAG_NEEDS_METERED
-    # Metered row without consent, non-interactive: the paid gate's own text.
+    # Metered preset without consent, non-interactive: the paid gate's own text.
     # A fake client keeps this offline even when the gate is broken and a real key is set.
     install_fake_any_llm(monkeypatch, lambda _model: "", calls=[], constructed=[])
     factory = DefaultProviderFactory()
@@ -479,19 +479,19 @@ def test_non_epub_source_is_rejected(runs: tuple[TestClient, Path]) -> None:
     notes.write_text("# Notes")
     response = client.post(
         "/runs",
-        json={"source": str(notes), "output": str(tmp_path / "o.epub"), "row": "agy-flash-low"},
+        json={"source": str(notes), "output": str(tmp_path / "o.epub"), "preset": "agy-flash-low"},
     )
     assert response.status_code == 400
 
 
-def test_unknown_row_is_a_validation_error(runs: tuple[TestClient, Path]) -> None:
+def test_unknown_preset_is_a_validation_error(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
     response = client.post(
         "/runs",
         json={
             "source": str(make_epub(tmp_path / "b.epub")),
             "output": str(tmp_path / "o.epub"),
-            "row": "agy-ultra-max",
+            "preset": "agy-ultra-max",
         },
     )
     assert response.status_code == 422
@@ -511,7 +511,7 @@ def test_second_run_is_refused_while_one_runs(
         json={
             "source": str(make_epub(tmp_path / "c.epub")),
             "output": str(tmp_path / "c.zh.epub"),
-            "row": "agy-flash-low",
+            "preset": "agy-flash-low",
         },
     )
     assert second.status_code == 409
@@ -590,7 +590,7 @@ def test_unrecordable_run_is_stopped(
             json={
                 "source": str(make_epub(tmp_path / "book.epub")),
                 "output": str(tmp_path / "book.zh.epub"),
-                "row": "agy-flash-low",
+                "preset": "agy-flash-low",
             },
         )
     finally:
@@ -624,7 +624,7 @@ def test_two_servers_never_start_two_runs(tmp_path: Path, monkeypatch: pytest.Mo
         body = {
             "source": str(books[index]),
             "output": str(tmp_path / f"out{index}.epub"),
-            "row": "agy-flash-low",
+            "preset": "agy-flash-low",
         }
         codes.append(clients[index].post("/runs", json=body).status_code)
 
@@ -645,13 +645,13 @@ def test_two_servers_never_start_two_runs(tmp_path: Path, monkeypatch: pytest.Mo
 
 def write_record(state: Path, **fields: object) -> None:
     record: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": "r1",
         "pid": None,
         "process_start": None,
         "source": "/books/b.epub",
         "output": "/books/b.zh.epub",
-        "row": "agy-flash-low",
+        "preset": "agy-flash-low",
         "allow_paid_api": False,
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "log_path": str(state / "none.log"),
@@ -675,7 +675,7 @@ def spawn_lookalike(tmp_path: Path) -> subprocess.Popen[bytes]:
             str(tmp_path / "b.epub"),
             "--output",
             str(tmp_path / "b.zh.epub"),
-            "--row",
+            "--preset",
             "agy-flash-low",
         ],
         start_new_session=True,
@@ -740,7 +740,7 @@ def test_child_started_before_its_pid_was_recorded_is_found_and_stopped(tmp_path
             json={
                 "source": str(make_epub(tmp_path / "c.epub")),
                 "output": str(tmp_path / "c.zh.epub"),
-                "row": "agy-flash-low",
+                "preset": "agy-flash-low",
             },
         )
         assert conflict.status_code == 409
@@ -790,7 +790,7 @@ def library_files(tmp_path: Path) -> list[str]:
     return sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_file())
 
 
-def test_upload_stores_the_book_and_starts_the_default_row(
+def test_upload_stores_the_book_and_starts_the_default_preset(
     runs: tuple[TestClient, Path],
 ) -> None:
     client, tmp_path = runs
@@ -804,7 +804,7 @@ def test_upload_stores_the_book_and_starts_the_default_row(
         str(book / "book.epub"),
         "--output",
         str(book / "book.zh.epub"),
-        "--row",
+        "--preset",
         "agy-flash-low",
     ]
     assert status["output"] == str(book / "book.zh.epub")
@@ -824,12 +824,12 @@ def test_upload_uses_the_confirmed_output_name(
     assert response.json()["output"] == str(tmp_path / "library" / "book" / expected)
 
 
-def test_upload_passes_the_chosen_row_and_prompt(runs: tuple[TestClient, Path]) -> None:
+def test_upload_passes_the_chosen_preset_and_prompt(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
-    response = upload(client, epub_bytes(tmp_path), row="agy-pro-low", prompt="-keep names")
+    response = upload(client, epub_bytes(tmp_path), preset="agy-pro-low", prompt="-keep names")
     assert response.status_code == 202, response.text
     args = child_args(settle(client))
-    assert args[args.index("--row") + 1] == "agy-pro-low"
+    assert args[args.index("--preset") + 1] == "agy-pro-low"
     assert "--prompt=-keep names" in args
 
 
@@ -839,32 +839,37 @@ def test_upload_treats_an_empty_prompt_as_none(runs: tuple[TestClient, Path]) ->
     assert not any(arg.startswith("--prompt") for arg in child_args(settle(client)))
 
 
-@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
-def test_upload_of_a_metered_row_needs_consent_and_stores_nothing(
-    runs: tuple[TestClient, Path], row: Row
+@pytest.mark.parametrize("preset", METERED_PRESETS, ids=preset_name)
+def test_upload_of_a_metered_preset_needs_consent_and_stores_nothing(
+    runs: tuple[TestClient, Path], preset: Preset
 ) -> None:
     client, tmp_path = runs
-    response = upload(client, epub_bytes(tmp_path), row=row.name)
+    response = upload(client, epub_bytes(tmp_path), preset=preset.name)
     assert response.status_code == 400
-    assert row.provider in response.json()["detail"] and row.model_id in response.json()["detail"]
+    assert (
+        preset.provider in response.json()["detail"]
+        and preset.model_id in response.json()["detail"]
+    )
     assert_nothing_started(client, tmp_path)
     assert library_files(tmp_path) == []
 
 
-@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
-def test_upload_consent_reaches_the_child_once(runs: tuple[TestClient, Path], row: Row) -> None:
+@pytest.mark.parametrize("preset", METERED_PRESETS, ids=preset_name)
+def test_upload_consent_reaches_the_child_once(
+    runs: tuple[TestClient, Path], preset: Preset
+) -> None:
     client, tmp_path = runs
-    response = upload(client, epub_bytes(tmp_path), row=row.name, allow_paid_api="true")
+    response = upload(client, epub_bytes(tmp_path), preset=preset.name, allow_paid_api="true")
     assert response.status_code == 202, response.text
     assert child_args(settle(client)).count("--allow-paid-api") == 1
 
 
-@pytest.mark.parametrize("row", SUBSCRIPTION_ROWS, ids=row_name)
-def test_upload_of_a_subscription_row_refuses_consent(
-    runs: tuple[TestClient, Path], row: Row
+@pytest.mark.parametrize("preset", SUBSCRIPTION_PRESETS, ids=preset_name)
+def test_upload_of_a_subscription_preset_refuses_consent(
+    runs: tuple[TestClient, Path], preset: Preset
 ) -> None:
     client, tmp_path = runs
-    response = upload(client, epub_bytes(tmp_path), row=row.name, allow_paid_api="true")
+    response = upload(client, epub_bytes(tmp_path), preset=preset.name, allow_paid_api="true")
     assert response.status_code == 400
     assert response.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
     assert library_files(tmp_path) == []
@@ -994,7 +999,7 @@ def test_default_library_is_in_the_documents_folder(
     assert (tmp_path / "Documents" / "BookWeaver" / "book" / "book.epub").is_file()
 
 
-def test_docs_page_offers_a_file_picker_and_a_row_dropdown(client: TestClient) -> None:
+def test_docs_page_offers_a_file_picker_and_a_preset_dropdown(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
     upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
     ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
@@ -1002,16 +1007,18 @@ def test_docs_page_offers_a_file_picker_and_a_row_dropdown(client: TestClient) -
     assert form["required"] == ["file"]
     file_field = form["properties"]["file"]
     assert file_field.get("format") == "binary" or "contentMediaType" in file_field
-    row_ref = form["properties"]["row"]["$ref"].rsplit("/", 1)[1]
-    assert schema["components"]["schemas"][row_ref]["enum"] == [row.name for row in enabled_rows()]
-    assert form["properties"]["row"]["default"] == "agy-flash-low"
+    preset_ref = form["properties"]["preset"]["$ref"].rsplit("/", 1)[1]
+    assert schema["components"]["schemas"][preset_ref]["enum"] == [
+        preset.name for preset in enabled_presets()
+    ]
+    assert form["properties"]["preset"]["default"] == "agy-flash-low"
 
 
 def test_path_request_example_holds_only_the_fields_to_fill(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
     body = schema["paths"]["/runs"]["post"]["requestBody"]["content"]["application/json"]
     values = [example["value"] for example in body["examples"].values()]
-    assert values and all(set(value) == {"source", "output", "row"} for value in values)
+    assert values and all(set(value) == {"source", "output", "preset"} for value in values)
 
 
 def test_root_path_goes_to_the_docs_page(client: TestClient) -> None:
@@ -1098,5 +1105,24 @@ def test_upload_checks_the_output_name_length_after_adding_the_suffix(
     client, tmp_path = runs
     response = upload(client, epub_bytes(tmp_path), output_name="x" * 251)
     assert response.status_code == 400, response.text
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_record_from_before_the_preset_rename_is_refused(tmp_path: Path) -> None:
+    write_record(tmp_path / "state", schema_version=1)
+    response = restarted(tmp_path / "state").get("/runs/current")
+    assert response.status_code == 500
+    assert str(tmp_path / "state" / "current-run.json") in response.json()["detail"]
+
+
+@pytest.mark.parametrize("old_value", ["agy-pro-low", "gemini-flash"])
+def test_upload_with_the_old_row_field_starts_nothing(
+    runs: tuple[TestClient, Path], old_value: str
+) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), row=old_value)
+    assert response.status_code == 400, response.text
+    assert "preset" in response.json()["detail"]
     assert_nothing_started(client, tmp_path)
     assert library_files(tmp_path) == []

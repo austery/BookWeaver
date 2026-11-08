@@ -279,7 +279,7 @@ class DefaultProviderFactory:
             "model": model.model_id,
             "profile": model.profile,
             "effective_effort": model.effort,
-            "row_status": model.status,
+            "preset_status": model.status,
         }
         if model.provider == "cli":
             if allow_paid_api:

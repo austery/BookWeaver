@@ -20,21 +20,21 @@ uv run bookweaver book.epub --output translated.epub --extract-glossary
 
 The public profiles are `flash` and `pro`. Flash supports low, medium, and high effort; Pro supports low and high. Omitted CLI effort means low. Medium/high selections still require live acceptance evidence; the current live probes cover Flash 3.8 Low and Pro (`gemini-4-argon`) Low. A pair of `agy` version and model with no recorded evidence runs a short automatic check before its first book batch. A model that `agy models` does not list stops the run before that check. Additional instructions can be supplied with `-p`; an existing terminology file can be supplied with `--glossary PATH`.
 
-## Named rows
+## Named presets
 
-A row is a short name for one provider, model profile, and effort. List the enabled rows, with their status and evidence:
-
-```bash
-uv run bookweaver rows
-```
-
-Use `--row` in place of `--model`, `--effort`, and `--provider`. You cannot combine them.
+A preset is a short name for one provider, model profile, and effort. List the enabled presets, with their status and evidence:
 
 ```bash
-uv run bookweaver book.epub --output translated.epub --row agy-pro-low
+uv run bookweaver presets
 ```
 
-Rows that start with `agy-` use the Antigravity subscription. The `gemini-` and `anthropic-` rows are paid. A row name does not give consent. Each paid run still needs the [paid API](#paid-api) consent. No real translation has run through `--row` or the local API yet ([issue #60](https://github.com/austery/BookWeaver/issues/60)).
+Use `--preset` in place of `--model`, `--effort`, and `--provider`. You cannot combine them.
+
+```bash
+uv run bookweaver book.epub --output translated.epub --preset agy-pro-low
+```
+
+Presets that start with `agy-` use the Antigravity subscription. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent. No real translation has run through `--preset` or the local API yet ([issue #60](https://github.com/austery/BookWeaver/issues/60)).
 
 ## Local API
 
@@ -53,8 +53,8 @@ Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user inter
 1. Open `POST /runs/upload` on the `/docs` page and press **Try it out**.
 2. Choose the EPUB in `file` (at most 200 MiB).
 3. Confirm the output name. Leave `output_name` empty to use `<book name>.zh.epub`.
-4. Choose the `row` from the list. The default is `agy-flash-low`.
-5. Press **Execute**. The translation starts at once and uses quota or money, as the row says.
+4. Choose the `preset` from the list. The default is `agy-flash-low`.
+5. Press **Execute**. The translation starts at once and uses quota or money, as the preset says.
 6. Use `GET /runs/current` to read the state, the progress, and the last log lines.
 
 The book and its translation stay in one folder. `<book name>` is the uploaded file name without `.epub`, not the title inside the book.
@@ -67,30 +67,30 @@ The book and its translation stay in one folder. `<book name>` is the uploaded f
 
 The run log and the saved progress are in the same folder.
 
-- Upload the same file with the same row and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
-- A row from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
+- Upload the same file with the same preset and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
+- A preset from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
 - BookWeaver never replaces the uploaded copy. A different file with the same name returns 409. Rename the file to upload it.
 - A new run rewrites the translation file. Copy the file first if you edited it by hand.
-- A paid row needs `allow_paid_api` set to `true`. Without it, the server returns 400 and stores nothing. The consent covers this run only.
+- A paid preset needs `allow_paid_api` set to `true`. Without it, the server returns 400 and stores nothing. The consent covers this run only.
 
 ### Other endpoints
 
 | Endpoint | Action |
 |---|---|
-| `GET /rows` | List the enabled rows, the same as `bookweaver rows --json`. |
+| `GET /presets` | List the enabled presets, the same as `bookweaver presets --json`. |
 | `POST /runs` | Start one translation from paths on this Mac, with no upload. Only one can run at a time. |
 | `POST /runs/current/stop` | Stop the run, the same as Ctrl-C on the CLI. |
 
 ```bash
 curl -X POST http://127.0.0.1:8765/runs \
   -H 'Content-Type: application/json' \
-  -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "row": "agy-flash-low"}'
+  -d '{"source": "/absolute/path/book.epub", "output": "/absolute/path/translated.epub", "preset": "agy-flash-low"}'
 ```
 
 - Use absolute paths with `POST /runs`. The server resolves a relative path against the directory where you started it. The output directory must already exist.
-- A paid row needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing.
+- A paid preset needs `"allow_paid_api": true` in that request. Without it, the server returns 400 and starts nothing.
 - The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
-- A stop keeps the saved batches for a later run. It loses the batch in progress. On a paid row, the vendor may already have charged for that batch.
+- A stop keeps the saved batches for a later run. It loses the batch in progress. On a paid preset, the vendor may already have charged for that batch.
 - The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
 
 ## Batch size and fidelity
