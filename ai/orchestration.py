@@ -545,6 +545,18 @@ def translate_pdf(
     )
 
 
+def count_epub_segments(input_path: Path) -> int:
+    """Segments a run of this EPUB will plan, from the same segmenter the run uses."""
+    return len(EpubSourceAdapter(input_path).get_segments())
+
+
+def default_epub_checkpoint_dir(input_path: Path, output_path: Path) -> Path:
+    """Where an EPUB run without ``--checkpoint-dir`` keeps its checkpoint."""
+    return _resolve_checkpoint_dir(
+        checkpoint_dir=None, input_file=input_path, output_file=output_path, input_format="epub"
+    )
+
+
 # ── Language mapping ──────────────────────────────────────────
 
 # ── Format detection ──────────────────────────────────────────

@@ -101,6 +101,9 @@ change that adds, modifies or deletes anything under these paths has
 - **Run artifacts:** the invocation audit (`.bookweaver_runs/<run_id>.json`,
   `persist_audit` in `ai/runtime_factory.py`), the checkpoint `paid_usage_by_run`
   field, and `warnings.json` / `<output>.warnings.json` (`ai/orchestration.py:424`).
+- **Local API run record and child log** (SPEC-026 §7.3): `$XDG_STATE_HOME/bookweaver/current-run.json`
+  (`RunRecord` in `ai/local_api.py`, schema version 1) and
+  `<output directory>/.bookweaver_runs/<run_id>.log`.
 - **EPUB output format:** the bilingual EPUB that `ai/epub_package.py` writes is
   the product the owner keeps and reads in other apps.
 - **Isolated-format artifacts** (Markdown and PDF, run only with
@@ -127,9 +130,7 @@ Structure = touched means:
   unusable without a recovery path is also One-way for the owner's unfinished
   books (see One-way effects).
 
-Add a path here when the project gains another persistent structure. Example:
-the SPEC-026 Phase 3 run record or child-process log that lets `serve` find the
-current run after a restart.
+Add a path here when the project gains another persistent structure.
 
 ## Radius in this repository
 
