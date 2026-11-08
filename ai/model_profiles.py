@@ -27,6 +27,10 @@ class _CliRow:
     evidence: str
 
 
+# Short runtime names used in row names; one per CliRuntime.
+_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy"}
+
+
 # Named rows, not the Cartesian product: anything absent here is rejected before a run.
 # The family is the runtime's model family; effort is passed once through ``--effort``.
 _CLI_ROWS: tuple[_CliRow, ...] = (
@@ -91,6 +95,9 @@ def _validate_rows(rows: tuple[_CliRow, ...]) -> None:
         raise RuntimeError(f"Duplicate CLI rows in ai/model_profiles.py: {duplicates}")
     if ("antigravity", "flash", "low") not in keys:
         raise RuntimeError("The default antigravity flash/low row is missing")
+    unnamed = sorted({row.runtime for row in rows} - set(_RUNTIME_PREFIX))
+    if unnamed:
+        raise RuntimeError(f"CLI runtimes without a row-name prefix: {unnamed}")
 
 
 # Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
@@ -125,7 +132,7 @@ class _MeteredEntry:
 
 # Metered API models (SPEC-024 §6.2). Each row cites its vendor source and read date;
 # a provider without a row fails before any request instead of guessing a model.
-_API_MODELS: dict[tuple[str, ModelProfile], _MeteredEntry] = {
+_API_MODELS: dict[tuple[ProviderName, ModelProfile], _MeteredEntry] = {
     # Output cap 65,536 as listed in LiteLLM 1.108.2's model map, inspected 2026-11-07;
     # not yet checked against ai.google.dev, which was unreachable from that environment.
     ("gemini", "flash"): _MeteredEntry("gemini-2.5-flash", 65_536, None),
@@ -135,6 +142,77 @@ _API_MODELS: dict[tuple[str, ModelProfile], _MeteredEntry] = {
     ("anthropic", "pro"): _MeteredEntry("claude-opus-5-5", 128_000, "low"),
     # OpenAI: unfilled until its model documentation can be cited (SPEC-024 §11 Phase 3).
 }
+
+# Every metered entry becomes a paid row; a non-metered key would mislabel a free runtime.
+if any(provider not in METERED_PROVIDERS for provider, _ in _API_MODELS):
+    raise RuntimeError("_API_MODELS may contain only metered providers")
+
+
+@dataclass(frozen=True)
+class Row:
+    """One named, owner-enabled selection shown to users (SPEC-026 §2.2).
+
+    A row fixes provider, tier and effort; ``--row`` and the local API resolve it to the
+    same selection the separate flags produce.
+    """
+
+    name: str
+    provider: ProviderName
+    profile: ModelProfile
+    effort: Effort | None
+    model_id: str
+    status: RowStatus
+    layer: EvidenceLayer | None
+    evidence: str
+
+
+# The row never implies consent; the paid gate in ai/runtime_factory.py still applies.
+_METERED_EVIDENCE = (
+    "paid; consent per run: --allow-paid-api, or type USE_API at the interactive prompt; "
+    "offline contract tests only"
+)
+
+
+def enabled_rows() -> tuple[Row, ...]:
+    """Every selection a run may use, subscription CLI rows first, the default row first."""
+    cli = sorted(_CLI_ROWS, key=lambda row: row.status != "default")
+    rows = [
+        Row(
+            f"{_RUNTIME_PREFIX[row.runtime]}-{row.profile}-{row.effort}",
+            "cli",
+            row.profile,
+            row.effort,
+            cli_model_id(row.family, row.effort),
+            row.status,
+            row.layer,
+            row.evidence,
+        )
+        for row in cli
+    ]
+    rows += [
+        # Effort is vendor-pinned. No layer: only offline contract tests (SPEC-024), no live probe.
+        Row(
+            f"{provider}-{profile}",
+            provider,
+            profile,
+            None,
+            entry.model_id,
+            "manual",
+            None,
+            _METERED_EVIDENCE,
+        )
+        for (provider, profile), entry in _API_MODELS.items()
+    ]
+    return tuple(rows)
+
+
+def find_row(name: str) -> Row:
+    """The enabled row with this name; unknown names fail with the enabled list."""
+    rows = enabled_rows()
+    for row in rows:
+        if row.name == name:
+            return row
+    raise ValueError(f"Unknown row {name!r}; enabled rows: {', '.join(r.name for r in rows)}")
 
 
 @dataclass(frozen=True)

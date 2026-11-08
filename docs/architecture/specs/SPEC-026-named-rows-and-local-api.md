@@ -1,8 +1,8 @@
 ---
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
-status: Draft for owner review (2026-11-07)
-implementationStatus: Not started; depends on SPEC-025 Phase 1
+status: Approved for implementation (2026-11-07)
+implementationStatus: Phase 1 implemented (2026-11-07), awaiting the owner's real-run checkpoint; Phases 2-4 not started
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-07
@@ -64,7 +64,7 @@ What the page does not give, accepted for this scope:
 
 ### 2.2 Shorter CLI as a side effect
 
-Once SPEC-025 rows have names, the CLI accepts `--row <name>` in place of the separate runtime, tier and effort flags. The long command line becomes `bookweaver translate book.epub --output out.epub --row agy-flash-low`. Both entry points resolve the same row.
+Once SPEC-025 rows have names, the CLI accepts `--row <name>` in place of the separate runtime, tier and effort flags. The long command line becomes `bookweaver book.epub --output out.epub --row agy-flash-low`. Both entry points resolve the same row.
 
 ## 3. Design constraints
 
@@ -91,7 +91,7 @@ Source principles: research notes `2026-10-28_tech-engineering_build-vs-adopt-in
 
 1. The owner reads `GET /rows` in `/docs`, then fills `POST /runs`. The `row` field is a dropdown of enabled rows only.
 2. The server validates the body with the same resolver the CLI uses. Validation errors are returned as they are, without reinterpretation.
-3. The server starts the run as a child process: `bookweaver translate ... --row <name>`. Reasons for a child process instead of an in-process call:
+3. The server starts the run as a child process: `bookweaver <source> --output <output> --row <name>`. Reasons for a child process instead of an in-process call:
    - the run survives a closed browser tab and a stopped UI server;
    - stopping a run is a process signal with the same semantics as Ctrl-C today;
    - the CLI stays the single tested contract.
@@ -118,6 +118,7 @@ Richer monitoring is out of scope (§2).
 - [ ] Add FastAPI and uvicorn as an optional dependency group (`uv add --optional ui ...`) so the CLI install stays lean.
 - [ ] Confirm that the checkpoint exposes planned versus done counts without loading all segment text.
 - [ ] Decide where the child process log is written so the UI can tail it after a restart.
+- [ ] Phase 3: start the child with a non-terminal stdin. Otherwise the paid gate could show the interactive `USE_API` prompt instead of rejecting a request without `allow_paid_api` (§4.2 step 4).
 
 ## 7. Phases
 
@@ -125,6 +126,17 @@ Richer monitoring is out of scope (§2).
 2. `GET /rows`, including both subscription CLI rows and metered API rows.
 3. `POST /runs`, status and stop, through a child process.
 4. Metered API rows through `POST /runs`: rejection without `allow_paid_api`, with offline tests that no metered row can start without it. No live paid call is part of this phase.
+
+### 7.1 Phase 1 as built (2026-11-07)
+
+- Row names: `<runtime>-<tier>-<effort>` for subscription CLI rows (`agy-flash-low`), `<provider>-<tier>` for metered rows (`gemini-flash`, `anthropic-pro`). Metered rows have no effort part because the vendor effort is pinned in `ai/model_profiles.py`.
+- `ai/model_profiles.py` derives the rows (`enabled_rows()`, `find_row()`) from `_CLI_ROWS` and `_API_MODELS`, so there is no second list to keep in sync. Entry points reach them through `ai.orchestration`, which keeps the tach rule that `ai.cli` depends only on the application boundary.
+- `bookweaver rows` prints a table; `bookweaver rows --json` prints the same fields for scripts and agents. The table shows a missing effort or layer as `-`.
+- `--row NAME` sets provider, tier and effort. Combining it with `--model`, `--effort` or `--provider` (abbreviations included) is an error. The separate flags remain for now.
+- A metered row does not imply consent. It uses the same paid gate as `--provider`: `--allow-paid-api`, or typing `USE_API` at the interactive prompt; a non-interactive run without the flag fails. Its evidence text says so in both the table and the JSON.
+- Metered rows show no evidence layer: they have offline contract tests only (SPEC-024) and no live probe, so they do not claim Layer 2 executability.
+- `bookweaver rows` is a reserved first argument. A source literally named `rows` must be passed as `./rows`.
+- Checkpoint identity is unchanged: `--row agy-flash-low` resolves to the same profile and effective effort as the default command, so existing checkpoints resume. Only the recorded requested effort differs (`low` instead of none).
 
 ## 8. Verification
 

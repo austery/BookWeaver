@@ -28,7 +28,16 @@ from ai.checkpoint_store import (
     ICheckpointStoreFactory,
     SegmentRecord,
 )
-from ai.model_profiles import ResolvedModel, is_metered, resolve_profile
+
+# Row, enabled_rows and find_row are the named-row surface for entry points (SPEC-026).
+from ai.model_profiles import (
+    ResolvedModel,
+    Row as Row,
+    enabled_rows as enabled_rows,
+    find_row as find_row,
+    is_metered,
+    resolve_profile,
+)
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
 from ai.prompt_preparation import (
