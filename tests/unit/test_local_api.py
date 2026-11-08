@@ -1,4 +1,4 @@
-"""Local API contract at the HTTP boundary (SPEC-026 Phases 2-3)."""
+"""Local API contract at the HTTP boundary (SPEC-026 Phases 2-4)."""
 
 from __future__ import annotations
 
@@ -18,12 +18,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 import ai.cli as entry_module
-from ai import local_api
+from ai import local_api, orchestration
 from ai.antigravity_provider import default_certification_path
-from ai.model_profiles import resolve_profile
+from ai.model_profiles import Row, enabled_rows, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
+from tests.runtime_fakes import install_fake_any_llm
 
 BASE_URL = "http://127.0.0.1:8765"
+METERED_ROWS = [row for row in enabled_rows() if is_metered(row.provider)]
+SUBSCRIPTION_ROWS = [row for row in enabled_rows() if not is_metered(row.provider)]
+
+
+def row_name(row: Row) -> str:
+    return row.name
+
 
 # A stand-in for `python -m ai.cli`: echoes its arguments, optionally writes a checkpoint,
 # then sleeps or exits as the test asks through environment variables.
@@ -31,6 +39,7 @@ FAKE_CHILD = """
 import json, os, sys, time
 from pathlib import Path
 print("ARGS " + json.dumps(sys.argv[1:]), flush=True)
+print("STDIN_IS_DEVNULL " + str(os.path.samestat(os.fstat(0), os.stat(os.devnull))), flush=True)
 checkpoint = os.environ.get("FAKE_CHECKPOINT")
 if checkpoint:
     Path(checkpoint).mkdir(parents=True, exist_ok=True)
@@ -292,6 +301,143 @@ def test_metered_row_with_consent_passes_the_flag(runs: tuple[TestClient, Path])
     assert child_args(settle(client))[-3:] == ["--row", "gemini-flash", "--allow-paid-api"]
 
 
+def test_the_consent_tests_cover_metered_and_subscription_rows() -> None:
+    assert {"gemini", "anthropic"} <= {row.provider for row in METERED_ROWS}
+    assert SUBSCRIPTION_ROWS
+
+
+def assert_nothing_started(client: TestClient, tmp_path: Path) -> None:
+    assert client.get("/runs/current").status_code == 404
+    assert not (tmp_path / "state" / "current-run.json").exists()
+    assert not (tmp_path / ".bookweaver_runs").exists()
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+@pytest.mark.parametrize("consent", [{}, {"allow_paid_api": False}], ids=["omitted", "false"])
+def test_no_metered_row_starts_without_consent(
+    runs: tuple[TestClient, Path], row: Row, consent: dict[str, object]
+) -> None:
+    client, tmp_path = runs
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": row.name,
+            **consent,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        f"Metered {row.provider} API: {row.model_id}. {local_api.PAID_CONSENT_REQUIRED}"
+    )
+    assert_nothing_started(client, tmp_path)
+
+
+def test_null_consent_starts_nothing(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": METERED_ROWS[0].name,
+            "allow_paid_api": None,
+        },
+    )
+    assert response.status_code == 422
+    assert_nothing_started(client, tmp_path)
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_consent_reaches_the_child_once(runs: tuple[TestClient, Path], row: Row) -> None:
+    client, tmp_path = runs
+    start(client, tmp_path, row=row.name, allow_paid_api=True)
+    status = settle(client)
+    arguments = child_args(status)
+    assert arguments[arguments.index("--row") + 1] == row.name
+    assert arguments.count("--allow-paid-api") == 1
+
+
+def test_child_never_inherits_the_server_stdin(runs: tuple[TestClient, Path]) -> None:
+    """The paid gate prompts only on a terminal; the server's own stdin must not reach it."""
+    client, tmp_path = runs
+    read_end, write_end = os.pipe()
+    saved_stdin = os.dup(0)
+    os.dup2(read_end, 0)  # pytest's fd 0 is already /dev/null, which would hide inheritance
+    try:
+        start(client, tmp_path)
+        status = settle(client)
+    finally:
+        os.dup2(saved_stdin, 0)
+        for descriptor in (saved_stdin, read_end, write_end):
+            os.close(descriptor)
+    assert "STDIN_IS_DEVNULL True" in status["log_tail"]
+
+
+def test_consent_is_not_remembered_for_the_next_run(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    row = METERED_ROWS[0].name
+    start(client, tmp_path, row=row, allow_paid_api=True)
+    settle(client)
+    response = client.post(
+        "/runs",
+        json={
+            "source": str(tmp_path / "book.epub"),
+            "output": str(tmp_path / "book.zh.epub"),
+            "row": row,
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"].endswith(local_api.PAID_CONSENT_REQUIRED)
+
+
+@pytest.mark.parametrize("row", SUBSCRIPTION_ROWS, ids=row_name)
+def test_subscription_rows_never_carry_the_paid_flag(
+    runs: tuple[TestClient, Path], row: Row
+) -> None:
+    client, tmp_path = runs
+    refused = client.post(
+        "/runs",
+        json={
+            "source": str(make_epub(tmp_path / "b.epub")),
+            "output": str(tmp_path / "o.epub"),
+            "row": row.name,
+            "allow_paid_api": True,
+        },
+    )
+    assert refused.status_code == 400
+    assert refused.json()["detail"] == local_api.PAID_FLAG_NEEDS_METERED
+    assert_nothing_started(client, tmp_path)
+    start(client, tmp_path, row=row.name)
+    assert "--allow-paid-api" not in child_args(settle(client))
+
+
+@pytest.mark.parametrize("row", METERED_ROWS, ids=row_name)
+def test_cli_refuses_a_metered_row_without_the_flag_even_with_a_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, row: Row
+) -> None:
+    """The second layer: what the API's child does if the server check were bypassed.
+
+    Runs in-process against a fake client and an empty config. A checkout's config can hold
+    a real key, so this test must stay offline even when the paid gate is broken.
+    """
+    calls: list[str] = []
+    constructed: list[dict[str, object]] = []
+    install_fake_any_llm(monkeypatch, lambda _model: "", calls=calls, constructed=constructed)
+    monkeypatch.setattr(orchestration, "load_runtime_config", lambda: {})
+    monkeypatch.setenv(f"{row.provider.upper()}_API_KEY", "test-only-not-a-secret")
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    output = tmp_path / "o.epub"
+    with pytest.raises(PaidAuthorizationError) as refused:
+        entry_module.main(
+            [str(make_epub(tmp_path / "b.epub")), "--output", str(output), "--row", row.name]
+        )
+    assert str(refused.value) == local_api.PAID_CONSENT_REQUIRED
+    assert not constructed and not calls
+    assert not output.exists()
+
+
 def test_rejection_texts_match_the_cli_paid_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -310,6 +456,8 @@ def test_rejection_texts_match_the_cli_paid_gate(
         )
     assert str(cli_error.value) == local_api.PAID_FLAG_NEEDS_METERED
     # Metered row without consent, non-interactive: the paid gate's own text.
+    # A fake client keeps this offline even when the gate is broken and a real key is set.
+    install_fake_any_llm(monkeypatch, lambda _model: "", calls=[], constructed=[])
     factory = DefaultProviderFactory()
     with pytest.raises(PaidAuthorizationError) as missing:
         factory.create(

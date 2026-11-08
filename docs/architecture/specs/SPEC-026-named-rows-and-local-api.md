@@ -2,7 +2,7 @@
 specId: SPEC-026
 title: Named Rows and a Local API over the Existing Application Path
 status: Approved for implementation (2026-11-07)
-implementationStatus: Phases 1-3 implemented (Phase 3 on 2026-11-08); Phase 1 real-run checkpoint deferred by the owner; Phase 4 offline tests only remain
+implementationStatus: Phases 1-4 implemented (Phase 4 on 2026-11-08); owner acceptance open: the first real run with `--row` or the API
 priority: P2 - Usability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-08
@@ -182,6 +182,18 @@ Also in this phase, from §2 and §3:
 - **Child command:** the same interpreter runs `-m ai.cli <source> --output <output> --row <row> [...]`, the CLI contract `bookweaver` uses.
 
 Phase 4's rejection rule is implemented here by decision 5; Phase 4 keeps only its offline tests that no metered row starts without consent.
+
+### 7.4 Phase 4 as built (2026-11-08)
+
+Phase 4 adds tests only; no product code changed. `tests/unit/test_local_api.py` takes the rows from `enabled_rows()`, so a new metered row is covered without a test change. No test can make a paid call.
+
+- Every metered row without consent (field omitted or false) returns 400 with its provider and model. A null value returns 422. In each case no record, log or child exists.
+- Every metered row with consent gives the child `--allow-paid-api` exactly once. Consent is not remembered for the next run.
+- Every subscription row refuses consent and never gets the flag.
+- The child's stdin is `/dev/null`, even when the server's own stdin is something else.
+- Second layer: the CLI itself, with a provider key present and no `--allow-paid-api`, refuses every metered row. It builds no client and writes no output. This test runs in-process with a fake client and an empty config, because `config/config.json` in a checkout can hold a real key.
+
+Removing each check made its test fail (checked manually on 2026-11-08). To repeat this for the paid gate, use a copy of the code without `config/config.json` and with network access denied, so that a broken gate cannot make a paid call.
 
 ## 8. Verification
 
