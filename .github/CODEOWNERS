@@ -4,7 +4,7 @@
 # Verification and policy
 /.github/ @austery
 /AGENTS.md @austery
-/CONTEXT.md @austery
+/GLOSSARY.md @austery
 /docs/agents/ @austery
 /docs/architecture/specs/ @austery
 /docs/architecture/decisions/ @austery
