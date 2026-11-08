@@ -1,0 +1,46 @@
+# Source: docs/agents/impact-radius.md
+# These rules cover named paths. The review policy also covers behavior.
+
+# Verification and policy
+/.github/ @austery
+/AGENTS.md @austery
+/CONTEXT.md @austery
+/docs/agents/ @austery
+/docs/architecture/specs/ @austery
+/docs/architecture/decisions/ @austery
+/scripts/verify_installed_runtime.py @austery
+/scripts/probe_antigravity_version.py @austery
+/pyproject.toml @austery
+/tach.toml @austery
+/tests/fixtures/ @austery
+/tests/runtime_fakes.py @austery
+/tests/conftest.py @austery
+/08_epub_roundtrip_baseline.py @austery
+/docs/plans/2026-04-03-* @austery
+/docs/plans/2026-09-07-* @austery
+/docs/plans/2026-11-07-antigravity-1.5.3-compatibility-probe.md @austery
+
+# Persistent formats and paid API authorization
+/ai/checkpoint_store.py @austery
+/ai/orchestration.py @austery
+/ai/prompt_preparation.py @austery
+/ai/core/glossary.py @austery
+/ai/glossary_injector.py @austery
+/ai/epub_package.py @austery
+/ai/adapters/sources/epub_adapter.py @austery
+/ai/adapters/providers/_delimiter.py @austery
+/ai/core/batcher.py @austery
+/ai/model_profiles.py @austery
+/ai/cli.py @austery
+/ai/core/glossary_resolution.py @austery
+/ai/glossary_extractor.py @austery
+/ai/adapters/sources/markdown_adapter.py @austery
+/ai/config_schema.json @austery
+/ai/runtime_config.py @austery
+/ai/core/config.py @austery
+/config/config.json.example @austery
+/ai/antigravity_provider.py @austery
+/ai/runtime_factory.py @austery
+/ai/local_api.py @austery
+/ai/model_probe.py @austery
+/ai/quota_tracker.py @austery
