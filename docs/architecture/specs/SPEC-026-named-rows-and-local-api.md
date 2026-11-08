@@ -144,7 +144,7 @@ Owner decision (2026-11-07): the Phase 1 real-run checkpoint is deferred because
 
 - `uv run bookweaver serve [--port 8765]` starts the API in the foreground. The host is fixed at `127.0.0.1`; there is no host option. Like `rows`, `serve` is a reserved first argument; pass a source named `serve` as `./serve`.
 - `GET /rows` returns the same objects as `bookweaver rows --json`. The OpenAPI page at `/docs` shows `runtime`, `provider`, `profile`, `effort`, `status` and `layer` as enums.
-- Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 also lists `family`; it is left out because `model_id` already names the concrete model. §4.1 is amended to match.
+- Rows gained a `runtime` field: the quota pool (`antigravity`, or the metered vendor). `provider` alone cannot tell Codex and Claude Code rows apart once they exist. §4.1 originally listed `family`; it was dropped, and §4.1 amended, because `model_id` already names the concrete model.
 - Known limit: FastAPI's `/docs` page loads Swagger UI from a CDN, so it renders blank without network. `GET /rows` and `/openapi.json` work offline. Accepted for now; self-hosting the assets is a later decision.
 - `ai/local_api.py` depends only on `ai.orchestration` (tach). `ai.cli` imports it lazily, so an install without the `api` extra keeps working, and `serve` names the install command (`uv sync --extra api` in a checkout, `bookweaver[api]` for an installed package) instead of failing with a stack trace when either FastAPI or uvicorn is missing.
 
