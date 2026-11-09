@@ -38,6 +38,7 @@ class _CliPreset:
 # Short runtime names used in preset names; one per CliRuntime.
 _RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy", "codex": "codex"}
 _CODEX_EVIDENCE = "offline fake-server capture only; probed automatically on first use"
+_CODEX_LIVE_EVIDENCE = "codex-cli 0.167.0 live probe 2026-11-09 (segment_tags and delimiter)"
 
 
 # Named presets, not the Cartesian product: anything absent here is rejected before a run.
@@ -91,7 +92,7 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
     # Owner decision 2026-11-09: several models stay selectable until test rounds pick one, all at
     # low thinking. Astra costs the most, so no bare tier ever resolves to it.
     _CliPreset(
-        "codex", "flash", "gpt-6-luna", "low", "experiment", 1, _CODEX_EVIDENCE, "gpt-6-luna"
+        "codex", "flash", "gpt-6-luna", "low", "experiment", 2, _CODEX_LIVE_EVIDENCE, "gpt-6-luna"
     ),
     _CliPreset(
         "codex",
@@ -105,7 +106,7 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         tier_default=False,
     ),
     _CliPreset(
-        "codex", "pro", "gpt-6.1-sol", "low", "experiment", 1, _CODEX_EVIDENCE, "gpt-6.1-sol"
+        "codex", "pro", "gpt-6.1-sol", "low", "experiment", 2, _CODEX_LIVE_EVIDENCE, "gpt-6.1-sol"
     ),
     _CliPreset(
         "codex",

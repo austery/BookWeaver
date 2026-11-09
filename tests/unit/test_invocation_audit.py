@@ -240,6 +240,7 @@ def test_a_codex_run_extracts_terms_on_codex_and_records_its_runtime(
         input_format="epub",
     )
     assert factory.audits[-1]["extraction_model"] == expected
+    assert factory.audits[-1]["runtime"] == "codex"
     checkpoint = next(tmp_path.rglob("checkpoint.json"))
     records = json.loads(checkpoint.read_text())["segments"].values()
     assert {(r["provider"], r["backend"], r["model"]) for r in records} == {

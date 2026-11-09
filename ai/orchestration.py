@@ -280,6 +280,7 @@ class TranslationOrchestrator:
                 try:
                     factory.persist_audit(
                         {
+                            "runtime": active_model.runtime,
                             "model": active_model.model_id,
                             "profile": active_model.profile,
                             "requested_effort": active_requested_effort,

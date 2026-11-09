@@ -2,7 +2,7 @@
 specId: SPEC-025
 title: Subscription CLI Runtimes with Separated Model Axes
 status: Draft for owner review (2026-11-07)
-implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented with offline evidence (2026-11-09), live probe pending; Phase 3 Claude Code and Phase 4 not started
+implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code and Phase 4 not started
 priority: P1 - Runtime Reliability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-09
@@ -174,8 +174,8 @@ Initial presets (proposal for owner review):
 | antigravity | flash | `gemini-3.8-flash` | medium, high | experiment | Layer 1; kept for effort comparison (low is the normal choice for translation); probed automatically on first use |
 | antigravity | pro | `gemini-4-argon` | low | experiment | Layer 2 (agy 1.5.3 probe, both protocols) |
 | antigravity | pro | `gemini-4-argon` | high | experiment | Layer 1; probed automatically on first use |
-| codex | flash | `gpt-6-luna` (tier default), `gpt-6.1-terra` | low | experiment | Layer 1; offline capture with the real CLI |
-| codex | pro | `gpt-6.1-sol` (tier default), `gpt-6-astra` | low | experiment | Layer 1; offline capture with the real CLI |
+| codex | flash | `gpt-6-luna` (tier default), `gpt-6.1-terra` | low | experiment | Luna Layer 2 (codex-cli 0.167.0 probe); Terra Layer 1, probed automatically on first use |
+| codex | pro | `gpt-6.1-sol` (tier default), `gpt-6-astra` | low | experiment | Sol Layer 2 (codex-cli 0.167.0 probe); Astra Layer 1, probed automatically on first use |
 | claude-code | flash / pro | `claude-sonnet-5-5` / `claude-opus-5-5` | low | experiment | none yet |
 | anthropic / gemini API | flash / pro | as pinned in SPEC-024 | vendor-pinned | manual (paid) | Layer 2 offline only |
 
@@ -187,6 +187,7 @@ Evidence comes from running Codex CLI 0.167.0 against a local fake provider, whi
 - **Fixed context.** The default adds about 36,000 characters to every batch, mostly a coding-agent prompt and a skills list. `model_instructions_file`, `skills.include_instructions=false` and the `include_*_instructions=false` options cut it to about 2,800 characters. A 2,400-character multi-agent note remains; `--disable multi_agent` does not remove it.
 - **Selectable models.** The formal choice comes after test rounds, so one tier can hold several models, and the preset table is the selection surface (`--preset`, and the `/docs` dropdown). A tier default answers a bare tier, such as extraction's `pro`. `gpt-6-astra` costs the most, so it is never a tier default and runs only when selected by name. All Codex presets use low thinking.
 - **Resume.** The checkpoint identity keys on tier and effort, which those models share. A resume that would reuse another enabled model's text stops unless `--force-resume` is given; otherwise a model test finishes with no call to that model. The identity and the schema do not change. A model no longer in the registry keeps the existing warning.
+- **Persistent structures.** `_KNOWN_BACKENDS` gains `codex` (§5). `ai/config_schema.json` gains an optional `codex.timeout_seconds`, mirroring `antigravity.timeout_seconds`.
 - **Billing guard.** The child environment drops `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`. Discovery stops unless `codex login status` reports a ChatGPT login.
 
 ## 4. Out of scope
@@ -222,4 +223,4 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 ## 7. Verification
 
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`, `uv run tach check`.
-- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md`.
+- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` and `2026-11-09-codex-compatibility-probe.md`.
