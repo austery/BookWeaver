@@ -136,7 +136,7 @@ def test_injected_usage_and_version_reach_checkpoint_and_full_resume(
 
 @pytest.mark.parametrize("construction_failure", [False, True])
 def test_audit_never_borrows_identity_from_another_request(
-    tmp_path: Path, construction_failure: bool
+    tmp_path: Path, construction_failure: bool, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "book.epub"
     make_epub(source)
@@ -171,6 +171,9 @@ def test_audit_never_borrows_identity_from_another_request(
             ),
             input_format="epub",
         )
+    notice = capsys.readouterr().out
+    assert "Term extraction uses gemini-4-argon-low" in notice
+    assert "gemini-3.8-flash-high" in notice
     audit = factory.audits[-1]
     assert audit["profile"] == ("flash" if construction_failure else "pro")
     assert audit["runtime_version"] == (None if construction_failure else "offline-runtime-1")

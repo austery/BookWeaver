@@ -22,10 +22,43 @@ from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
 from ai.ports.provider import (
     ITranslationProvider,
     ProviderAuthenticationError,
+    ProviderQuotaError,
     ProviderTimeoutError,
     ProviderUnavailableError,
     TranslationError,
 )
+
+
+_ERROR_LINE_PREFIX = "AGY_ERROR: "
+_MAX_ERROR_CHARS = 300
+_LOG_FOLDER = "~/.gemini/antigravity-cli/log"
+
+
+def _failure(returncode: int, stderr: str) -> ProviderUnavailableError:
+    """The error for a failed `agy`, from its one structured line and never from raw stderr.
+
+    Raw stderr can quote source text. The `AGY_ERROR` line is agy's own short status, and the
+    prompt travels in a private file, so that line is safe to show.
+    """
+    for line in stderr.splitlines():
+        if not line.startswith(_ERROR_LINE_PREFIX):
+            continue
+        try:
+            details = json.loads(line[len(_ERROR_LINE_PREFIX) :])
+        except ValueError:
+            continue
+        if not isinstance(details, dict):
+            continue
+        short = details.get("short_error")
+        if not isinstance(short, str) or not short:
+            continue
+        short = short[:_MAX_ERROR_CHARS]
+        if details.get("error_code") == 429 or details.get("status") == "RESOURCE_EXHAUSTED":
+            return ProviderQuotaError(f"Antigravity quota is used up: {short}")
+        return ProviderUnavailableError(f"Antigravity exited with status {returncode}: {short}")
+    return ProviderUnavailableError(
+        f"Antigravity exited with status {returncode}; details are in {_LOG_FOLDER}"
+    )
 
 
 def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
@@ -54,7 +87,7 @@ def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
         process.communicate()
         raise
     if process.returncode:
-        raise ProviderUnavailableError(f"Antigravity exited with status {process.returncode}")
+        raise _failure(process.returncode, stderr)
     # Terminal status responses are short and outside translated segment blocks.
     # Startup stderr can contain transient auth diagnostics followed by successful login.
     response = stdout.strip()
@@ -248,6 +281,8 @@ class AntigravityProvider(ITranslationProvider):
             return _execute([self._executable, *args], cwd=cwd, timeout=timeout)
         except subprocess.TimeoutExpired as exc:
             raise ProviderTimeoutError("Antigravity exceeded its outer deadline") from exc
+        except ProviderQuotaError as exc:
+            raise ProviderQuotaError(f"{exc} (model {self.model.model_id})") from exc
 
     def _discover(self, system_prompt: str) -> None:
         if self.runtime_version is not None:

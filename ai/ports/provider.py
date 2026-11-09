@@ -28,6 +28,10 @@ class ProviderAuthenticationError(ProviderUnavailableError):
     """The selected subscription runtime requires user authentication."""
 
 
+class ProviderQuotaError(ProviderUnavailableError):
+    """The subscription runtime refused the request because its quota is used up."""
+
+
 class ProviderTimeoutError(ProviderUnavailableError):
     """The owned provider process exceeded its deadline."""
 
