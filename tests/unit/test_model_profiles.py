@@ -120,7 +120,7 @@ def test_a_bare_tier_stays_on_antigravity_and_never_means_astra() -> None:
     assert resolve_preset("codex-gpt-6-astra-low").model_id == "gpt-6-astra-low"
 
 
-def test_every_codex_preset_is_selectable_at_low_thinking_as_an_experiment() -> None:
+def test_every_codex_preset_is_selectable_at_low_effort_as_an_experiment() -> None:
     from ai.model_profiles import enabled_presets
 
     codex = {preset.name: preset for preset in enabled_presets() if preset.runtime == "codex"}
