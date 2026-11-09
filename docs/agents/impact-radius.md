@@ -100,7 +100,7 @@ change that adds, modifies or deletes anything under these paths has
   `ai/model_profiles.py`.
 - **Run artifacts:** the invocation audit (`.bookweaver_runs/<run_id>.json`,
   `persist_audit` in `ai/runtime_factory.py`), the checkpoint `paid_usage_by_run`
-  field, and `warnings.json` / `<output>.warnings.json` (`ai/orchestration.py:424`).
+  field, `warnings.json` / `<output>.warnings.json` (`ai/orchestration.py:424`), and `term-consistency.json` / `<output>.term-consistency.json` (`_report_term_usage` in `ai/orchestration.py`).
 - **Local API run record and child log** (SPEC-026 §7.3): `$XDG_STATE_HOME/bookweaver/current-run.json`
   (`RunRecord` in `ai/local_api.py`, schema version 2), its lock file
   `current-run.lock`, and

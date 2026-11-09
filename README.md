@@ -100,6 +100,8 @@ curl -X POST http://127.0.0.1:8765/runs \
 
 Before the first translation batch, a run extracts the book's key terms and uses them for the whole book. The upload uses the `pro` profile for this step by default, even when the preset is a `flash` one, so the step draws on Pro quota. The owner's earlier tests found Pro better at this step, so `flash` can lower the quality of the terms. The log names the model that the step uses.
 
+The extraction prompt asks for one translation per term and puts other acceptable ones in a separate `alternatives` field. If a translation still contains a slash, the log names the term and the glossary stays as it is, because a slash can also belong to one translation. After an EPUB run with a glossary, `term-consistency.json` in the checkpoint directory shows how each term was translated. It is a signal, not a verdict: a plural source form is not matched, a sound rewording counts as missing, and a part of a compound translation can count as another option.
+
 Automatic extraction reads the book's back-of-book index and table of contents. If the book has no usable index, the run stops before it calls a model, and the log names the choices. To continue, choose one of these:
 
 - Set `glossary_mode` to `deep-scan` on the upload, or pass `--glossary-mode deep-scan` on the CLI. This sends the whole book in one request, which can use much more quota. It has no live evidence on any subscription CLI yet (issue #71).
