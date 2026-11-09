@@ -806,6 +806,8 @@ def test_upload_stores_the_book_and_starts_the_default_preset(
         str(book / "book.zh.epub"),
         "--preset",
         "agy-flash-low",
+        "--extraction-model",
+        "pro",
     ]
     assert status["output"] == str(book / "book.zh.epub")
     assert status["log_path"].startswith(str(book / ".bookweaver_runs"))
@@ -1160,3 +1162,51 @@ def test_child_output_reaches_the_log_while_the_run_is_live(tmp_path: Path) -> N
             assert "PROGRESS 1 of 10" in tail
         finally:
             client.post("/runs/current/stop")
+
+
+def test_upload_shows_the_extraction_model_as_a_choice_defaulting_to_pro(
+    client: TestClient,
+) -> None:
+    schema = client.get("/openapi.json").json()
+    upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
+    ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
+    field = schema["components"]["schemas"][ref]["properties"]["extraction_model"]
+    assert field["default"] == "pro"
+    assert sorted(field["enum"]) == ["flash", "pro"]
+
+
+def test_upload_passes_the_default_extraction_model(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    assert upload(client, epub_bytes(tmp_path)).status_code == 202
+    args = child_args(settle(client))
+    assert args[args.index("--extraction-model") + 1] == "pro"
+
+
+def test_upload_passes_the_chosen_extraction_model(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), extraction_model="flash")
+    assert response.status_code == 202, response.text
+    args = child_args(settle(client))
+    assert args[args.index("--extraction-model") + 1] == "flash"
+
+
+def test_upload_refuses_an_unknown_extraction_model(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), extraction_model="gemini-4-argon")
+    assert response.status_code == 422
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
+def test_path_endpoint_leaves_the_extraction_model_to_the_configuration(
+    runs: tuple[TestClient, Path],
+) -> None:
+    client, tmp_path = runs
+    start(client, tmp_path)
+    assert "--extraction-model" not in child_args(settle(client))
+
+
+def test_docs_page_names_the_progress_endpoint(client: TestClient) -> None:
+    operation = client.get("/openapi.json").json()["paths"]["/runs/current"]["get"]
+    assert operation["summary"] == "Progress of the latest run"
+    assert "done_segments" in operation["description"]

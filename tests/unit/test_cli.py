@@ -2580,3 +2580,27 @@ def test_the_old_row_flag_is_gone(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         entry_module.main(["book.epub", "--output", "out.epub", "--row", "agy-flash-low"])
     assert "--row" in capsys.readouterr().err
+
+
+def test_extraction_model_flag_reaches_the_glossary_options(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: list[cli_module.EpubTranslationOptions] = []
+    source = tmp_path / "book.epub"
+    source.write_bytes(b"epub")
+
+    def fake_translate(
+        path: Path, output: Path, options: cli_module.EpubTranslationOptions
+    ) -> None:
+        captured.append(options)
+
+    monkeypatch.setattr(entry_module.orchestration, "translate_epub", fake_translate)
+    entry_module.main([str(source), "--output", "out.epub", "--extraction-model", "flash"])
+    assert captured[0].glossary.extraction_model == "flash"
+    assert captured[0].glossary.extract is True
+
+
+def test_extraction_model_flag_refuses_other_values(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        entry_module.main(["book.epub", "--output", "o.epub", "--extraction-model", "argon"])
+    assert "--extraction-model" in capsys.readouterr().err

@@ -102,6 +102,7 @@ class GlossarySpec:
     extract: bool = False
     min_priority: str | None = None
     max_terms: int | None = None
+    extraction_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -321,7 +322,9 @@ class TranslationOrchestrator:
             if glossary.max_terms is not None and glossary.max_terms <= 0:
                 raise ValueError("glossary_max_terms must be positive")
             if request.mode in ("auto", "deep-scan"):
-                extraction_model = extraction.get("extraction_model", "pro")
+                extraction_model = glossary.extraction_model or extraction.get(
+                    "extraction_model", "pro"
+                )
                 term_limit = (
                     glossary.max_terms
                     if glossary.max_terms is not None
@@ -339,18 +342,26 @@ class TranslationOrchestrator:
                     effort=extraction_selection.effort,
                 )
                 # Cache identity includes the input and extraction request, not the output basename.
+                if store is not None and glossary_path.exists():
+                    print(
+                        "[glossary] Reusing saved terms extracted with "
+                        f"{extraction_selection.model_id}.",
+                        flush=True,
+                    )
                 if store is None or not glossary_path.exists():
                     active_model = extraction_selection
                     extraction_used = extraction_selection
                     active_requested_effort = None
                     active_provider = None
-                    if extraction_selection.model_id != model.model_id:
-                        print(
-                            f"[glossary] Term extraction uses {extraction_selection.model_id}, "
-                            f"not the translation model {model.model_id} "
-                            "(terminology_extraction.extraction_model); this draws on its quota.",
-                            flush=True,
-                        )
+                    difference = (
+                        f", not the translation model {model.model_id}; this draws on its quota"
+                        if extraction_selection.model_id != model.model_id
+                        else ""
+                    )
+                    print(
+                        f"[glossary] Term extraction uses {extraction_selection.model_id}{difference}.",
+                        flush=True,
+                    )
                     extractor = factory.create(
                         extraction_selection,
                         protocol="delimiter",
