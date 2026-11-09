@@ -12,6 +12,9 @@ PresetStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
 CliRuntime = Literal["antigravity", "codex", "claude-code"]
+# Subscription CLIs under model trials. A resume that crosses one of their models stops, and the
+# local API gives each of their presets its own folder (SPEC-025 §3.9 and §3.10).
+TRIAL_CLI_RUNTIMES: frozenset[str] = frozenset({"codex", "claude-code"})
 # Runtime = quota pool: a subscription CLI, or the metered vendor for API presets.
 PresetRuntime = Literal[CliRuntime, MeteredProvider]
 METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))

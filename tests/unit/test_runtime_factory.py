@@ -320,7 +320,11 @@ def test_a_claude_code_preset_reaches_claude_code_with_its_own_deadline(
             return ProcessResult(0, "2.1.311 (Claude Code)", "")
         deadlines["batch"] = timeout
         return ProcessResult(
-            0, json.dumps({"is_error": False, "num_turns": 1, "result": reply}), ""
+            0,
+            json.dumps(
+                {"is_error": False, "num_turns": 1, "stop_reason": "end_turn", "result": reply}
+            ),
+            "",
         )
 
     monkeypatch.setattr(subscription_cli_provider, "run_owned_process", execute)

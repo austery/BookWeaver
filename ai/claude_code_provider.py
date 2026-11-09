@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ai.model_profiles import ResolvedModel
 from ai.ports.provider import (
+    OutputTruncatedError,
     ProviderAuthenticationError,
     ProviderQuotaError,
     ProviderUnavailableError,
@@ -40,6 +41,7 @@ _SYSTEM_PROMPT = (
     "Do not use tools, do not create files, and add no commentary or markdown fences."
 )
 _SIGN_IN = "Sign in to Claude Code with your Claude subscription: claude auth login"
+_TRUNCATED = "Claude Code output reached its token cap; lower --max-batch-chars and resume"
 
 
 class _ClaudeCodeSpec:
@@ -94,19 +96,31 @@ class _ClaudeCodeSpec:
                 f"Claude Code exited with status {result.returncode} and no result object"
             )
         text = report.get("result")
-        if report.get("is_error") or result.returncode:
+        if report.get("is_error"):
+            # With `is_error` the result is Claude Code's own status text, not a model reply.
             status = report.get("api_error_status")
             detail = text[:_MAX_ERROR_CHARS] if isinstance(text, str) else "no message"
             if status == 429:
                 raise ProviderQuotaError(f"Claude Code quota is used up: {detail}")
             if status in (401, 403):
                 raise ProviderAuthenticationError(_SIGN_IN)
+            if "output token maximum" in detail:
+                raise OutputTruncatedError(_TRUNCATED)
             raise ProviderUnavailableError(f"Claude Code turn failed: {detail}")
+        if result.returncode:
+            raise ProviderUnavailableError(f"Claude Code exited with status {result.returncode}")
         if report.get("num_turns") != 1:
-            # A local command, such as a prompt that starts with `/`, ends with no model turn.
+            # No turn: a local command, such as a prompt that starts with `/`. Several turns:
+            # Claude Code continued a reply cut at the output cap, and `result` holds one part.
             raise ProviderUnavailableError(
                 f"Claude Code ran {report.get('num_turns')} model turns instead of one"
             )
+        stop_reason = report.get("stop_reason")
+        if stop_reason == "max_tokens":
+            raise OutputTruncatedError(_TRUNCATED)
+        if stop_reason != "end_turn":
+            # A refusal or a pause also carries text; only a finished turn is a translation.
+            raise ProviderUnavailableError(f"Claude Code stopped with reason {stop_reason!r}")
         if not isinstance(text, str) or not text.strip():
             raise ProviderUnavailableError("Claude Code returned empty output")
         return text.strip()

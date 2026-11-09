@@ -847,6 +847,15 @@ def test_each_codex_preset_works_in_its_own_folder(runs: tuple[TestClient, Path]
     assert child_args(settle(client))[0] == str(book / "book.epub")
 
 
+def test_each_claude_code_preset_works_in_its_own_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    book = tmp_path / "library" / "book"
+    response = upload(client, epub_bytes(tmp_path), preset="claude-sonnet-5-5-low")
+    assert response.status_code == 202, response.text
+    assert response.json()["output"] == str(book / "claude-sonnet-5-5-low" / "book.zh.epub")
+    assert child_args(settle(client))[0] == str(book / "book.epub")
+
+
 def test_upload_refuses_a_symlinked_codex_preset_folder(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
     outside = tmp_path / "outside"

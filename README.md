@@ -34,7 +34,7 @@ Use `--preset` in place of `--model`, `--effort`, and `--provider`. You cannot c
 uv run bookweaver book.epub --output translated.epub --preset agy-pro-low
 ```
 
-Presets that start with `agy-` use the Antigravity subscription, `codex-` presets use the ChatGPT subscription, and `claude-` presets use the Claude subscription through Claude Code, with your existing `claude` login. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
+Presets that start with `agy-` use the Antigravity subscription, `codex-` presets use the ChatGPT subscription, and `claude-` presets run through Claude Code with your existing `claude` login. A `claude-` run stops unless that login is a claude.ai subscription; no live run has yet confirmed which pool pays. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
 
 Codex presets use their own login, so your Codex rules and skills do not reach a translation. Set it up once:
 
@@ -75,13 +75,13 @@ The book and its translation stay in one folder. `<book name>` is the uploaded f
 ~/Documents/BookWeaver/<book name>/
   <book name>.epub       the uploaded copy
   <book name>.zh.epub    the translation
-  <codex preset>/        a Codex run's translation, log, and saved progress
+  <codex or claude preset>/  that run's translation, log, and saved progress
 ```
 
 The run log and the saved progress are in the same folder as the translation.
 
 - Upload the same file with the same preset and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
-- Each Codex preset works in its own `<preset>/` folder inside the book's folder, so you can upload the same book again with another Codex model and compare the results. Each folder extracts its own terms, so such a comparison can differ in its glossary as well as its model.
+- Each Codex or Claude Code preset works in its own `<preset>/` folder inside the book's folder, so you can upload the same book again with another of those models and compare the results. Each folder extracts its own terms, so such a comparison can differ in its glossary as well as its model.
 - A preset from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
 - BookWeaver never replaces the uploaded copy. A different file with the same name returns 409. Rename the file to upload it.
 - A new run rewrites the translation file. Copy the file first if you edited it by hand.
@@ -145,7 +145,7 @@ Each successfully validated batch saves accumulated translations and provenance 
 uv run bookweaver book.epub --output translated.epub
 ```
 
-Running that command again restores matching segments. A fully restored book is repackaged without further translation calls. Save progress includes checkpoint bytes and elapsed time. Input or segmenter mismatches cannot be forced; language, effort, profile, prompt, or batching changes require explicit `--force-resume`. Concrete model changes produce a continuity warning, except that a resume crossing a Codex model also requires `--force-resume`. Known schema-v1 checkpoints can be imported without rewriting their original files; incompatible or incomplete state stops clearly.
+Running that command again restores matching segments. A fully restored book is repackaged without further translation calls. Save progress includes checkpoint bytes and elapsed time. Input or segmenter mismatches cannot be forced; language, effort, profile, prompt, or batching changes require explicit `--force-resume`. Concrete model changes produce a continuity warning, except that a resume crossing a Codex or Claude Code model also requires `--force-resume`. Known schema-v1 checkpoints can be imported without rewriting their original files; incompatible or incomplete state stops clearly.
 
 ## Paid API
 

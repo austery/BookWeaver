@@ -358,3 +358,61 @@ def test_a_retired_model_keeps_its_warning_when_resuming_on_codex(
         input_format="epub",
     )
     assert "Mixed-model continuation" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ("agy-flash-low", "claude-sonnet-5-5-low"),
+        ("claude-sonnet-5-5-low", "agy-flash-low"),
+        ("claude-sonnet-5-5-low", "codex-gpt-6-luna-low"),
+    ],
+)
+def test_a_resume_crossing_a_claude_code_model_stops_before_any_request(
+    tmp_path: Path, first: str, second: str
+) -> None:
+    """These presets share the flash/low identity; a restore would hide that no call was made."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+    output = tmp_path / "out.epub"
+    app.translate(
+        source,
+        output,
+        EpubTranslationOptions(config={}, model=ModelSpec(preset=first)),
+        input_format="epub",
+    )
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    before = checkpoint.read_bytes()
+    calls = len(factory.requests)
+
+    with pytest.raises(CheckpointMismatchError, match="model"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(
+                config={}, model=ModelSpec(preset=second), glossary=GlossarySpec(extract=True)
+            ),
+            input_format="epub",
+        )
+    assert len(factory.requests) == calls  # term extraction spent nothing either
+    assert checkpoint.read_bytes() == before
+
+
+def test_a_claude_code_checkpoint_resumes_on_the_same_preset(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+    options = EpubTranslationOptions(config={}, model=ModelSpec(preset="claude-sonnet-5-5-low"))
+    app.translate(source, tmp_path / "out.epub", options, input_format="epub")
+    records = json.loads(next(tmp_path.rglob("checkpoint.json")).read_text())["segments"].values()
+    assert {(r["provider"], r["backend"], r["model"]) for r in records} == {
+        ("cli", "claude-code", "claude-sonnet-5-5-low")
+    }
+    calls = len(factory.requests)
+
+    restored = app.translate(source, tmp_path / "out.epub", options, input_format="epub")
+    assert restored.resumed_segments == len(records)
+    assert len(factory.requests) == calls

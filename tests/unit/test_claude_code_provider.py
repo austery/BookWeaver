@@ -8,6 +8,7 @@ import pytest
 from ai.claude_code_provider import ClaudeCodeProvider
 from ai.model_profiles import resolve_preset
 from ai.ports.provider import (
+    OutputTruncatedError,
     ProviderAuthenticationError,
     ProviderQuotaError,
     ProviderUnavailableError,
@@ -29,7 +30,8 @@ _SUBSCRIPTION = {"loggedIn": True, "authMethod": "claude.ai", "subscriptionType"
 _OK_BATCH = (
     "tags = (f'<segment id=\"{i}\">译文</segment>' for i in (1, 2, 3))\n"
     'body = "\\n".join(tags) if "flowerpot" in prompt else "译文"\n'
-    'print(json.dumps({"is_error": False, "num_turns": 1, "result": body}))\n'
+    'print(json.dumps({"is_error": False, "num_turns": 1, "stop_reason": "end_turn",'
+    ' "result": body}))\n'
 )
 
 
@@ -163,9 +165,40 @@ def _report(**fields: object) -> str:
             "0 model turns",
         ),
         (
-            _report(is_error=False, num_turns=1, result=" "),
+            _report(is_error=False, num_turns=1, stop_reason="end_turn", result=" "),
             ProviderUnavailableError,
             "empty output",
+        ),
+        # A reply cut at the output cap, a refusal, and a continued reply all carry text.
+        (
+            _report(is_error=False, num_turns=1, stop_reason="max_tokens", result="译"),
+            OutputTruncatedError,
+            "token cap",
+        ),
+        (
+            _report(
+                is_error=True, num_turns=4, result="API Error: exceeded the output token maximum."
+            )
+            + "raise SystemExit(1)\n",
+            OutputTruncatedError,
+            "token cap",
+        ),
+        (
+            _report(is_error=False, num_turns=1, stop_reason="refusal", result="I cannot"),
+            ProviderUnavailableError,
+            "'refusal'",
+        ),
+        (
+            _report(is_error=False, num_turns=2, stop_reason="end_turn", result="后半"),
+            ProviderUnavailableError,
+            "2 model turns",
+        ),
+        # Model output never enters an error message.
+        (
+            _report(is_error=False, num_turns=1, stop_reason="end_turn", result="secret reply")
+            + "raise SystemExit(2)\n",
+            ProviderUnavailableError,
+            "status 2$",
         ),
         ("raise SystemExit(3)\n", ProviderUnavailableError, "status 3"),
         ('print("not a result object")\n', ProviderUnavailableError, "no result object"),

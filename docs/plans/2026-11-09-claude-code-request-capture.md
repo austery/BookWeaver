@@ -42,6 +42,7 @@ No request reached Anthropic. The real CLI ran against a local fake endpoint (`A
 - A full model name such as `claude-sonnet-5-5` reaches the request unchanged.
 - Whitespace before `/` does not trigger a local command; only a first-character `/` does.
 - An empty prompt exits 1 with no output and no request.
+- A reply that stops with `max_tokens` makes Claude Code ask the model to continue. When every reply stopped that way, it sent four requests, then exited 1 with `is_error: true`, `num_turns: 4` and a `result` that names the output token maximum. `CLAUDE_CODE_MAX_RETRIES=0` does not prevent these requests.
 
 ## Arguments for the provider
 

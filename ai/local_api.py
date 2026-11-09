@@ -606,8 +606,8 @@ def create_app(
         description=(
             "Choose an EPUB and press Execute. The translation starts at once and can use "
             f"quota or money, as `preset` says. The book and its translation stay in `{library}/"
-            "<book name>/`; each Codex preset works in its own `<preset>/` folder there, so "
-            "Codex models can be compared on one book. Upload the same file with the same preset "
+            "<book name>/`; each Codex or Claude Code preset works in its own `<preset>/` folder "
+            "there, so those models can be compared on one book. Upload the same file with the same preset "
             "and prompt to continue from the saved progress; a different prompt, profile or effort "
             "fails, because this API has no `--force-resume`. Only one run at a time."
         ),
@@ -656,7 +656,11 @@ def create_app(
         book_dir = library / Path(source_name).stem
         source = book_dir / source_name
         # The checkpoint follows the output folder, so a comparison needs a folder per model.
-        output_dir = book_dir / selected.name if selected.runtime == "codex" else book_dir
+        output_dir = (
+            book_dir / selected.name
+            if selected.runtime in orchestration.TRIAL_CLI_RUNTIMES
+            else book_dir
+        )
         output = output_dir / _output_file_name(output_name, source_name)
         # A link here could write outside the library or replace another book.
         if any(path.is_symlink() for path in (book_dir, output_dir, source, output)):
