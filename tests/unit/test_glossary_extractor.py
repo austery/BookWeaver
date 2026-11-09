@@ -958,7 +958,7 @@ def test_deep_scan_prompt_allows_names_and_places() -> None:
     assert "不要地名" not in _DEEP_SCAN_PROMPT_TEMPLATE
 
 
-def test_new_glossary_keeps_one_translation_and_logs_the_change(
+def test_new_glossary_keeps_a_slash_translation_and_logs_the_term(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     epub = _make_minimal_epub(tmp_path, index_content="Estrangement, 12")
@@ -975,7 +975,7 @@ def test_new_glossary_keeps_one_translation_and_logs_the_change(
     extract_glossary_from_epub(epub, output, lambda _prompt: raw, mode="deep-scan")
 
     saved = json.loads(output.read_text(encoding="utf-8"))
-    assert saved["critical_terminology"][0]["suggested_translation"] == "疏离"
+    assert saved["critical_terminology"][0]["suggested_translation"] == "疏离 / 隔阂"
     assert "Estrangement" in capsys.readouterr().out
 
 
@@ -984,3 +984,4 @@ def test_extraction_prompt_asks_for_exactly_one_translation(full_index: bool) ->
     prompt = _build_extraction_prompt("Estrangement, 12", "Chapter 1", 10, full_index=full_index)
 
     assert "只写一个译法" in prompt
+    assert '"alternatives"' in prompt

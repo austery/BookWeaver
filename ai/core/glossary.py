@@ -9,13 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
-# A slash marks alternatives when spaces or Chinese text surround it. TCP/IP is one name.
-_CJK = r"\u4e00-\u9fff"
-_OPTION_SEPARATOR = re.compile(rf"\s+[/／]\s+|(?<=[{_CJK}）)])\s*[/／]\s*(?=[{_CJK}（(])")
-# A source term built from several parts can have a slash in one translation: I/O, CRUD.
-_COMPOUND_TERM = re.compile(r"[/／&+]|\s(?:[Aa]nd|[Oo]r)\s|^[A-Z0-9]{2,}$")
-# Spaces around a slash still mean alternatives for a hyphenated term; 读/写 does not.
-_SPACED_SEPARATOR = re.compile(r"\s[/／]\s")
+# A slash can mark alternatives (疏离 / 隔阂) or belong to one translation (客户端/服务器架构).
+_SLASH = re.compile(r"\s*[/／]\s*")
 
 
 @dataclass(frozen=True)
@@ -71,35 +66,21 @@ class TermUsage:
         return self.missing == 0 and used <= 1
 
 
-def translation_options(term: str, translation: str) -> list[str]:
-    """The alternatives a suggested translation offers; one item when it offers no choice."""
-    term = term.strip()
-    hyphen_compound = "-" in term and not _SPACED_SEPARATOR.search(translation)
-    if _COMPOUND_TERM.search(term) or hyphen_compound:
-        return [translation.strip()] if translation.strip() else []
-    return [option.strip() for option in _OPTION_SEPARATOR.split(translation) if option.strip()]
+def terms_with_a_slash(data: dict[str, object]) -> list[str]:
+    """Terms whose translation may offer a choice.
 
-
-def keep_first_translation(data: dict[str, object]) -> tuple[dict[str, object], list[str]]:
-    """Leave one translation per term, so a prompt cannot offer a choice that varies by batch.
-
-    Returns the glossary and the terms changed. Only a newly extracted glossary goes through
-    this: a saved glossary feeds the prompt hash, so changing it would break resume.
+    Only a person or a judge can tell alternatives from one translation, and a wrong cut would
+    constrain the whole book. So this names the terms and never changes them.
     """
     raw_terms = data.get("critical_terminology")
     if not isinstance(raw_terms, list):
-        return data, []
-    changed: list[str] = []
-    terms: list[object] = []
+        return []
+    flagged: list[str] = []
     for entry in raw_terms:
         translation = entry.get("suggested_translation") if isinstance(entry, dict) else None
-        term = str(entry.get("term", "")) if isinstance(entry, dict) else ""
-        options = translation_options(term, translation) if isinstance(translation, str) else []
-        if len(options) > 1:
-            changed.append(term)
-            entry = {**entry, "suggested_translation": options[0]}
-        terms.append(entry)
-    return {**data, "critical_terminology": terms}, changed
+        if isinstance(translation, str) and _SLASH.search(translation):
+            flagged.append(str(entry.get("term", "")))
+    return flagged
 
 
 def measure_term_usage(
@@ -107,8 +88,8 @@ def measure_term_usage(
 ) -> list[TermUsage]:
     """Count the translations used for each term across (source, translated) segment pairs.
 
-    This is a signal, not a verdict: a plural source form is not matched, and a sound
-    rewording counts as missing.
+    This is a signal, not a verdict: a plural source form is not matched, a sound rewording
+    counts as missing, and a part of a compound translation can count as another option.
     """
     segments = list(pairs)
     usage: list[TermUsage] = []
@@ -120,17 +101,18 @@ def measure_term_usage(
         words = r"\s+".join(re.escape(word) for word in term.split())
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
-        options = translation_options(term, translation)
-        # The longest first, so that 心灵哲学 does not also count as 心灵.
-        ordered = sorted(options, key=len, reverse=True)
-        counts = dict.fromkeys(options, 0)
+        parts = [part for part in _SLASH.split(translation) if part]
+        # The whole translation and the longest part first, so that a part found only inside
+        # a longer one is not counted as a second translation.
+        ordered = sorted({translation, *parts}, key=len, reverse=True)
+        counts = dict.fromkeys(parts, 0)
         missing = 0
         for target in matched:
             remaining = target
             found = False
             for option in ordered:
                 if option in remaining:
-                    counts[option] += 1
+                    counts[option] = counts.get(option, 0) + 1
                     remaining = remaining.replace(option, "")
                     found = True
             missing += not found

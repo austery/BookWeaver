@@ -7,8 +7,8 @@ import pytest
 
 from ai.core.glossary import (
     GlossaryManager,
-    keep_first_translation,
     measure_term_usage,
+    terms_with_a_slash,
     validate_model_output,
 )
 
@@ -88,65 +88,25 @@ def test_load_from_json_rejects_non_dict_term_entry_with_index(tmp_path: Path) -
         GlossaryManager.from_json_file(path)
 
 
-def test_keep_first_translation_leaves_one_option_and_names_the_changed_terms() -> None:
+def test_terms_with_a_slash_names_terms_and_changes_nothing() -> None:
     data: dict[str, object] = {
         "critical_terminology": [
-            {"term": "Estrangement", "suggested_translation": "疏离 / 隔阂", "priority": "high"},
-            {"term": "Humane", "suggested_translation": "人道／仁慈", "priority": "high"},
-            {"term": "General will", "suggested_translation": "公意", "priority": "high"},
+            {"term": "Estrangement", "suggested_translation": "疏离 / 隔阂"},
+            {"term": "client–server architecture", "suggested_translation": "客户端/服务器架构"},
+            {"term": "Humane", "suggested_translation": "人道／仁慈"},
+            {"term": "General will", "suggested_translation": "公意"},
+            "bad",
+            {"term": "No translation"},
         ]
     }
+    before = json.dumps(data, ensure_ascii=False)
 
-    result, changed = keep_first_translation(data)
-
-    terms = result["critical_terminology"]
-    assert isinstance(terms, list)
-    assert [term["suggested_translation"] for term in terms] == ["疏离", "人道", "公意"]
-    assert changed == ["Estrangement", "Humane"]
-
-
-@pytest.mark.parametrize(
-    "term,translation",
-    [
-        ("I/O", "输入/输出"),
-        ("I/O", "输入 / 输出"),
-        ("read-write", "读/写"),
-        ("Supply and demand", "供给/需求"),
-        ("CRUD", "增/删/改/查"),
-        ("Network stack", "TCP/IP 协议栈"),
-    ],
-)
-def test_keep_first_translation_keeps_a_slash_that_belongs_to_the_translation(
-    term: str, translation: str
-) -> None:
-    data: dict[str, object] = {
-        "critical_terminology": [{"term": term, "suggested_translation": translation}]
-    }
-
-    result, changed = keep_first_translation(data)
-
-    assert result == data
-    assert changed == []
-
-
-@pytest.mark.parametrize("translation", ["疏离/隔阂", "疏离 / 隔阂", "疏离／隔阂", "疏离 ／ 隔阂"])
-def test_keep_first_translation_splits_every_form_of_alternatives(translation: str) -> None:
-    data: dict[str, object] = {
-        "critical_terminology": [{"term": "Estrangement", "suggested_translation": translation}]
-    }
-
-    result, changed = keep_first_translation(data)
-
-    terms = result["critical_terminology"]
-    assert isinstance(terms, list)
-    assert terms[0]["suggested_translation"] == "疏离"
-    assert changed == ["Estrangement"]
-
-
-def test_keep_first_translation_ignores_malformed_entries() -> None:
-    data: dict[str, object] = {"critical_terminology": ["bad", {"term": "x"}]}
-
-    assert keep_first_translation(data) == (data, [])
+    assert terms_with_a_slash(data) == [
+        "Estrangement",
+        "client–server architecture",
+        "Humane",
+    ]
+    assert json.dumps(data, ensure_ascii=False) == before
 
 
 def test_measure_term_usage_counts_each_option_and_each_missing_segment() -> None:
@@ -189,19 +149,12 @@ def test_measure_term_usage_does_not_count_a_shorter_option_inside_a_longer_one(
     assert usage[0].consistent
 
 
-def test_keep_first_translation_splits_spaced_alternatives_for_a_hyphenated_term() -> None:
-    data: dict[str, object] = {
-        "critical_terminology": [
-            {
-                "term": "Trade-union consciousness",
-                "suggested_translation": "工联主义意识 / 工联意识",
-            }
-        ]
-    }
+def test_measure_term_usage_treats_a_whole_compound_translation_as_one_choice() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "client-server", "suggested_translation": "客户端/服务器架构"}
+    ]
 
-    result, changed = keep_first_translation(data)
+    usage = measure_term_usage(terms, [("a client-server design", "一种客户端/服务器架构设计")])
 
-    terms = result["critical_terminology"]
-    assert isinstance(terms, list)
-    assert terms[0]["suggested_translation"] == "工联主义意识"
-    assert changed == ["Trade-union consciousness"]
+    assert usage[0].missing == 0
+    assert usage[0].consistent
