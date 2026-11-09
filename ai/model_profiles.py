@@ -46,6 +46,9 @@ _RUNTIME_PREFIX: dict[CliRuntime, str] = {
 }
 _CODEX_EVIDENCE = "offline fake-server capture only; probed automatically on first use"
 _CODEX_LIVE_EVIDENCE = "codex-cli 0.167.0 live probe 2026-11-09 (segment_tags and delimiter)"
+_CLAUDE_CODE_LIVE_EVIDENCE = (
+    "Claude Code 2.1.311 live probe 2026-11-09 (segment_tags and delimiter)"
+)
 _CLAUDE_CODE_EVIDENCE = (
     "Claude Code 2.1.311 offline request capture 2026-11-09; no live call; "
     "probed automatically on first use"
@@ -138,8 +141,8 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         "claude-sonnet-5-5",
         "low",
         "experiment",
-        1,
-        _CLAUDE_CODE_EVIDENCE,
+        2,
+        _CLAUDE_CODE_LIVE_EVIDENCE,
         "sonnet-5-5",
     ),
     _CliPreset(

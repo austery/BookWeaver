@@ -166,5 +166,9 @@ def test_claude_code_presets_name_the_model_and_stay_experiments() -> None:
     assert {(p.provider, p.effort, p.status) for p in claude.values()} == {
         ("cli", "low", "experiment")
     }
+    assert {name: p.layer for name, p in claude.items()} == {
+        "claude-sonnet-5-5-low": 2,  # live probe 2026-11-09
+        "claude-opus-5-5-low": 1,
+    }
     assert resolve_preset("claude-opus-5-5-low").family == "claude-opus-5-5"
     assert resolve_profile("flash").runtime == "antigravity"  # a bare tier never means Claude

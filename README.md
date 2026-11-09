@@ -34,7 +34,7 @@ Use `--preset` in place of `--model`, `--effort`, and `--provider`. You cannot c
 uv run bookweaver book.epub --output translated.epub --preset agy-pro-low
 ```
 
-Presets that start with `agy-` use the Antigravity subscription, `codex-` presets use the ChatGPT subscription, and `claude-` presets run through Claude Code with your existing `claude` login. A `claude-` run stops unless that login is a claude.ai subscription; no live run has yet confirmed which pool pays. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
+Presets that start with `agy-` use the Antigravity subscription, `codex-` presets use the ChatGPT subscription, and `claude-` presets run through Claude Code with your existing `claude` login. A `claude-` run stops unless that login is a claude.ai subscription; one live probe has passed, but nothing yet confirms which pool pays. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
 
 Codex presets use their own login, so your Codex rules and skills do not reach a translation. Set it up once:
 
