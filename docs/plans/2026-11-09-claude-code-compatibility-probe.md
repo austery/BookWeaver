@@ -1,6 +1,6 @@
 # Claude Code compatibility probe (2026-11-09)
 
-**Result:** `claude-sonnet-5-5-low` passes on Claude Code 2.1.311 through the owner's claude.ai login, for both framing protocols. This proves the path runs. It says nothing about book quality, and it does not yet show which quota pool paid.
+**Result:** `claude-sonnet-5-5-low` passes on Claude Code 2.1.311 through the owner's claude.ai login, for both framing protocols. This proves the path runs. It says nothing about book quality. The owner reports no API usage, so the subscription paid by exclusion; the calls were too small to see in the subscription usage.
 
 The owner ran the command in a normal terminal. It used synthetic passages and one tiny synthetic EPUB (two sentences and an eight-entry index), with no book text. `claude-opus-5-5-low` was not called.
 
@@ -25,7 +25,7 @@ An earlier attempt with a book that had no index stopped before any model call, 
 
 ## Not proven
 
-- That the subscription pool paid for these calls. The evidence is indirect: discovery requires `authMethod: claude.ai`, and the child environment holds no API key. The owner has not yet compared subscription usage and API spend before and after.
+- A direct measurement that the subscription pool paid. The owner reported on 2026-11-09 that the account shows no API usage, and that four small calls do not move the usage display of a 100-dollar subscription. The same limit applies to the Codex and Antigravity probes. The rest is indirect: discovery requires `authMethod: claude.ai`, and the child environment holds no API key. A full book run would give a visible change.
 - The request content under the claude.ai login. The offline capture (`2026-11-09-claude-code-request-capture.md`) used a fake API key.
 - Extraction quality: the tiny index yielded 0 terms, as it did for Codex.
 - Translation quality on any book, or any comparison between models.
