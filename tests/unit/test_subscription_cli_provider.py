@@ -4,10 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from ai.antigravity_provider import AntigravityProvider
+from ai.adapters.providers.antigravity_provider import AntigravityProvider
 from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel, resolve_profile
 from ai.ports.provider import ProviderTimeoutError, ProviderUnavailableError
-from ai.subscription_cli_provider import CliCall, ProcessResult, SubscriptionCliProvider
+from ai.adapters.providers.subscription_cli_provider import (
+    CliCall,
+    ProcessResult,
+    SubscriptionCliProvider,
+)
 
 
 class _OtherSpec:

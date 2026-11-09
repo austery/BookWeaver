@@ -23,9 +23,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai import antigravity_provider  # noqa: E402
+from ai.adapters.providers import antigravity_provider  # noqa: E402
 from ai.adapters.providers._delimiter import PROTOCOL_SEGMENT_TAGS  # noqa: E402
-from ai.antigravity_provider import (  # noqa: E402
+from ai.adapters.providers.antigravity_provider import (  # noqa: E402
     PROBE_SAMPLES,
     AntigravityProvider,
     probe_problems,

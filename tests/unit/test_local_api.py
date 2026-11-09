@@ -20,7 +20,7 @@ from httpx import Response
 
 import ai.cli as entry_module
 from ai import local_api, orchestration
-from ai.antigravity_provider import default_certification_path
+from ai.adapters.providers.antigravity_provider import default_certification_path
 from ai.model_profiles import Preset, enabled_presets, is_metered, resolve_profile
 from ai.runtime_factory import DefaultProviderFactory, PaidAuthorizationError
 from tests.runtime_fakes import install_fake_any_llm

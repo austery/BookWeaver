@@ -12,9 +12,9 @@ from dataclasses import asdict, dataclass
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
-from ai.claude_code_provider import ClaudeCodeProvider
-from ai.codex_provider import CodexProvider
+from ai.adapters.providers.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
+from ai.adapters.providers.claude_code_provider import ClaudeCodeProvider
+from ai.adapters.providers.codex_provider import CodexProvider
 from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel, is_metered
 from ai.ports.provider import (
     ITranslationProvider,

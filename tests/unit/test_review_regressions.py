@@ -9,7 +9,7 @@ import pytest
 
 from tests.runtime_fakes import NoAuditFactory
 
-from ai.antigravity_provider import AntigravityProvider
+from ai.adapters.providers.antigravity_provider import AntigravityProvider
 from ai.checkpoint_store import CheckpointError, CheckpointMismatchError
 from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
 from ai.orchestration import (

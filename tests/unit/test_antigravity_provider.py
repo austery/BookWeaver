@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.antigravity_provider import AntigravityProvider
+from ai.adapters.providers.antigravity_provider import AntigravityProvider
 from ai.model_profiles import CERTIFIED_AGY_MODELS, resolve_profile
 from ai.ports.provider import (
     ProviderAuthenticationError,

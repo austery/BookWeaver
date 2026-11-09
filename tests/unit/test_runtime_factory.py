@@ -208,8 +208,8 @@ def test_invalid_api_timeout_is_rejected(value: object) -> None:
 def test_antigravity_timeout_reaches_executable_boundary(
     monkeypatch: pytest.MonkeyPatch, configured: float | None, expected: float
 ) -> None:
-    from ai import subscription_cli_provider
-    from ai.subscription_cli_provider import ProcessResult
+    from ai.adapters.providers import subscription_cli_provider
+    from ai.adapters.providers.subscription_cli_provider import ProcessResult
 
     calls: list[tuple[list[str], float]] = []
 
@@ -258,9 +258,9 @@ def test_unknown_antigravity_key_is_rejected() -> None:
 def test_a_codex_preset_reaches_codex_with_its_own_deadline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from ai import subscription_cli_provider
+    from ai.adapters.providers import subscription_cli_provider
     from ai.model_profiles import resolve_preset
-    from ai.subscription_cli_provider import ProcessResult
+    from ai.adapters.providers.subscription_cli_provider import ProcessResult
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))  # keeps the login and probe record out
     deadlines: dict[str, float] = {}
@@ -305,9 +305,9 @@ def test_a_codex_preset_reaches_codex_with_its_own_deadline(
 def test_a_claude_code_preset_reaches_claude_code_with_its_own_deadline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from ai import subscription_cli_provider
+    from ai.adapters.providers import subscription_cli_provider
     from ai.model_profiles import resolve_preset
-    from ai.subscription_cli_provider import ProcessResult
+    from ai.adapters.providers.subscription_cli_provider import ProcessResult
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))  # keeps the probe record out
     deadlines: dict[str, float] = {}

@@ -13,7 +13,7 @@ from ai.ports.provider import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from ai.subscription_cli_provider import (
+from ai.adapters.providers.subscription_cli_provider import (
     DEFAULT_TIMEOUT_SECONDS,
     CliCall,
     ProcessResult,
