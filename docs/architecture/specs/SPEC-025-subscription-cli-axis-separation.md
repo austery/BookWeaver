@@ -2,7 +2,7 @@
 specId: SPEC-025
 title: Subscription CLI Runtimes with Separated Model Axes
 status: Draft for owner review (2026-11-07)
-implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code and Phase 4 not started
+implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code implemented and live-probed on Sonnet (2026-11-09); Phase 4 not started
 priority: P1 - Runtime Reliability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-09
@@ -190,24 +190,40 @@ Evidence comes from running Codex CLI 0.167.0 against a local fake provider, whi
 - **Persistent structures.** `_KNOWN_BACKENDS` gains `codex` (§5). `ai/config_schema.json` gains an optional `codex.timeout_seconds`, mirroring `antigravity.timeout_seconds`.
 - **Billing guard.** The child environment drops `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`. Discovery stops unless `codex login status` reports a ChatGPT login.
 
+### 3.10 Claude Code decisions (2026-11-09)
+
+Evidence comes from running Claude Code 2.1.311 against a local fake endpoint (`docs/plans/2026-11-09-claude-code-request-capture.md`). The owner then ran one live probe on `claude-sonnet-5-5-low` (`docs/plans/2026-11-09-claude-code-compatibility-probe.md`).
+
+- **Isolation.** Unlike Codex, no private home is needed: `--restricted` keeps the owner's `CLAUDE.md`, auto-memory, skills and plugins out of the request, so the runtime uses the owner's claude.ai login. The help text does not promise this, so the capture must be repeated after a Claude Code upgrade.
+- **Fixed context.** `--system-prompt` cuts the fixed context from about 5,700 to about 1,900 characters. One environment message of about 1,100 characters remains.
+- **Prompt guards.** A prompt whose first character is `/` stops before the process starts, because Claude Code would run it as a local command. A result with a model-turn count other than one is a failure. The child runs in an empty directory, because `@name` in the prompt inlines a file from the working directory.
+- **Billing guard.** The child environment drops every `ANTHROPIC_*` variable, `CLAUDECODE` and every `CLAUDE_*` variable except `CLAUDE_CONFIG_DIR`, plus `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `loggedIn` with `authMethod: claude.ai`.
+- **Single attempt.** The child sets `CLAUDE_CODE_MAX_RETRIES=0`. Without it the CLI retried a fake 401 and a fake 429 for more than 100 seconds and printed nothing; with it the result object arrives at once with `api_error_status`. The trade-off: one transient error, such as an overloaded response, stops the run, because `ProviderUnavailableError` halts and is never split or retried. Committed batches stay resumable. The setting does not stop Claude Code from continuing a reply cut at the output cap: against the fake endpoint it sent up to four requests for one prompt.
+- **Result checks.** A reply counts only with exactly one model turn and `stop_reason: end_turn`. A reply cut at the output cap raises `OutputTruncatedError`; a refusal or any other stop reason halts. Model output never enters an error message.
+- **No roster.** Claude Code has no command that lists models, so the roster step is optional in the shared adapter. `modelUsage` in the result names the requested model even when the endpoint answers with another one, so it is not used as a check. An unknown model fails the probe.
+- **Presets (proposed, owner to confirm).** `claude-sonnet-5-5-low` is the flash tier and `claude-opus-5-5-low` is the pro tier, mirroring the metered Anthropic entries. Both are `experiment`; Sonnet is layer 2 after the live probe, and Opus is layer 1. Glossary extraction on a Claude Code run therefore goes to Opus on the coding quota unless `--extraction-model flash` is given.
+- **Persistent structures.** `_KNOWN_BACKENDS` gains `claude-code`. `ai/config_schema.json` gains an optional `claude_code.timeout_seconds`.
+- **Resume and folders (owner, 2026-11-09).** The Codex rules in §3.9 now cover Claude Code: `TRIAL_CLI_RUNTIMES` in `ai/model_profiles.py` names both runtimes. The reason: `claude-sonnet-5-5-low` shares the flash/low checkpoint identity with the default `agy-flash-low`. Before this rule, a Claude run on a folder with a finished Gemini checkpoint restored every segment with a warning and made no Claude translation call; with term extraction on, it still sent one extraction request to Claude. A resume that crosses a Claude Code model now stops before extraction unless `--force-resume` is given, in both directions and against Codex. The local API upload gives each Claude Code preset its own `<preset>/` folder. Changes within Antigravity and between metered vendors keep their warning.
+
 ## 4. Out of scope
 
 - Detailed evaluation design (corpus, sample size, judge prompt, agreement threshold): a separate spec after Phase 3.
-- Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today, except for the Codex case in §3.9.
+- Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today, except for the Codex and Claude Code cases in §3.9 and §3.10.
 - Async batch APIs (previously planned as SPEC-025; renumber to SPEC-027).
 - Named presets on the CLI and the local API: SPEC-026, built on the §3.8 registry after Phase 1.
 
 ## 5. Open items before implementation
 
-Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). Codex then passed a live probe (`docs/plans/2026-11-09-codex-compatibility-probe.md`). No prompt was sent to Claude Code, so none of its commands is proven end to end yet.
+Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). Codex then passed a live probe (`docs/plans/2026-11-09-codex-compatibility-probe.md`). Claude Code then ran against a local fake endpoint (`docs/plans/2026-11-09-claude-code-request-capture.md`), which shows the request it builds. No prompt was sent to Anthropic through Claude Code, so its commands are not proven end to end yet.
 
 - [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. `codex debug models` provides the roster.
 - [x] Codex: `exec` runs with `approval_policy="never"`, a read-only sandbox and `--disable shell_tool`; the outer deadline remains the guard against a hang. A live hang test has not run.
 - [x] Codex: models pinned in §3.9.
 - [x] Claude Code: **do not use `--bare`.** Its help says Anthropic auth is then "strictly ANTHROPIC_API_KEY or apiKeyHelper" and OAuth is never read. It would fail, or bill a key instead of the subscription. This replaces the earlier candidate flag.
-- [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools "" --no-session-persistence --output-format json --model <family> --effort <effort>`. `--restricted` ignores user, project and local settings files. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
-- [ ] Claude Code: an owner-run probe must confirm that `-p` draws on the subscription pool and not on separate credit. Help text cannot prove this.
-- [ ] Subscription guard, Codex side done in §3.9; Claude Code side still open (Phase 3): a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
+- [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools= --no-session-persistence --output-format json --model <family> --effort <effort> --system-prompt <text>`. The capture on 2.1.311 shows that `--restricted` keeps the owner's `CLAUDE.md`, auto-memory, skills and plugins out of the request; its help text promises only that it ignores settings files, so repeat the capture after an upgrade. `--system-prompt` replaces about 4,200 characters of coding-agent prompt and removes git status. `--tools=` replaces `--tools ""`: a lost empty value makes `--tools` swallow the next flag and still exit 0. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
+- [x] Claude Code prompt guards (done, §3.10), from the capture: a prompt that starts with `/` runs as a local command, with no request, exit 0, `is_error: false` and `num_turns: 0`, so the spec must reject such a prompt and treat `num_turns: 0` as a failure; `@path` in the prompt inlines a file from the working directory even with no tools, so the working directory must be empty and the prompt file must live elsewhere.
+- [x] Claude Code: an owner-run probe must confirm that `-p` draws on the subscription pool and not on separate credit. Help text cannot prove this. Done 2026-11-09 by exclusion: the owner-run probe passed and the owner reports no API usage. The calls were too small to see in the subscription usage, so a direct measurement waits for a full book run.
+- [x] Subscription guard, Codex side done in §3.9, Claude Code side in §3.10: a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. The capture confirms the risk for Claude Code: with a key in the environment, every request used the key and not the claude.ai login. The Claude Code child must also drop `ANTHROPIC_BASE_URL`, `CLAUDECODE` and the `CLAUDE_CODE_*` variables that a parent Claude Code session exports; `CLAUDE_CODE_SIMPLE` is the variable `--bare` sets. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
 - [ ] Antigravity: `agy --help` lists `--sandbox` ("terminal restrictions enabled"). It is not applied yet, because its effect on the prompt-file read is unknown and a change needs a probe.
 - [x] Provenance: per-segment `backend` already records the concrete runtime (`ai/ports/provider.py`). Phase 3 adds `codex` (done) and `claude-code` to `_KNOWN_BACKENDS` in `ai/checkpoint_store.py` instead of adding a second field. Claude through agy and through Claude Code then stay distinct.
 - [x] Registry: a bare tier means Antigravity unless `resolve_profile` receives a runtime; a named preset resolves through `resolve_preset`, so a new preset cannot take over `--model flash --effort low`.
@@ -223,4 +239,4 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 ## 7. Verification
 
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`, `uv run tach check`.
-- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` and `2026-11-09-codex-compatibility-probe.md`.
+- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` `2026-11-09-codex-compatibility-probe.md` and `2026-11-09-claude-code-compatibility-probe.md`. Offline captures go there too, as in `2026-11-09-claude-code-request-capture.md`.

@@ -72,6 +72,8 @@ class CliCall:
     stdin: str | None = None
     # Where the runtime writes its final message, when stdout does not carry it.
     output_file: Path | None = None
+    # Where the child runs, when it must not see the prompt file; the workspace when absent.
+    cwd: Path | None = None
 
 
 def run_owned_process(
@@ -120,7 +122,8 @@ class CliRuntimeSpec(Protocol):
     roster_name: str
     temp_prefix: str
     version_args: tuple[str, ...]
-    roster_args: tuple[str, ...]
+    # The command that lists models, or None when the runtime has none.
+    roster_args: tuple[str, ...] | None
     # The command that reports the login, or None when the runtime has no such guard.
     login_args: tuple[str, ...] | None
 
@@ -132,8 +135,11 @@ class CliRuntimeSpec(Protocol):
         """Raise a port error unless `login_args` reported the required login."""
         ...
 
-    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
-        """Return the usable output of a finished process, or raise a port error."""
+    def interpret(self, result: ProcessResult, call: CliCall) -> str:
+        """Return the usable output of a finished `call`, or raise a port error.
+
+        Version and roster calls carry no stdin and no output file.
+        """
         ...
 
     def parse_roster(self, text: str) -> set[str]:
@@ -322,9 +328,14 @@ class SubscriptionCliProvider(ITranslationProvider):
             raise ProviderTimeoutError(f"{self._spec.label} exceeded its outer deadline") from exc
 
     def _run(self, call: CliCall, *, cwd: Path | None, timeout: float) -> str:
-        result = self._process(call.args, cwd=cwd, timeout=timeout, stdin=call.stdin)
+        result = self._process(
+            call.args,
+            cwd=call.cwd if call.cwd is not None else cwd,
+            timeout=timeout,
+            stdin=call.stdin,
+        )
         try:
-            return self._spec.interpret(result, call.output_file)
+            return self._spec.interpret(result, call)
         except ProviderQuotaError as exc:
             raise ProviderQuotaError(f"{exc} (model {self.model.model_id})") from exc
 
@@ -334,13 +345,14 @@ class SubscriptionCliProvider(ITranslationProvider):
         if self._spec.login_args is not None:
             self._spec.check_login(self._process(self._spec.login_args, cwd=None, timeout=30))
         version = self._run(CliCall(list(self._spec.version_args)), cwd=None, timeout=30)
-        roster = self._run(CliCall(list(self._spec.roster_args)), cwd=None, timeout=30)
         model_id = self.model.model_id
-        if model_id not in self._spec.parse_roster(roster):
-            raise ProviderUnavailableError(
-                f"Selected model {model_id} is absent from {self._spec.roster_name}; "
-                "update the registry explicitly"
-            )
+        if self._spec.roster_args is not None:
+            roster = self._run(CliCall(list(self._spec.roster_args)), cwd=None, timeout=30)
+            if model_id not in self._spec.parse_roster(roster):
+                raise ProviderUnavailableError(
+                    f"Selected model {model_id} is absent from {self._spec.roster_name}; "
+                    "update the registry explicitly"
+                )
         if not self._spec.is_seeded(version, model_id) and not self._certifications.contains(
             version, model_id, self._protocol
         ):

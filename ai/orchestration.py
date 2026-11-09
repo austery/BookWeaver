@@ -32,6 +32,7 @@ from ai.checkpoint_store import (
 
 # Preset, enabled_presets and find_preset are the named-preset surface for entry points (SPEC-026).
 from ai.model_profiles import (
+    TRIAL_CLI_RUNTIMES as TRIAL_CLI_RUNTIMES,
     ResolvedModel,
     Preset as Preset,
     enabled_presets as enabled_presets,
@@ -149,17 +150,20 @@ def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel
     return (model.runtime or "antigravity") if model.provider == "cli" else "any_llm"
 
 
-def _refuse_codex_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
-    """Stop a resume that crosses a Codex model, so a model test cannot finish with no call to it.
+def _refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
+    """Stop a resume that crosses a Codex or Claude Code model.
 
-    The identity keys on tier and effort, which several Codex models share. Other model changes
-    keep their mixed-model warning (SPEC-024), and a retired or legacy model is not a test choice.
+    The identity keys on tier and effort, which those models share with each other and with the
+    default preset. Without the stop, a model test restores another model's segments, makes no
+    translation call to the chosen model, and can still spend its quota on term extraction.
+    Changes within Antigravity and between metered vendors keep their mixed-model warning
+    (SPEC-024), and a retired or legacy model is not a test choice.
     """
     enabled = enabled_presets()
     others = {record.model for record in records.values()} - {model.model_id}
     others &= {preset.model_id for preset in enabled}
-    codex = {preset.model_id for preset in enabled if preset.runtime == "codex"}
-    if others and (model.runtime == "codex" or others & codex):
+    trial = {preset.model_id for preset in enabled if preset.runtime in TRIAL_CLI_RUNTIMES}
+    if others and (model.runtime in TRIAL_CLI_RUNTIMES or others & trial):
         raise CheckpointMismatchError(
             f"Checkpoint mismatch: model; it holds {sorted(others)}, not {model.model_id}. "
             "Use another output folder to compare models, or --force-resume to continue "
@@ -343,7 +347,7 @@ class TranslationOrchestrator:
                         legacy_input_signature=legacy_signature,
                     )
                     if not resume.force:
-                        _refuse_codex_model_change(saved, model)
+                        _refuse_trial_model_change(saved, model)
             glossary_path = glossary.path
             request = resolve_glossary_request(
                 glossary=str(glossary_path) if glossary_path else None,

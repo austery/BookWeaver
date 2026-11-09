@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["cli", "gemini", "openai", "anthropic", "api"],
         metavar="{cli,gemini,openai,anthropic}",
         default="cli",
-        help="Translation backend: cli is Antigravity unless --preset names Codex; gemini/openai/anthropic are metered APIs (default: cli)",
+        help="Translation backend: cli is Antigravity unless --preset names Codex or Claude Code; gemini/openai/anthropic are metered APIs (default: cli)",
     )
     p.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
     p.add_argument(

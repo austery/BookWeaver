@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
+from ai.claude_code_provider import ClaudeCodeProvider
 from ai.codex_provider import CodexProvider
 from ai.model_profiles import ResolvedModel, is_metered
 from ai.ports.provider import (
@@ -291,6 +292,10 @@ class DefaultProviderFactory:
             if model.runtime == "codex":
                 return CodexProvider(
                     model, protocol=protocol, timeout_seconds=_cli_timeout(config, "codex")
+                )
+            if model.runtime == "claude-code":
+                return ClaudeCodeProvider(
+                    model, protocol=protocol, timeout_seconds=_cli_timeout(config, "claude_code")
                 )
             return AntigravityProvider(
                 model, protocol=protocol, timeout_seconds=_cli_timeout(config, "antigravity")

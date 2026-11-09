@@ -27,7 +27,7 @@ class _OtherSpec:
     def check_login(self, result: ProcessResult) -> None:
         raise AssertionError("no login guard")
 
-    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+    def interpret(self, result: ProcessResult, call: CliCall) -> str:
         return result.stdout.strip()
 
     def parse_roster(self, text: str) -> set[str]:
