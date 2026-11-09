@@ -685,6 +685,33 @@ def test_extract_glossary_auto_length_boundary_for_an_unconfirmed_index(
         assert len(calls) == 1
 
 
+@pytest.mark.parametrize("heading", ["Index", "INDEX:", "Searchable Terms", "索引"])
+def test_extract_glossary_auto_stops_on_an_index_page_with_only_a_heading(
+    tmp_path: Path, heading: str
+) -> None:
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml", "index.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+            "OEBPS/index.xhtml": f"<html><body><h1>{heading}</h1></body></html>",
+        },
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
+    with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+        extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=tmp_path / "out.json",
+            translate_fn=capture_fn,
+        )
+    assert calls == []
+
+
 def test_extract_glossary_auto_stops_on_a_book_with_only_a_toc(
     tmp_path: Path,
 ) -> None:

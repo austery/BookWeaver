@@ -44,12 +44,18 @@ def _looks_like_index_content(text: str) -> bool:
     return any(marker in sample for marker in _INDEX_CONTENT_MARKERS)
 
 
+_INDEX_HEADING_WORDS = {"index", "glossary", "searchable", "terms", "索引", "术语表"}
+
+
 def _is_placeholder_index_text(text: str) -> bool:
     """Return True for known placeholder/conversion boilerplate index pages."""
     normalized = " ".join(text.split()).strip().lower()
     if not normalized:
         return True
-    return normalized in {"converted ebook", "converted ebook dead simple python"}
+    if normalized in {"converted ebook", "converted ebook dead simple python"}:
+        return True
+    # A page with only a heading has no entries to extract terms from.
+    return set(re.findall(r"\w+", normalized)) <= _INDEX_HEADING_WORDS
 
 
 def _local_name(tag: str) -> str:
