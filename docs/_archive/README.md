@@ -11,3 +11,4 @@ and a pointer to its successor (a current document, an ADR, an issue, or "none")
 
 | Archived file | Original path | Archived | Successor |
 | --- | --- | --- | --- |
+| [SPEC-026](SPEC-026-named-presets-and-local-api.md) | `docs/architecture/specs/SPEC-026-named-presets-and-local-api.md` | 2026-11-08 | `README.md` "Named presets" and "Local API"; `tests/unit/test_local_api.py`; open work: issue #71 |
