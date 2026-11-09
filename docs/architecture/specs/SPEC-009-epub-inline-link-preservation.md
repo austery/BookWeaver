@@ -177,5 +177,5 @@ separately after Sub-problem 1 is shipped and validated.
 - **Code**: `ai/epub_translate_roundtrip.py` — `translate_segments_with_batch_retry`
 - **Specs**: [SPEC-006](./SPEC-006-epub-translate-roundtrip.md) — translate roundtrip
   quality contract
-- **Specs**: [SPEC-008](./SPEC-008-epub-block-anchor-redesign.md) — block anchor
+- **Specs**: [SPEC-008](../../_archive/SPEC-008-epub-block-anchor-redesign.md) — block anchor
   redesign

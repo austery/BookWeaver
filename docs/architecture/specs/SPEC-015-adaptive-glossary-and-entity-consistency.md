@@ -208,6 +208,6 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 - **Config**: `config/schemas/glossary_schema.json`
 - **Config**: `config/config.json.example`
 - **Specs**: [SPEC-010](./SPEC-010-terminology-extraction-translation-constraints.md)
-- **Specs**: [SPEC-011](./SPEC-011-model-selection-and-config-abstraction.md)
-- **Specs**: [SPEC-012](./SPEC-012-core-translation-engine-hexagonal.md)
-- **Specs**: [SPEC-013](./SPEC-013-pipeline-completion-shell-replacement.md)
+- **Specs**: [SPEC-011](../../_archive/SPEC-011-model-selection-and-config-abstraction.md)
+- **Specs**: [SPEC-012](../../_archive/SPEC-012-core-translation-engine-hexagonal.md)
+- **Specs**: [SPEC-013](../../_archive/SPEC-013-pipeline-completion-shell-replacement.md)

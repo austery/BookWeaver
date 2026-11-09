@@ -101,6 +101,6 @@ Related references:
 ## 7. Related
 
 - **Code**: `03_translate_md.py`, `ai/gemini_provider.py`, `translatebook.sh`, `config/config.json.example`
-- **Specs**: [SPEC-001](./SPEC-001-multi-tier-gemini-translation.md)
+- **Specs**: [SPEC-001](../../_archive/SPEC-001-multi-tier-gemini-translation.md)
 - **Design Doc**: `docs/plans/2026-03-16-prompt-model-stability-design.md`
 - **Implementation Plan**: `docs/plans/2026-03-16-prompt-model-stability-implementation.md`

@@ -308,6 +308,6 @@ Go/no-go must be explicitly recorded as:
 ## 12. Related
 
 - **Code**: `translatebook.sh`, `03_translate_md.py`, `04_merge_md.py`, `05_md_to_html.py`
-- **Specs**: [SPEC-001](./SPEC-001-multi-tier-gemini-translation.md), [SPEC-002](./SPEC-002-prompt-model-stability.md), [SPEC-003](./SPEC-003-lint-quality-gates.md)
+- **Specs**: [SPEC-001](../../_archive/SPEC-001-multi-tier-gemini-translation.md), [SPEC-002](./SPEC-002-prompt-model-stability.md), [SPEC-003](../../_archive/SPEC-003-lint-quality-gates.md)
 - **Design Doc**: `docs/plans/2026-03-17-baoyu-orchestrated-evaluation-design.md`
 - **Reference**: `/Users/leipeng/Documents/Projects/baoyu-skills/skills/baoyu-translate/SKILL.md`

@@ -607,10 +607,10 @@ Historical specs remain unchanged as implementation history. This SPEC supersede
 - **Review**:
   - `pr-reviews/SPEC-020-review-v1.md` — external design review incorporated on 2026-07-17
 - **Specs**:
-  - [SPEC-011](./SPEC-011-model-selection-and-config-abstraction.md)
-  - [SPEC-012](./SPEC-012-core-translation-engine-hexagonal.md)
-  - [SPEC-016](./SPEC-016-batch-sanity-probe.md)
-  - [SPEC-017](./SPEC-017-epub-div-extraction-and-cross-doc-batching.md)
+  - [SPEC-011](../../_archive/SPEC-011-model-selection-and-config-abstraction.md)
+  - [SPEC-012](../../_archive/SPEC-012-core-translation-engine-hexagonal.md)
+  - [SPEC-016](../../_archive/SPEC-016-batch-sanity-probe.md)
+  - [SPEC-017](../../_archive/SPEC-017-epub-div-extraction-and-cross-doc-batching.md)
 - **Reference implementation**:
   - `/Users/leipeng/Documents/Projects/puresubs/packages/automation-engine-ytdlp/src/ai/providers/AntigravityCLIProvider.ts`
   - `/Users/leipeng/Documents/Projects/puresubs/packages/automation-engine-ytdlp/src/ai/antigravityModelSelection.ts`
