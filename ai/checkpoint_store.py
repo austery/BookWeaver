@@ -23,7 +23,7 @@ class CheckpointMismatchError(CheckpointError):
 
 # "api" is historical Gemini API provenance: readable, never written again (SPEC-024).
 _KNOWN_PROVIDERS = ("cli", "api", "gemini", "openai", "anthropic", "legacy_unknown")
-_KNOWN_BACKENDS = ("antigravity", "any_llm", "gemini_api", "gemini_cli", "legacy_unknown")
+_KNOWN_BACKENDS = ("antigravity", "codex", "any_llm", "gemini_api", "gemini_cli", "legacy_unknown")
 
 
 @dataclass(frozen=True)

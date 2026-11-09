@@ -1,6 +1,6 @@
 # BookWeaver
 
-BookWeaver translates EPUB publications into alternating bilingual EPUBs. The canonical entry point is `uv run bookweaver`. The subscription runtime is Antigravity CLI (`agy`); the Gemini, Anthropic, and OpenAI APIs are separately authorized paid paths.
+BookWeaver translates EPUB publications into alternating bilingual EPUBs. The canonical entry point is `uv run bookweaver`. The default subscription runtime is Antigravity CLI (`agy`); Codex CLI is an experimental second one, selected by preset. The Gemini, Anthropic, and OpenAI APIs are separately authorized paid paths.
 
 ## Setup and translation
 
@@ -34,7 +34,17 @@ Use `--preset` in place of `--model`, `--effort`, and `--provider`. You cannot c
 uv run bookweaver book.epub --output translated.epub --preset agy-pro-low
 ```
 
-Presets that start with `agy-` use the Antigravity subscription. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
+Presets that start with `agy-` use the Antigravity subscription, and `codex-` presets use the ChatGPT subscription. The `gemini-` and `anthropic-` presets are paid. A preset name does not give consent. Each paid run still needs the [paid API](#paid-api) consent.
+
+Codex presets use their own login, so your Codex rules and skills do not reach a translation. Set it up once:
+
+```bash
+mkdir -p ~/.local/state/bookweaver/codex-home
+```
+
+```bash
+CODEX_HOME=~/.local/state/bookweaver/codex-home codex login
+```
 
 ## Local API
 
@@ -65,11 +75,13 @@ The book and its translation stay in one folder. `<book name>` is the uploaded f
 ~/Documents/BookWeaver/<book name>/
   <book name>.epub       the uploaded copy
   <book name>.zh.epub    the translation
+  <codex preset>/        a Codex run's translation, log, and saved progress
 ```
 
-The run log and the saved progress are in the same folder.
+The run log and the saved progress are in the same folder as the translation.
 
 - Upload the same file with the same preset and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
+- Each Codex preset works in its own `<preset>/` folder inside the book's folder, so you can upload the same book again with another Codex model and compare the results. Each folder extracts its own terms, so such a comparison can differ in its glossary as well as its model.
 - A preset from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
 - BookWeaver never replaces the uploaded copy. A different file with the same name returns 409. Rename the file to upload it.
 - A new run rewrites the translation file. Copy the file first if you edited it by hand.
@@ -119,7 +131,7 @@ uv run bookweaver book.epub --output translated.epub --max-batch-segments 150
 
 The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. Legacy and isolated-format batchers have no segment cap unless explicitly supplied.
 
-Each Antigravity batch waits up to 600 seconds for a response by default. Large batches or the Pro profile may need longer; set `antigravity.timeout_seconds` (positive number, at most 86400) in configuration. A timed-out batch fails without automatic retry or paid fallback; committed batches remain resumable.
+Each Antigravity batch waits up to 600 seconds for a response by default. Large batches or the Pro profile may need longer; set `antigravity.timeout_seconds` (positive number, at most 86400) in configuration. Codex has the same default and `codex.timeout_seconds`. A timed-out batch fails without automatic retry or paid fallback; committed batches remain resumable.
 
 Dedicated bibliography pages remain source-only, including their headings. Detection uses bibliography semantics on the XHTML body, or a sole leading heading exactly matching Bibliography, References, Works Cited, or their supported Chinese equivalents. Filenames and prose mentions do not trigger exclusion. Mixed pages with additional headings stay translatable; bibliographies with subsection headings may require future section-level support. Table cells also remain source-only.
 
@@ -133,7 +145,7 @@ Each successfully validated batch saves accumulated translations and provenance 
 uv run bookweaver book.epub --output translated.epub
 ```
 
-Running that command again restores matching segments. A fully restored book is repackaged without further translation calls. Save progress includes checkpoint bytes and elapsed time. Input or segmenter mismatches cannot be forced; language, effort, profile, prompt, or batching changes require explicit `--force-resume`. Concrete model changes produce a continuity warning. Known schema-v1 checkpoints can be imported without rewriting their original files; incompatible or incomplete state stops clearly.
+Running that command again restores matching segments. A fully restored book is repackaged without further translation calls. Save progress includes checkpoint bytes and elapsed time. Input or segmenter mismatches cannot be forced; language, effort, profile, prompt, or batching changes require explicit `--force-resume`. Concrete model changes produce a continuity warning, except that a resume crossing a Codex model also requires `--force-resume`. Known schema-v1 checkpoints can be imported without rewriting their original files; incompatible or incomplete state stops clearly.
 
 ## Paid API
 
@@ -165,7 +177,7 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. Markdown/PDF adapters are retained behind `--allow-isolated-format`; EPUB glossary/resume controls do not apply there. DOCX is rejected. Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
 
-The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex integration/comparison is deferred.
+The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9); quality comparison has not run.
 
 ```bash
 uv run ruff check .

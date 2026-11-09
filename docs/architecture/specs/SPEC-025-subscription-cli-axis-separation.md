@@ -2,7 +2,7 @@
 specId: SPEC-025
 title: Subscription CLI Runtimes with Separated Model Axes
 status: Draft for owner review (2026-11-07)
-implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phases 3-4 not started
+implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code and Phase 4 not started
 priority: P1 - Runtime Reliability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-09
@@ -174,31 +174,43 @@ Initial presets (proposal for owner review):
 | antigravity | flash | `gemini-3.8-flash` | medium, high | experiment | Layer 1; kept for effort comparison (low is the normal choice for translation); probed automatically on first use |
 | antigravity | pro | `gemini-4-argon` | low | experiment | Layer 2 (agy 1.5.3 probe, both protocols) |
 | antigravity | pro | `gemini-4-argon` | high | experiment | Layer 1; probed automatically on first use |
-| codex | flash / pro | tbd after roster read | tbd | experiment | none yet |
+| codex | flash | `gpt-6-luna` (tier default), `gpt-6.1-terra` | low | experiment | Luna Layer 2 (codex-cli 0.167.0 probe); Terra Layer 1, probed automatically on first use |
+| codex | pro | `gpt-6.1-sol` (tier default), `gpt-6-astra` | low | experiment | Sol Layer 2 (codex-cli 0.167.0 probe); Astra Layer 1, probed automatically on first use |
 | claude-code | flash / pro | `claude-sonnet-5-5` / `claude-opus-5-5` | low | experiment | none yet |
 | anthropic / gemini API | flash / pro | as pinned in SPEC-024 | vendor-pinned | manual (paid) | Layer 2 offline only |
+
+### 3.9 Codex decisions (owner, 2026-11-09)
+
+Evidence comes from running Codex CLI 0.167.0 against a local fake provider, which shows the exact request.
+
+- **Isolation.** `$CODEX_HOME/AGENTS.md` reaches every batch, and `--ignore-user-config`, `project_doc_max_bytes=0` and `agents_md.*` do not remove it. The owner's coding rules must not shape a translation, so BookWeaver uses its own home, `$XDG_STATE_HOME/bookweaver/codex-home`, with its own `codex login`. Copying or linking `auth.json` is rejected: a token refresh in one home can invalidate the other.
+- **Fixed context.** The default adds about 36,000 characters to every batch, mostly a coding-agent prompt and a skills list. `model_instructions_file`, `skills.include_instructions=false` and the `include_*_instructions=false` options cut it to about 2,800 characters. A 2,400-character multi-agent note remains; `--disable multi_agent` does not remove it.
+- **Selectable models.** The formal choice comes after test rounds, so one tier can hold several models, and the preset table is the selection surface (`--preset`, and the `/docs` dropdown). A tier default answers a bare tier, such as extraction's `pro`. `gpt-6-astra` costs the most, so it is never a tier default and runs only when selected by name. All Codex presets use low effort.
+- **Resume.** The checkpoint identity keys on tier and effort, which those models share. A resume that crosses a Codex model stops before any model call unless `--force-resume` is given; otherwise a model test finishes with no call to that model. The identity and the schema do not change. All other changes keep the existing warning, including metered vendor switches (SPEC-024) and retired or legacy models. The local API upload gives each Codex preset its own `<preset>/` folder inside the book's folder, so the dropdown can compare Codex models on one book; other presets keep their existing location.
+- **Persistent structures.** `_KNOWN_BACKENDS` gains `codex` (§5). `ai/config_schema.json` gains an optional `codex.timeout_seconds`, mirroring `antigravity.timeout_seconds`.
+- **Billing guard.** The child environment drops `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`. Discovery stops unless `codex login status` reports a ChatGPT login.
 
 ## 4. Out of scope
 
 - Detailed evaluation design (corpus, sample size, judge prompt, agreement threshold): a separate spec after Phase 3.
-- Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today.
+- Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today, except for the Codex case in §3.9.
 - Async batch APIs (previously planned as SPEC-025; renumber to SPEC-027).
 - Named presets on the CLI and the local API: SPEC-026, built on the §3.8 registry after Phase 1.
 
 ## 5. Open items before implementation
 
-Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). No prompt was sent to Codex or Claude Code, so none of these commands is proven end to end yet.
+Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). Codex then passed a live probe (`docs/plans/2026-11-09-codex-compatibility-probe.md`). No prompt was sent to Claude Code, so none of its commands is proven end to end yet.
 
-- [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. Help lists `codex debug models` for the roster; it was not run.
-- [ ] Codex: check that `exec` can never block on an approval request, so that a hang does not become a full timeout.
-- [ ] Codex: the owner pins the flash and pro families. The local cache `~/.codex/models_cache.json` lists `gpt-6.1-sol` ("latest workhorse"), `gpt-6.1-terra`, `gpt-6-astra` ("frontier"), and `gpt-6-luna` ("fast and affordable").
+- [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. `codex debug models` provides the roster.
+- [x] Codex: `exec` runs with `approval_policy="never"`, a read-only sandbox and `--disable shell_tool`; the outer deadline remains the guard against a hang. A live hang test has not run.
+- [x] Codex: models pinned in §3.9.
 - [x] Claude Code: **do not use `--bare`.** Its help says Anthropic auth is then "strictly ANTHROPIC_API_KEY or apiKeyHelper" and OAuth is never read. It would fail, or bill a key instead of the subscription. This replaces the earlier candidate flag.
 - [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools "" --no-session-persistence --output-format json --model <family> --effort <effort>`. `--restricted` ignores user, project and local settings files. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
 - [ ] Claude Code: an owner-run probe must confirm that `-p` draws on the subscription pool and not on separate credit. Help text cannot prove this.
-- [ ] Subscription guard, for both runtimes (Phase 3): a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
+- [ ] Subscription guard, Codex side done in §3.9; Claude Code side still open (Phase 3): a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
 - [ ] Antigravity: `agy --help` lists `--sandbox` ("terminal restrictions enabled"). It is not applied yet, because its effect on the prompt-file read is unknown and a change needs a probe.
-- [x] Provenance: per-segment `backend` already records the concrete runtime (`ai/ports/provider.py`). Phase 3 adds `codex` and `claude-code` to `_KNOWN_BACKENDS` in `ai/checkpoint_store.py` instead of adding a second field. Claude through agy and through Claude Code then stay distinct.
-- [ ] Registry: `resolve_profile` matches a preset on `(profile, effort)` only, and `_validate_presets` keys on runtime. Phase 3 must select the runtime explicitly, so that a new preset cannot take over `--model flash --effort low`.
+- [x] Provenance: per-segment `backend` already records the concrete runtime (`ai/ports/provider.py`). Phase 3 adds `codex` (done) and `claude-code` to `_KNOWN_BACKENDS` in `ai/checkpoint_store.py` instead of adding a second field. Claude through agy and through Claude Code then stay distinct.
+- [x] Registry: a bare tier means Antigravity unless `resolve_profile` receives a runtime; a named preset resolves through `resolve_preset`, so a new preset cannot take over `--model flash --effort low`.
 - [x] Certification cache location: `$XDG_STATE_HOME/bookweaver/runtime-certifications.json`, default `~/.local/state/bookweaver/` (Phase 1). Since Phase 2 a pass counts only for the runtime that earned it.
 
 ## 6. Phases
@@ -211,4 +223,4 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 ## 7. Verification
 
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`, `uv run tach check`.
-- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md`.
+- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` and `2026-11-09-codex-compatibility-probe.md`.

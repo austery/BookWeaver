@@ -15,6 +15,8 @@ from ai.ports.provider import (
 )
 from ai.subscription_cli_provider import (
     DEFAULT_TIMEOUT_SECONDS,
+    CliCall,
+    ProcessResult,
     PROBE_SAMPLES,
     PROBE_SYSTEM_PROMPT,
     SubscriptionCliProvider,
@@ -65,13 +67,18 @@ def _failure(returncode: int, stderr: str) -> ProviderUnavailableError:
 
 
 def _execute(args: list[str], *, cwd: Path | None, timeout: float) -> str:
-    """Run `agy` once; never expose raw source-bearing output on failure."""
+    """Run `agy` once outside the adapter; the compatibility probe script uses this."""
     try:
         result = run_owned_process(args, cwd=cwd, timeout=timeout)
     except OSError as exc:
         raise ProviderUnavailableError(
             "Unable to launch Antigravity; check the executable"
         ) from exc
+    return _interpret(result)
+
+
+def _interpret(result: ProcessResult) -> str:
+    """Usable output of a finished `agy`; never expose raw source-bearing output on failure."""
     if result.returncode:
         raise _failure(result.returncode, result.stderr)
     # Terminal status responses are short and outside translated segment blocks.
@@ -107,9 +114,16 @@ class _AntigravitySpec:
     temp_prefix = "bookweaver-agy-"
     version_args = ("--version",)
     roster_args = ("models",)
+    login_args = None
 
-    def execute(self, args: list[str], *, cwd: Path | None, timeout: float) -> str:
-        return _execute(args, cwd=cwd, timeout=timeout)
+    def child_environment(self) -> dict[str, str] | None:
+        return None
+
+    def check_login(self, result: ProcessResult) -> None:
+        raise NotImplementedError("Antigravity has no login guard")
+
+    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+        return _interpret(result)
 
     def parse_roster(self, text: str) -> set[str]:
         return {line.split()[0] for line in text.splitlines() if line.strip()}
@@ -117,22 +131,24 @@ class _AntigravitySpec:
     def is_seeded(self, version: str, model_id: str) -> bool:
         return (version, model_id) in CERTIFIED_AGY_MODELS
 
-    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> list[str]:
+    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> CliCall:
         wrapper = (
             f"Read {prompt_path} and carry out its translation instructions. "
             "Return ONLY the requested translations inline in stdout. "
             "Do not create or modify files. No commentary or markdown fences."
         )
-        return [
-            "--model",
-            str(model.family),
-            "--effort",
-            str(model.effort),
-            "--print",
-            wrapper,
-            "--print-timeout",
-            f"{timeout:g}s",
-        ]
+        return CliCall(
+            [
+                "--model",
+                str(model.family),
+                "--effort",
+                str(model.effort),
+                "--print",
+                wrapper,
+                "--print-timeout",
+                f"{timeout:g}s",
+            ]
+        )
 
 
 class AntigravityProvider(SubscriptionCliProvider):

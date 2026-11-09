@@ -43,7 +43,7 @@ depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.m
 
 [[modules]]
 path = "ai.runtime_factory"
-depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles", "ai.antigravity_provider"]
+depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles", "ai.antigravity_provider", "ai.codex_provider"]
 
 [[modules]]
 path = "ai.runtime_config"
@@ -60,6 +60,10 @@ depends_on = []
 [[modules]]
 path = "ai.subscription_cli_provider"
 depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles"]
+
+[[modules]]
+path = "ai.codex_provider"
+depends_on = ["ai.ports", "ai.model_profiles", "ai.subscription_cli_provider"]
 
 [[modules]]
 path = "ai.antigravity_provider"

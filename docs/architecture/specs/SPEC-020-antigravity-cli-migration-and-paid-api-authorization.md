@@ -364,7 +364,7 @@ Checkpoint reuse uses three explicit tiers:
 |---|---|---|
 | Absolute-hard | input file signature, input format, EPUB segmenter signature | Any mismatch invalidates the checkpoint and cannot be overridden by `--force-resume` |
 | Force-resume-overridable | target language, logical model profile, effective system-prompt hash including glossary content, batch protocol version, maximum batch characters, separator overhead | Any mismatch rejects normal resume; `--force-resume` may accept the documented quality or protocol risk |
-| Audit-only | public provider, concrete backend, concrete provider model, completion timestamp, paid API request and token metadata | Recorded for visibility; never invalidates an otherwise compatible resume |
+| Audit-only | public provider, concrete backend, concrete provider model, completion timestamp, paid API request and token metadata | Recorded for visibility; never invalidates an otherwise compatible resume (SPEC-025 §3.9 adds one exception, for a resume that crosses a Codex model) |
 
 This preserves the schema-v1 distinction between absolute-hard and force-resume-overridable fields. The intentional behavior change is narrower: concrete `provider` and `model` values stop gating resume when the v2 logical profile matches, so a same-profile provider transition does not require the coarse `--force-resume` override.
 

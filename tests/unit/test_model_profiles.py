@@ -2,7 +2,7 @@
 
 import pytest
 
-from ai.model_profiles import is_metered, resolve_profile
+from ai.model_profiles import is_metered, resolve_preset, resolve_profile
 
 
 def test_default_flash_is_pinned_to_low() -> None:
@@ -83,7 +83,7 @@ def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
     with pytest.raises(RuntimeError, match="Duplicate"):
         model_profiles._validate_presets((*presets, presets[0]))
     unnamed = model_profiles._CliPreset(
-        "codex",  # type: ignore[arg-type]  # a runtime without a prefix entry
+        "claude-code",  # type: ignore[arg-type]  # a runtime without a prefix entry
         "flash",
         "gpt-x",
         "low",
@@ -104,8 +104,33 @@ def test_presets_are_unique_default_first_and_resolve_to_their_model() -> None:
     assert presets[0].name == "agy-flash-low"
     assert len({preset.name for preset in presets}) == len(presets)
     for preset in presets:
-        selected = resolve_profile(preset.profile, effort=preset.effort, provider=preset.provider)
-        assert (selected.model_id, selected.status) == (preset.model_id, preset.status)
+        selected = resolve_preset(preset.name)
+        assert (selected.model_id, selected.status, selected.provider) == (
+            preset.model_id,
+            preset.status,
+            preset.provider,
+        )
+        assert selected.runtime == (preset.runtime if preset.provider == "cli" else None)
+
+
+def test_a_bare_tier_stays_on_antigravity_and_never_means_astra() -> None:
+    assert resolve_profile("flash", effort="low").model_id == "gemini-3.8-flash-low"
+    assert resolve_profile("flash", runtime="codex").model_id == "gpt-6-luna-low"
+    assert resolve_profile("pro", runtime="codex").model_id == "gpt-6.1-sol-low"
+    assert resolve_preset("codex-gpt-6-astra-low").model_id == "gpt-6-astra-low"
+
+
+def test_every_codex_preset_is_selectable_at_low_effort_as_an_experiment() -> None:
+    from ai.model_profiles import enabled_presets
+
+    codex = {preset.name: preset for preset in enabled_presets() if preset.runtime == "codex"}
+    assert set(codex) == {
+        "codex-gpt-6-luna-low",
+        "codex-gpt-6.1-terra-low",
+        "codex-gpt-6.1-sol-low",
+        "codex-gpt-6-astra-low",
+    }
+    assert {(preset.effort, preset.status) for preset in codex.values()} == {("low", "experiment")}
 
 
 def test_metered_presets_are_manual_and_carry_no_effort() -> None:

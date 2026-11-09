@@ -143,6 +143,9 @@ def test_presets_schema_lists_choices_as_enums(client: TestClient) -> None:
     assert preset["status"]["enum"] == ["default", "manual", "experiment"]
     assert "antigravity" in preset["runtime"]["enum"]
     assert "agy-flash-low" in schemas["PresetName"]["enum"]
+    # The /docs dropdown offers every Codex model that the preset table enables.
+    assert "codex" in preset["runtime"]["enum"]
+    assert {"codex-gpt-6-luna-low", "codex-gpt-6-astra-low"} <= set(schemas["PresetName"]["enum"])
 
 
 def test_docs_page_is_served(client: TestClient) -> None:
@@ -833,6 +836,27 @@ def test_upload_passes_the_chosen_preset_and_prompt(runs: tuple[TestClient, Path
     args = child_args(settle(client))
     assert args[args.index("--preset") + 1] == "agy-pro-low"
     assert "--prompt=-keep names" in args
+
+
+def test_each_codex_preset_works_in_its_own_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    book = tmp_path / "library" / "book"
+    response = upload(client, epub_bytes(tmp_path), preset="codex-gpt-6-luna-low")
+    assert response.status_code == 202, response.text
+    assert response.json()["output"] == str(book / "codex-gpt-6-luna-low" / "book.zh.epub")
+    assert child_args(settle(client))[0] == str(book / "book.epub")
+
+
+def test_upload_refuses_a_symlinked_codex_preset_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    book = tmp_path / "library" / "book"
+    book.mkdir(parents=True)
+    (book / "codex-gpt-6-luna-low").symlink_to(outside)
+    response = upload(client, epub_bytes(tmp_path), preset="codex-gpt-6-luna-low")
+    assert response.status_code == 400
+    assert list(outside.iterdir()) == []
 
 
 def test_upload_treats_an_empty_prompt_as_none(runs: tuple[TestClient, Path]) -> None:

@@ -6,12 +6,14 @@ import json
 
 import pytest
 
+from ai.checkpoint_store import CheckpointMismatchError
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
     EpubTranslationOptions,
     GlossarySpec,
     ModelSpec,
     ProviderSpec,
+    ResumePolicy,
     TranslationOrchestrator,
 )
 from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
@@ -215,3 +217,144 @@ def test_run_reports_saved_terms_it_reuses(
     capsys.readouterr()
     app.translate(source, tmp_path / "out.epub", options, input_format="epub")
     assert "Reusing saved terms extracted with gemini-4-argon-low" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "extraction_model,expected", [("flash", "gpt-6-luna-low"), ("pro", "gpt-6.1-sol-low")]
+)
+def test_a_codex_run_extracts_terms_on_codex_and_records_its_runtime(
+    tmp_path: Path, extraction_model: str, expected: str
+) -> None:
+    """Astra is the translation model here, yet a bare tier never spends Astra on extraction."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source,
+        tmp_path / "out.epub",
+        EpubTranslationOptions(
+            config={},
+            model=ModelSpec(preset="codex-gpt-6-astra-low"),
+            glossary=GlossarySpec(extract=True, extraction_model=extraction_model),
+        ),
+        input_format="epub",
+    )
+    assert factory.audits[-1]["extraction_model"] == expected
+    assert factory.audits[-1]["runtime"] == "codex"
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    records = json.loads(checkpoint.read_text())["segments"].values()
+    assert {(r["provider"], r["backend"], r["model"]) for r in records} == {
+        ("cli", "codex", "gpt-6-astra-low")
+    }
+
+
+def test_an_antigravity_checkpoint_does_not_silently_resume_on_codex(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    app.translate(source, output, EpubTranslationOptions(config={}), input_format="epub")
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    before = checkpoint.read_bytes()
+    assert {r["backend"] for r in json.loads(before)["segments"].values()} == {"antigravity"}
+
+    with pytest.raises(CheckpointMismatchError, match="model"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(config={}, model=ModelSpec(preset="codex-gpt-6-luna-low")),
+            input_format="epub",
+        )
+    assert checkpoint.read_bytes() == before
+    continued = app.translate(
+        source,
+        output,
+        EpubTranslationOptions(
+            config={},
+            model=ModelSpec(preset="codex-gpt-6-luna-low"),
+            resume=ResumePolicy(force=True),
+        ),
+        input_format="epub",
+    )
+    assert continued.resumed_segments > 0
+
+
+def test_a_codex_model_change_stops_before_extraction_spends_quota(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+    output = tmp_path / "out.epub"
+    app.translate(source, output, EpubTranslationOptions(config={}), input_format="epub")
+    calls = len(factory.requests)
+
+    with pytest.raises(CheckpointMismatchError, match="gemini-3.8-flash-low"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(
+                config={},
+                model=ModelSpec(preset="codex-gpt-6-luna-low"),
+                glossary=GlossarySpec(extract=True),
+            ),
+            input_format="epub",
+        )
+    assert len(factory.requests) == calls
+
+
+def test_a_metered_vendor_switch_keeps_its_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    for preset in ("gemini-flash", "anthropic-flash"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(config={}, model=ModelSpec(preset=preset)),
+            input_format="epub",
+        )
+    assert "Mixed-model continuation" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "next_preset", ["agy-flash-low", "codex-gpt-6.1-terra-low", "anthropic-flash"]
+)
+def test_a_resume_leaving_a_codex_model_stops(tmp_path: Path, next_preset: str) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    first = EpubTranslationOptions(config={}, model=ModelSpec(preset="codex-gpt-6-luna-low"))
+    app.translate(source, output, first, input_format="epub")
+    with pytest.raises(CheckpointMismatchError, match="gpt-6-luna-low"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(config={}, model=ModelSpec(preset=next_preset)),
+            input_format="epub",
+        )
+
+
+def test_a_retired_model_keeps_its_warning_when_resuming_on_codex(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    app.translate(source, output, EpubTranslationOptions(config={}), input_format="epub")
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    data = json.loads(checkpoint.read_text())
+    for record in data["segments"].values():
+        record["model"] = "gemini-3.1-pro-low"
+    checkpoint.write_text(json.dumps(data))
+    app.translate(
+        source,
+        output,
+        EpubTranslationOptions(config={}, model=ModelSpec(preset="codex-gpt-6-luna-low")),
+        input_format="epub",
+    )
+    assert "Mixed-model continuation" in capsys.readouterr().out

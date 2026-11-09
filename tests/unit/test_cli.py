@@ -2512,6 +2512,20 @@ class TestNamedPresets:
             "allow_paid_api": False,
         }
 
+    def test_a_codex_preset_reaches_the_application_by_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A tier and an effort cannot tell two Codex models apart, so the name must travel."""
+        seen: list[cli_module.EpubTranslationOptions] = []
+        monkeypatch.setattr(
+            cli_module, "translate_epub", lambda _in, _out, options: seen.append(options)
+        )
+        entry_module.main(
+            ["book.epub", "--output", "out.epub", "--preset", "codex-gpt-6.1-terra-low"]
+        )
+        assert seen[0].model.preset == "codex-gpt-6.1-terra-low"
+        assert (seen[0].model.effort, seen[0].provider.name) == ("low", "cli")
+
     def test_metered_preset_keeps_the_paid_consent_flag_separate(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

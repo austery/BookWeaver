@@ -17,11 +17,11 @@ An older orchestration path retained only until an explicit retirement or archiv
 _Avoid_: Alternate pipeline, secondary supported path
 
 **Model Profile**:
-The logical quality-and-workload tier a translation runs at — flash or pro — independent of which concrete provider model realizes it. It is the unit of resume compatibility; concrete provider model strings are provenance, not identity.
+The logical quality-and-workload tier a translation runs at — flash or pro — independent of which concrete provider model realizes it. It is the unit of resume compatibility; concrete provider model strings are provenance, not identity. One exception: a resume that crosses a Codex model stops without `--force-resume` (SPEC-025 §3.9).
 _Avoid_: model, model name, alias, lite
 
 **Preset**:
-A named, owner-enabled selection of model profile, effort, and provider that one run uses. It is what a person chooses; the separate settings behind it are not.
+A named, owner-enabled selection of model profile, effort, provider, and concrete model that one run uses. It is what a person chooses; the separate settings behind it are not.
 _Avoid_: row, mode, model
 
 **Effort**:
