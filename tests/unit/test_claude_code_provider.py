@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.claude_code_provider import ClaudeCodeProvider
+from ai.adapters.providers.claude_code_provider import ClaudeCodeProvider
 from ai.model_profiles import resolve_preset
 from ai.ports.provider import (
     OutputTruncatedError,

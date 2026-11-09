@@ -9,9 +9,9 @@ import pytest
 
 from tests.runtime_fakes import NoAuditFactory
 
-from ai.antigravity_provider import AntigravityProvider
+from ai.adapters.providers.antigravity_provider import AntigravityProvider
 from ai.checkpoint_store import CheckpointError, CheckpointMismatchError
-from ai.model_profiles import ResolvedModel
+from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
 from ai.orchestration import (
     TranslationOrchestrator,
     EpubTranslationOptions,
@@ -39,7 +39,12 @@ class OfflineFactory(NoAuditFactory):
         remaining_chars: int,
     ) -> ITranslationProvider:
         if self.executable:
-            return AntigravityProvider(model, protocol=protocol, executable=str(self.executable))
+            return AntigravityProvider(
+                model,
+                protocol=protocol,
+                executable=str(self.executable),
+                certified_models=CERTIFIED_AGY_MODELS,
+            )
         calls = self.calls
 
         class Provider(ITranslationProvider):

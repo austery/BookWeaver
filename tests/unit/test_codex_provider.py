@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai.codex_provider import CodexProvider, default_codex_home
+from ai.adapters.providers.codex_provider import CodexProvider, default_codex_home
 from ai.model_profiles import resolve_preset
 from ai.ports.provider import (
     ProviderAuthenticationError,

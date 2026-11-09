@@ -12,10 +12,10 @@ from dataclasses import asdict, dataclass
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
-from ai.claude_code_provider import ClaudeCodeProvider
-from ai.codex_provider import CodexProvider
-from ai.model_profiles import ResolvedModel, is_metered
+from ai.adapters.providers.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
+from ai.adapters.providers.claude_code_provider import ClaudeCodeProvider
+from ai.adapters.providers.codex_provider import CodexProvider
+from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel, is_metered
 from ai.ports.provider import (
     ITranslationProvider,
     OutputTruncatedError,
@@ -298,7 +298,10 @@ class DefaultProviderFactory:
                     model, protocol=protocol, timeout_seconds=_cli_timeout(config, "claude_code")
                 )
             return AntigravityProvider(
-                model, protocol=protocol, timeout_seconds=_cli_timeout(config, "antigravity")
+                model,
+                certified_models=CERTIFIED_AGY_MODELS,
+                protocol=protocol,
+                timeout_seconds=_cli_timeout(config, "antigravity"),
             )
         if not self._authorized:
             if not allow_paid_api:

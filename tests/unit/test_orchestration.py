@@ -119,7 +119,6 @@ def test_cli_does_not_import_concrete_runtime_adapters() -> None:
     tree = ast.parse(inspect.getsource(ai.cli))
     forbidden = (
         "ai.adapters",
-        "ai.antigravity_provider",
         "ai.runtime_factory",
         "ai.checkpoint_store",
     )

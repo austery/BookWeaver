@@ -6,14 +6,14 @@ import json
 import re
 from pathlib import Path
 
-from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
+from ai.ports.model import ResolvedModel
 from ai.ports.provider import (
     ProviderAuthenticationError,
     ProviderQuotaError,
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from ai.subscription_cli_provider import (
+from ai.adapters.providers.subscription_cli_provider import (
     DEFAULT_TIMEOUT_SECONDS,
     CliCall,
     ProcessResult,
@@ -116,6 +116,9 @@ class _AntigravitySpec:
     roster_args: tuple[str, ...] | None = ("models",)
     login_args = None
 
+    def __init__(self, certified_models: frozenset[tuple[str, str]]) -> None:
+        self._certified_models = certified_models
+
     def child_environment(self) -> dict[str, str] | None:
         return None
 
@@ -129,7 +132,7 @@ class _AntigravitySpec:
         return {line.split()[0] for line in text.splitlines() if line.strip()}
 
     def is_seeded(self, version: str, model_id: str) -> bool:
-        return (version, model_id) in CERTIFIED_AGY_MODELS
+        return (version, model_id) in self._certified_models
 
     def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> CliCall:
         wrapper = (
@@ -158,6 +161,10 @@ class AntigravityProvider(SubscriptionCliProvider):
         self,
         model: ResolvedModel,
         *,
+        # (agy version, concrete model) pairs with recorded probe evidence; any other pair is
+        # probed before its first batch. Required, so a caller that forgets it cannot silently
+        # spend quota on a probe: the composition root passes the registry's seed list.
+        certified_models: frozenset[tuple[str, str]],
         executable: str = "agy",
         temp_root: Path | None = None,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
@@ -166,7 +173,7 @@ class AntigravityProvider(SubscriptionCliProvider):
         certification_path: Path | None = None,
     ) -> None:
         super().__init__(
-            _AntigravitySpec(),
+            _AntigravitySpec(certified_models),
             model,
             executable=executable,
             temp_root=temp_root,

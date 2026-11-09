@@ -15,14 +15,14 @@ import json
 import os
 from pathlib import Path
 
-from ai.model_profiles import ResolvedModel
+from ai.ports.model import ResolvedModel
 from ai.ports.provider import (
     OutputTruncatedError,
     ProviderAuthenticationError,
     ProviderQuotaError,
     ProviderUnavailableError,
 )
-from ai.subscription_cli_provider import (
+from ai.adapters.providers.subscription_cli_provider import (
     DEFAULT_TIMEOUT_SECONDS,
     CliCall,
     ProcessResult,
