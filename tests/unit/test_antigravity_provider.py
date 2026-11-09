@@ -9,6 +9,7 @@ from ai.antigravity_provider import AntigravityProvider
 from ai.model_profiles import resolve_profile
 from ai.ports.provider import (
     ProviderAuthenticationError,
+    ProviderQuotaError,
     ProviderTimeoutError,
     ProviderUnavailableError,
     TranslationError,
@@ -288,3 +289,83 @@ def test_translation_probe_accepts_output_that_keeps_the_source_language(tmp_pat
     outputs = provider.translate_batch(["garden", "moon"], system_prompt="Translate into English")
     assert outputs == ["garden", "moon"]
     assert len(_model_calls(log)) == 2
+
+
+def fake_agy_that_fails(tmp_path: Path, stderr_lines: list[str], status: int) -> str:
+    executable = tmp_path / "agy"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        'if sys.argv[1:] == ["models"]:\n'
+        '    print("gemini-3.8-flash-low\\tGemini 3.8 Flash (Low)")\n'
+        'elif sys.argv[1:] == ["--version"]:\n'
+        '    print("1.1.27")\n'
+        "else:\n"
+        f"    sys.stderr.write({chr(10).join(stderr_lines)!r} + chr(10))\n"
+        f"    raise SystemExit({status})\n"
+    )
+    executable.chmod(0o700)
+    return str(executable)
+
+
+def failing_provider(tmp_path: Path, executable: str) -> AntigravityProvider:
+    return AntigravityProvider(resolve_profile(), executable=executable)
+
+
+def test_quota_error_names_the_model_and_the_reset_time(tmp_path: Path) -> None:
+    short = (
+        "RESOURCE_EXHAUSTED (code 429): Individual quota reached. "
+        "Please upgrade your subscription to increase your limits. Resets in 134h6m30s."
+    )
+    executable = fake_agy_that_fails(
+        tmp_path,
+        [
+            "error: Individual quota reached.",
+            "AGY_ERROR: "
+            + json.dumps({"short_error": short, "status": "RESOURCE_EXHAUSTED", "error_code": 429}),
+        ],
+        3,
+    )
+    with pytest.raises(ProviderQuotaError) as caught:
+        failing_provider(tmp_path, executable).translate_batch(["garden"], system_prompt="x")
+    message = str(caught.value)
+    assert "quota" in message.lower()
+    assert "134h6m30s" in message
+    assert "gemini-3.8-flash-low" in message
+
+
+def test_other_agy_error_is_shown_with_its_status(tmp_path: Path) -> None:
+    executable = fake_agy_that_fails(
+        tmp_path,
+        ["AGY_ERROR: " + json.dumps({"short_error": "UNAVAILABLE (code 503): try later"})],
+        4,
+    )
+    with pytest.raises(ProviderUnavailableError) as caught:
+        failing_provider(tmp_path, executable).translate_batch(["garden"], system_prompt="x")
+    assert not isinstance(caught.value, ProviderQuotaError)
+    assert "status 4" in str(caught.value) and "UNAVAILABLE (code 503)" in str(caught.value)
+
+
+def test_raw_stderr_stays_private_and_the_error_names_the_log_folder(tmp_path: Path) -> None:
+    executable = fake_agy_that_fails(tmp_path, ["secret source passage"], 2)
+    with pytest.raises(ProviderUnavailableError) as caught:
+        failing_provider(tmp_path, executable).translate_batch(["garden"], system_prompt="x")
+    assert "secret source passage" not in str(caught.value)
+    assert "status 2" in str(caught.value)
+    assert ".gemini/antigravity-cli/log" in str(caught.value)
+
+
+def test_a_damaged_error_line_falls_back_to_the_status(tmp_path: Path) -> None:
+    executable = fake_agy_that_fails(tmp_path, ["AGY_ERROR: {not json", "AGY_ERROR: []"], 3)
+    with pytest.raises(ProviderUnavailableError) as caught:
+        failing_provider(tmp_path, executable).translate_batch(["garden"], system_prompt="x")
+    assert "status 3" in str(caught.value)
+
+
+def test_a_long_error_is_cut(tmp_path: Path) -> None:
+    executable = fake_agy_that_fails(
+        tmp_path, ["AGY_ERROR: " + json.dumps({"short_error": "x" * 5000})], 4
+    )
+    with pytest.raises(ProviderUnavailableError) as caught:
+        failing_provider(tmp_path, executable).translate_batch(["garden"], system_prompt="x")
+    assert len(str(caught.value)) < 600

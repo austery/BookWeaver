@@ -1137,3 +1137,26 @@ def test_docs_page_does_not_offer_the_old_row_field(client: TestClient) -> None:
     upload_body = schema["paths"]["/runs/upload"]["post"]["requestBody"]["content"]
     ref = upload_body["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[1]
     assert "row" not in schema["components"]["schemas"][ref]["properties"]
+
+
+def test_child_output_reaches_the_log_while_the_run_is_live(tmp_path: Path) -> None:
+    script = tmp_path / "quiet_child.py"
+    script.write_text('import time\nprint("PROGRESS 1 of 10")\ntime.sleep(30)\n')
+    app = local_api.create_app(
+        state_dir=tmp_path / "state",
+        child_command=(sys.executable, str(script)),
+        library_dir=tmp_path / "library",
+    )
+    with TestClient(app, base_url=BASE_URL) as client:
+        start(client, tmp_path)
+        try:
+            deadline = time.monotonic() + 10
+            tail: list[str] = []
+            while time.monotonic() < deadline:
+                tail = client.get("/runs/current").json()["log_tail"]
+                if "PROGRESS 1 of 10" in tail:
+                    break
+                time.sleep(0.05)
+            assert "PROGRESS 1 of 10" in tail
+        finally:
+            client.post("/runs/current/stop")

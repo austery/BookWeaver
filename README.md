@@ -57,6 +57,8 @@ Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user inter
 5. Press **Execute**. The translation starts at once and uses quota or money, as the preset says.
 6. Use `GET /runs/current` to read the state, the progress, and the last log lines.
 
+A failed run shows its reason in the last log lines. If the Antigravity quota is used up, the line names the model and the time until the quota resets.
+
 The book and its translation stay in one folder. `<book name>` is the uploaded file name without `.epub`, not the title inside the book.
 
 ```text
@@ -93,6 +95,10 @@ curl -X POST http://127.0.0.1:8765/runs \
 - The translation runs as a separate `bookweaver` process. It keeps running if you stop the server. A restarted server can still show and stop it, but cannot read its exit code.
 - A stop keeps the saved batches for a later run. It loses the batch in progress. On a paid preset, the vendor may already have charged for that batch.
 - The log of each run is in `.bookweaver_runs/<run_id>.log` beside the output file. The current run record is `$XDG_STATE_HOME/bookweaver/current-run.json` (default `~/.local/state/bookweaver/`).
+
+### Term extraction
+
+Before the first translation batch, a run extracts the book's key terms and uses them for the whole book. The default configuration uses the `pro` profile for this step, even when the preset is a `flash` one, so the step draws on Pro quota. The log says when the two models differ. To change the model, set `terminology_extraction.extraction_model` in the configuration. The owner's earlier tests found Pro better at this step, so a change to `flash` can lower the quality of the terms.
 
 ## Batch size and fidelity
 

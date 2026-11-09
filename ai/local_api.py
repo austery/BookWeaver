@@ -539,6 +539,8 @@ def create_app(
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
+                # A child writing to a file buffers its output; the log must stay current.
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 start_new_session=True,
             )
         # Phase 2: the exact kernel start time makes a later PID reuse detectable.

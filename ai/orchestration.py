@@ -344,6 +344,13 @@ class TranslationOrchestrator:
                     extraction_used = extraction_selection
                     active_requested_effort = None
                     active_provider = None
+                    if extraction_selection.model_id != model.model_id:
+                        print(
+                            f"[glossary] Term extraction uses {extraction_selection.model_id}, "
+                            f"not the translation model {model.model_id} "
+                            "(terminology_extraction.extraction_model); this draws on its quota.",
+                            flush=True,
+                        )
                     extractor = factory.create(
                         extraction_selection,
                         protocol="delimiter",
