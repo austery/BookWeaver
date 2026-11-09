@@ -58,8 +58,12 @@ path = "ai.model_profiles"
 depends_on = []
 
 [[modules]]
-path = "ai.antigravity_provider"
+path = "ai.subscription_cli_provider"
 depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles"]
+
+[[modules]]
+path = "ai.antigravity_provider"
+depends_on = ["ai.ports", "ai.model_profiles", "ai.subscription_cli_provider"]
 
 [[modules]]
 path = "ai.prompt_preparation"
