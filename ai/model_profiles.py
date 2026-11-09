@@ -90,7 +90,7 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         "agy 1.5.3 roster 2026-11-07; probed automatically on first use",
     ),
     # Owner decision 2026-11-09: several models stay selectable until test rounds pick one, all at
-    # low thinking. Astra costs the most, so no bare tier ever resolves to it.
+    # low effort. Astra costs the most, so no bare tier ever resolves to it.
     _CliPreset(
         "codex", "flash", "gpt-6-luna", "low", "experiment", 2, _CODEX_LIVE_EVIDENCE, "gpt-6-luna"
     ),
@@ -206,8 +206,8 @@ if any(provider not in METERED_PROVIDERS for provider, _ in _API_MODELS):
 class Preset:
     """One named, owner-enabled selection shown to users (SPEC-026 §2.2).
 
-    A preset fixes provider, tier and effort; ``--preset`` and the local API resolve it to the
-    same selection the separate flags produce.
+    A preset fixes provider, tier, effort and concrete model; ``--preset`` and the local API
+    resolve it by name. The separate flags reach only the tier default on Antigravity or a vendor.
     """
 
     name: str

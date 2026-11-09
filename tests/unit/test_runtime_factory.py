@@ -255,12 +255,41 @@ def test_unknown_antigravity_key_is_rejected() -> None:
         validate_config({"antigravity": {"print_timeout": 600}})
 
 
-def test_a_codex_preset_builds_the_codex_runtime_with_its_own_deadline() -> None:
-    from ai.codex_provider import CodexProvider
+def test_a_codex_preset_reaches_codex_with_its_own_deadline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from ai import subscription_cli_provider
     from ai.model_profiles import resolve_preset
+    from ai.subscription_cli_provider import ProcessResult
 
-    factory = DefaultProviderFactory()
-    provider = factory.create(
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))  # keeps the login and probe record out
+    deadlines: dict[str, float] = {}
+    roster = json.dumps(
+        {
+            "models": [
+                {
+                    "slug": "gpt-6.1-sol",
+                    "visibility": "list",
+                    "supported_reasoning_levels": [{"effort": "low"}],
+                }
+            ]
+        }
+    )
+
+    def execute(args: list[str], *, cwd: object, timeout: float, **_: object) -> ProcessResult:
+        if args[1:] == ["login", "status"]:
+            return ProcessResult(0, "", "Logged in using ChatGPT")
+        if args[1:] == ["--version"]:
+            return ProcessResult(0, "codex-cli 0.167.0", "")
+        if args[1:] == ["debug", "models"]:
+            return ProcessResult(0, roster, "")
+        deadlines["batch"] = timeout
+        output = Path(args[args.index("--output-last-message") + 1])
+        output.write_text("".join(f'<segment id="{i}">译文</segment>' for i in (1, 2, 3)))
+        return ProcessResult(0, "", "")
+
+    monkeypatch.setattr(subscription_cli_provider, "run_owned_process", execute)
+    provider = DefaultProviderFactory().create(
         resolve_preset("codex-gpt-6.1-sol-low"),
         protocol="segment_tags",
         config=validate_config({"codex": {"timeout_seconds": 90}}),
@@ -268,7 +297,6 @@ def test_a_codex_preset_builds_the_codex_runtime_with_its_own_deadline() -> None
         remaining_chars=1,
     )
 
-    assert isinstance(provider, CodexProvider)
+    assert len(provider.translate_batch(["a", "b", "c"], system_prompt="Translate")) == 3
     assert provider.backend == "codex"
-    assert provider._timeout == 90
-    assert factory._runtime["runtime"] == "codex"
+    assert deadlines["batch"] == 90 + 30

@@ -1,6 +1,6 @@
 # Codex compatibility probe (2026-11-09)
 
-**Result:** `gpt-6-luna` and `gpt-6.1-sol` at low thinking pass on codex-cli 0.167.0, through the private ChatGPT login. This proves the path runs. It says nothing about book quality.
+**Result:** `gpt-6-luna` and `gpt-6.1-sol` at low effort pass on codex-cli 0.167.0, through the private ChatGPT login. This proves the path runs. It says nothing about book quality.
 
 The owner authorized these calls in the session. They used synthetic passages and one tiny synthetic EPUB, with no book text. `gpt-6.1-terra` and `gpt-6-astra` were not called.
 

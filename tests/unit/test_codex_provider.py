@@ -13,6 +13,14 @@ from ai.ports.provider import (
     ProviderUnavailableError,
 )
 
+_BILLING_VARIABLES = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CODEX_ACCESS_TOKEN",
+    "CODEX_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+)
 _ROSTER = {
     "models": [
         {
@@ -75,7 +83,7 @@ def _provider(tmp_path: Path, executable: str) -> CodexProvider:
 def test_batch_runs_locked_down_with_the_prompt_on_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL"):
+    for name in _BILLING_VARIABLES:
         monkeypatch.setenv(name, "must-not-reach-the-child")
     executable, log = _codex(tmp_path)
     provider = _provider(tmp_path, executable)
@@ -95,10 +103,20 @@ def test_batch_runs_locked_down_with_the_prompt_on_stdin(
     assert 'approval_policy="never"' in args
     for flag in ("--ephemeral", "--ignore-user-config", "--ignore-rules", "--json"):
         assert flag in args
+    assert args[args.index("--disable") + 1] == "shell_tool"
+    assert 'forced_login_method="chatgpt"' in args
+    for option in (
+        "skills.include_instructions",
+        "include_apps_instructions",
+        "include_environment_context",
+        "include_permissions_instructions",
+        "include_collaboration_mode_instructions",
+    ):
+        assert f"{option}=false" in args
     assert args[-1] == "-"
     assert "Reply with only the requested text" in batch["instructions"]
     assert batch["env"]["CODEX_HOME"] == str(tmp_path / "home")
-    for name in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL"):
+    for name in _BILLING_VARIABLES:
         assert name not in batch["env"]
 
 

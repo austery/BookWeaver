@@ -149,6 +149,24 @@ def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel
     return (model.runtime or "antigravity") if model.provider == "cli" else "any_llm"
 
 
+def _refuse_codex_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
+    """Stop a resume that crosses a Codex model, so a model test cannot finish with no call to it.
+
+    The identity keys on tier and effort, which several Codex models share. Other model changes
+    keep their mixed-model warning (SPEC-024), and a retired or legacy model is not a test choice.
+    """
+    enabled = enabled_presets()
+    others = {record.model for record in records.values()} - {model.model_id}
+    others &= {preset.model_id for preset in enabled}
+    codex = {preset.model_id for preset in enabled if preset.runtime == "codex"}
+    if others and (model.runtime == "codex" or others & codex):
+        raise CheckpointMismatchError(
+            f"Checkpoint mismatch: model; it holds {sorted(others)}, not {model.model_id}. "
+            "Use another output folder to compare models, or --force-resume to continue "
+            "this book on the new model"
+        )
+
+
 class TranslationOrchestrator:
     """Own one invocation's provider construction and checkpoint lifetime."""
 
@@ -317,13 +335,15 @@ class TranslationOrchestrator:
                 checkpoint_directory = directory
                 if identity is not None:
                     # Validate the complete document and known hard fields before any external work.
-                    store.load(
+                    saved = store.load(
                         identity,
                         segment_ids=segment_ids,
                         force=resume.force,
                         hard_only=True,
                         legacy_input_signature=legacy_signature,
                     )
+                    if not resume.force:
+                        _refuse_codex_model_change(saved, model)
             glossary_path = glossary.path
             request = resolve_glossary_request(
                 glossary=str(glossary_path) if glossary_path else None,
@@ -409,17 +429,6 @@ class TranslationOrchestrator:
                 else {}
             )
             previous_models = {record.model for record in records.values()}
-            # The identity keys on tier and effort, which several models can share. Reusing another
-            # enabled model's text would make a model test finish with no call to that model.
-            other_enabled = (previous_models - {model.model_id}) & {
-                preset.model_id for preset in enabled_presets()
-            }
-            if other_enabled and not resume.force:
-                raise CheckpointMismatchError(
-                    f"Checkpoint mismatch: model; it holds {sorted(other_enabled)}, not "
-                    f"{model.model_id}. Use another output folder to compare models, or "
-                    "--force-resume to continue this book on the new model"
-                )
             if previous_models - {model.model_id}:
                 print(
                     f"[resume] Mixed-model continuation: {sorted(previous_models)} -> {model.model_id}; {len(records)} restored segments. Voice or terminology may change."

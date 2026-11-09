@@ -838,6 +838,15 @@ def test_upload_passes_the_chosen_preset_and_prompt(runs: tuple[TestClient, Path
     assert "--prompt=-keep names" in args
 
 
+def test_each_codex_preset_works_in_its_own_folder(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    book = tmp_path / "library" / "book"
+    response = upload(client, epub_bytes(tmp_path), preset="codex-gpt-6-luna-low")
+    assert response.status_code == 202, response.text
+    assert response.json()["output"] == str(book / "codex-gpt-6-luna-low" / "book.zh.epub")
+    assert child_args(settle(client))[0] == str(book / "book.epub")
+
+
 def test_upload_treats_an_empty_prompt_as_none(runs: tuple[TestClient, Path]) -> None:
     client, tmp_path = runs
     assert upload(client, epub_bytes(tmp_path), prompt="").status_code == 202

@@ -277,3 +277,43 @@ def test_an_antigravity_checkpoint_does_not_silently_resume_on_codex(tmp_path: P
         input_format="epub",
     )
     assert continued.resumed_segments > 0
+
+
+def test_a_codex_model_change_stops_before_extraction_spends_quota(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+    output = tmp_path / "out.epub"
+    app.translate(source, output, EpubTranslationOptions(config={}), input_format="epub")
+    calls = len(factory.requests)
+
+    with pytest.raises(CheckpointMismatchError, match="gemini-3.8-flash-low"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(
+                config={},
+                model=ModelSpec(preset="codex-gpt-6-luna-low"),
+                glossary=GlossarySpec(extract=True),
+            ),
+            input_format="epub",
+        )
+    assert len(factory.requests) == calls
+
+
+def test_a_metered_vendor_switch_keeps_its_warning(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    for preset in ("gemini-flash", "anthropic-flash"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(config={}, model=ModelSpec(preset=preset)),
+            input_format="epub",
+        )
+    assert "Mixed-model continuation" in capsys.readouterr().out

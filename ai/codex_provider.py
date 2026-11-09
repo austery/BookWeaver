@@ -136,7 +136,7 @@ class _CodexSpec:
             ) from exc
 
     def is_seeded(self, version: str, model_id: str) -> bool:
-        return False  # No recorded evidence yet: every pair runs the automatic probe.
+        return False  # Every pair probes with the run's own prompt; the recorded probe did not.
 
     def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> CliCall:
         workspace = prompt_path.parent

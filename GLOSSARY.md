@@ -21,7 +21,7 @@ The logical quality-and-workload tier a translation runs at — flash or pro —
 _Avoid_: model, model name, alias, lite
 
 **Preset**:
-A named, owner-enabled selection of model profile, effort, and provider that one run uses. It is what a person chooses; the separate settings behind it are not.
+A named, owner-enabled selection of model profile, effort, provider, and concrete model that one run uses. It is what a person chooses; the separate settings behind it are not.
 _Avoid_: row, mode, model
 
 **Effort**:
