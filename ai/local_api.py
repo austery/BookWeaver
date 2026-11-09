@@ -30,7 +30,7 @@ from typing import Annotated, Literal
 
 import python_multipart  # noqa: F401 - Form fields need it; a missing one must fail at import.
 import uvicorn
-from fastapi import Body, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -426,6 +426,15 @@ def _store_upload(upload: UploadFile, destination: Path) -> bool:
         partial.unlink(missing_ok=True)
 
 
+async def _refuse_old_row_field(request: Request) -> None:
+    """An ignored old field would silently run the default preset and spend its quota.
+
+    A dependency reads the form, because a parameter here would appear on the /docs page.
+    """
+    if "row" in await request.form():
+        raise HTTPException(400, "The field `row` is now `preset`; nothing was started")
+
+
 def create_app(
     *,
     port: int = DEFAULT_PORT,
@@ -551,34 +560,9 @@ def create_app(
         ).start()
         return _status(record, child)
 
-    @app.post(
-        "/runs",
-        status_code=202,
-        response_model=RunStatus,
-        summary="Start one run from paths on this Mac",
-        description=(
-            "Starts `bookweaver <source> --output <output> --preset <preset>` in the background. "
-            "A metered preset needs `allow_paid_api`. Only one run at a time. "
-            "To choose a file instead of typing a path, use `POST /runs/upload`."
-        ),
-    )
-    def start_run(
-        body: Annotated[
-            RunRequest,
-            Body(
-                openapi_examples={
-                    "default": {
-                        "summary": "Required fields only",
-                        "value": {
-                            "source": "/absolute/path/book.epub",
-                            "output": "/absolute/path/book.zh.epub",
-                            "preset": DEFAULT_PRESET.value,
-                        },
-                    }
-                }
-            ),
-        ],
-    ) -> RunStatus:
+    # For scripts: hidden from /docs, so the page has one way to start a run (SPEC-026 §7.7).
+    @app.post("/runs", status_code=202, response_model=RunStatus, include_in_schema=False)
+    def start_run(body: RunRequest) -> RunStatus:
         preset = orchestration.find_preset(body.preset.value)
         _check_consent(preset, body.allow_paid_api)
         source = Path(body.source).expanduser().resolve()
@@ -605,6 +589,7 @@ def create_app(
     @app.post(
         "/runs/upload",
         status_code=202,
+        dependencies=[Depends(_refuse_old_row_field)],
         response_model=RunStatus,
         summary="Upload a book and translate it",
         description=(
@@ -635,11 +620,7 @@ def create_app(
             bool,
             Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
-        row: Annotated[str | None, Form(include_in_schema=False)] = None,
     ) -> RunStatus:
-        # An ignored old field would silently run the default preset and spend its quota.
-        if row is not None:
-            raise HTTPException(400, "The field `row` is now `preset`; nothing was started")
         selected = orchestration.find_preset(preset.value)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:

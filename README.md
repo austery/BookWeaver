@@ -78,8 +78,9 @@ The run log and the saved progress are in the same folder.
 | Endpoint | Action |
 |---|---|
 | `GET /presets` | List the enabled presets, the same as `bookweaver presets --json`. |
-| `POST /runs` | Start one translation from paths on this Mac, with no upload. Only one can run at a time. |
 | `POST /runs/current/stop` | Stop the run, the same as Ctrl-C on the CLI. |
+
+Scripts can start a translation from paths on this Mac with `POST /runs`. The `/docs` page does not show this endpoint. Only one translation can run at a time.
 
 ```bash
 curl -X POST http://127.0.0.1:8765/runs \
