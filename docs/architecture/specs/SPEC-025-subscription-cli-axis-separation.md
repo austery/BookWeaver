@@ -2,7 +2,7 @@
 specId: SPEC-025
 title: Subscription CLI Runtimes with Separated Model Axes
 status: Draft for owner review (2026-11-07)
-implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code and Phase 4 not started
+implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code request captured offline (2026-11-09), not implemented; Phase 4 not started
 priority: P1 - Runtime Reliability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-09
@@ -199,15 +199,16 @@ Evidence comes from running Codex CLI 0.167.0 against a local fake provider, whi
 
 ## 5. Open items before implementation
 
-Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). Codex then passed a live probe (`docs/plans/2026-11-09-codex-compatibility-probe.md`). No prompt was sent to Claude Code, so none of its commands is proven end to end yet.
+Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). Codex then passed a live probe (`docs/plans/2026-11-09-codex-compatibility-probe.md`). Claude Code then ran against a local fake endpoint (`docs/plans/2026-11-09-claude-code-request-capture.md`), which shows the request it builds. No prompt was sent to Anthropic through Claude Code, so its commands are not proven end to end yet.
 
 - [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. `codex debug models` provides the roster.
 - [x] Codex: `exec` runs with `approval_policy="never"`, a read-only sandbox and `--disable shell_tool`; the outer deadline remains the guard against a hang. A live hang test has not run.
 - [x] Codex: models pinned in §3.9.
 - [x] Claude Code: **do not use `--bare`.** Its help says Anthropic auth is then "strictly ANTHROPIC_API_KEY or apiKeyHelper" and OAuth is never read. It would fail, or bill a key instead of the subscription. This replaces the earlier candidate flag.
-- [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools "" --no-session-persistence --output-format json --model <family> --effort <effort>`. `--restricted` ignores user, project and local settings files. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
+- [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools= --no-session-persistence --output-format json --model <family> --effort <effort> --system-prompt <text>`. The capture on 2.1.311 shows that `--restricted` keeps the owner's `CLAUDE.md`, auto-memory, skills and plugins out of the request; its help text promises only that it ignores settings files, so repeat the capture after an upgrade. `--system-prompt` replaces about 4,200 characters of coding-agent prompt and removes git status. `--tools=` replaces `--tools ""`: a lost empty value makes `--tools` swallow the next flag and still exit 0. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
+- [ ] Claude Code prompt guards (Phase 3), from the capture: a prompt that starts with `/` runs as a local command, with no request, exit 0, `is_error: false` and `num_turns: 0`, so the spec must reject such a prompt and treat `num_turns: 0` as a failure; `@path` in the prompt inlines a file from the working directory even with no tools, so the working directory must be empty and the prompt file must live elsewhere.
 - [ ] Claude Code: an owner-run probe must confirm that `-p` draws on the subscription pool and not on separate credit. Help text cannot prove this.
-- [ ] Subscription guard, Codex side done in §3.9; Claude Code side still open (Phase 3): a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
+- [ ] Subscription guard, Codex side done in §3.9; Claude Code side still open (Phase 3): a key in the environment can silently turn a subscription run into a metered call. The child environment drops `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY`. The capture confirms the risk for Claude Code: with a key in the environment, every request used the key and not the claude.ai login. The Claude Code child must also drop `ANTHROPIC_BASE_URL`, `CLAUDECODE` and the `CLAUDE_CODE_*` variables that a parent Claude Code session exports; `CLAUDE_CODE_SIMPLE` is the variable `--bare` sets. Discovery stops unless `claude auth status` reports `authMethod: claude.ai`, or `codex login status` reports a ChatGPT login.
 - [ ] Antigravity: `agy --help` lists `--sandbox` ("terminal restrictions enabled"). It is not applied yet, because its effect on the prompt-file read is unknown and a change needs a probe.
 - [x] Provenance: per-segment `backend` already records the concrete runtime (`ai/ports/provider.py`). Phase 3 adds `codex` (done) and `claude-code` to `_KNOWN_BACKENDS` in `ai/checkpoint_store.py` instead of adding a second field. Claude through agy and through Claude Code then stay distinct.
 - [x] Registry: a bare tier means Antigravity unless `resolve_profile` receives a runtime; a named preset resolves through `resolve_preset`, so a new preset cannot take over `--model flash --effort low`.
@@ -223,4 +224,4 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 ## 7. Verification
 
 - `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest -q`, `uv run tach check`.
-- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` and `2026-11-09-codex-compatibility-probe.md`.
+- Live probes are recorded separately in `docs/plans/`, as in `2026-11-07-antigravity-1.5.3-compatibility-probe.md` and `2026-11-09-codex-compatibility-probe.md`. Offline captures go there too, as in `2026-11-09-claude-code-request-capture.md`.
