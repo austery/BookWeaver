@@ -1198,6 +1198,28 @@ def test_upload_refuses_an_unknown_extraction_model(runs: tuple[TestClient, Path
     assert library_files(tmp_path) == []
 
 
+def test_upload_leaves_a_whole_book_scan_off_by_default(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    assert upload(client, epub_bytes(tmp_path)).status_code == 202
+    assert "--glossary-mode" not in child_args(settle(client))
+
+
+def test_upload_passes_an_explicit_whole_book_scan(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), glossary_mode="deep-scan")
+    assert response.status_code == 202, response.text
+    args = child_args(settle(client))
+    assert args[args.index("--glossary-mode") + 1] == "deep-scan"
+
+
+def test_upload_refuses_an_unknown_glossary_mode(runs: tuple[TestClient, Path]) -> None:
+    client, tmp_path = runs
+    response = upload(client, epub_bytes(tmp_path), glossary_mode="tier-3")
+    assert response.status_code == 422
+    assert_nothing_started(client, tmp_path)
+    assert library_files(tmp_path) == []
+
+
 def test_path_endpoint_leaves_the_extraction_model_to_the_configuration(
     runs: tuple[TestClient, Path],
 ) -> None:

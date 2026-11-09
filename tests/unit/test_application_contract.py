@@ -19,7 +19,7 @@ from ai.orchestration import (
     TranslationOrchestrator,
 )
 from ai.ports.provider import ITranslationProvider
-from tests.unit.test_orchestration import make_epub
+from tests.unit.test_orchestration import make_epub, make_indexed_epub
 
 
 @dataclass(frozen=True)
@@ -86,10 +86,27 @@ def test_application_resolves_profile_and_batch_precedence(
     assert sum(len(request.segments) for request in factory.requests) == 2
 
 
+def test_automatic_terms_stop_a_book_without_an_index_before_any_model_call(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    factory = RecordingFactory()
+    with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+        TranslationOrchestrator(provider_factory=factory).translate(
+            source,
+            tmp_path / "out.epub",
+            EpubTranslationOptions(config={}, glossary=GlossarySpec(mode="auto", extract=True)),
+            input_format="epub",
+        )
+    assert factory.requests == []
+    assert not (tmp_path / "out.epub").exists()
+
+
 @pytest.mark.parametrize("mode", ["auto", "deep-scan", "manual"])
 def test_glossary_selection_and_injection_through_application(tmp_path: Path, mode: str) -> None:
     source = tmp_path / "book.epub"
-    make_epub(source)
+    make_indexed_epub(source)
     manual = tmp_path / "manual.json"
     manual.write_text(
         '{"critical_terminology": [{"term": "garden", "suggested_translation": "花园", "priority": "high"}]}'

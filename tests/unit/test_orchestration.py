@@ -40,6 +40,34 @@ def make_epub(path: Path) -> None:
         )
 
 
+def make_indexed_epub(path: Path) -> None:
+    """Like make_epub, plus an index long enough for automatic term extraction.
+
+    The index is a table because table cells stay source-only, so the book still has
+    the same two segments as make_epub.
+    """
+    make_epub(path)
+    entries = "".join(f"<tr><td>Garden term {number}, {number}</td></tr>" for number in range(1, 9))
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.writestr(
+            "index.xhtml",
+            f'<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Index</title></head><body><table>{entries}</table></body></html>',
+        )
+    with zipfile.ZipFile(path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    members["content.opf"] = (
+        members["content.opf"]
+        .replace(
+            b"</manifest>",
+            b'<item id="index" href="index.xhtml" media-type="application/xhtml+xml"/></manifest>',
+        )
+        .replace(b"</spine>", b'<itemref idref="index"/></spine>')
+    )
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in members.items():
+            archive.writestr(name, content)
+
+
 def test_epub_application_resumes_without_constructing_provider(tmp_path: Path) -> None:
     class Provider(ITranslationProvider):
         def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:

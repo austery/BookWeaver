@@ -69,7 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--glossary-mode",
         choices=["auto", "deep-scan"],
         default=None,
-        help="Glossary request mode: auto (quick extraction) or deep-scan (comprehensive extraction)",
+        help="Term extraction mode: auto uses the book's index and stops if it has none; "
+        "deep-scan sends the whole book, which can use much more quota",
     )
     p.add_argument(
         "--glossary-min-priority",

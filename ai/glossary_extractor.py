@@ -476,10 +476,13 @@ def extract_glossary_from_epub(
         full_index: When True, translate ALL top-level index entries instead of
                     selecting the most critical ones. More comprehensive but produces
                     a larger glossary.
-        mode: Extraction mode - "auto" (Tier 1 with Tier 3 fallback), "deep-scan" (Tier 3), or legacy.
+        mode: Extraction mode - "auto" (Tier 1, stops without an index), "deep-scan" (Tier 3), or legacy.
 
     Returns:
         A report dict with keys: tier, docs, chars, candidate_count, term_count, skip_reason (optional).
+
+    Raises:
+        ValueError: When "auto" finds no usable index. No model is called.
     """
     print(f"[glossary] Extracting from: {epub_path.name}", flush=True)
     display_mode = "full-index" if full_index else mode
@@ -527,9 +530,14 @@ def extract_glossary_from_epub(
                 "term_count": terms_count,
             }
 
-        # No strong index signals — fall through to Tier 3 deep-scan
-        print("[glossary] No strong index signals, falling back to Tier 3 (deep-scan)", flush=True)
-        mode = "deep-scan"
+        # A whole-book request can use a large share of quota, so only the owner starts one.
+        raise ValueError(
+            "Cannot extract terms automatically: this EPUB has no usable back-of-book index "
+            f"(found {len(index_text)} characters of index text). Automatic extraction never "
+            "scans a whole book. To continue, ask for the whole-book scan with "
+            "--glossary-mode deep-scan (glossary_mode=deep-scan on the upload), or supply the "
+            "terms with --glossary PATH."
+        )
 
     # Tier 3: Deep-scan (whole-book extraction)
     if mode == "deep-scan":

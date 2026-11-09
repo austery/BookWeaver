@@ -16,7 +16,7 @@ from ai.orchestration import (
 )
 from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
 from tests.unit.test_application_contract import RecordingFactory
-from tests.unit.test_orchestration import make_epub
+from tests.unit.test_orchestration import make_epub, make_indexed_epub
 
 
 class AuditedFactory(RecordingFactory):
@@ -69,7 +69,7 @@ def test_factory_audit_finalizes_glossary_and_translation(
     tmp_path: Path, failure: str | None
 ) -> None:
     source = tmp_path / "book.epub"
-    make_epub(source)
+    make_indexed_epub(source)
     factory = AuditedFactory(fail_protocol=failure)
     app = TranslationOrchestrator(provider_factory=factory)
     options = EpubTranslationOptions(config={}, glossary=GlossarySpec(extract=True))
@@ -139,7 +139,7 @@ def test_audit_never_borrows_identity_from_another_request(
     tmp_path: Path, construction_failure: bool, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "book.epub"
-    make_epub(source)
+    make_indexed_epub(source)
 
     class Factory(AuditedFactory):
         def create(
@@ -190,7 +190,7 @@ def test_extraction_model_choice_overrides_the_configuration(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "book.epub"
-    make_epub(source)
+    make_indexed_epub(source)
     factory = AuditedFactory()
     options = EpubTranslationOptions(
         config={"terminology_extraction": {"enabled": True, "extraction_model": "pro"}},
@@ -207,7 +207,7 @@ def test_run_reports_saved_terms_it_reuses(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "book.epub"
-    make_epub(source)
+    make_indexed_epub(source)
     factory = AuditedFactory()
     app = TranslationOrchestrator(provider_factory=factory)
     options = EpubTranslationOptions(config={}, glossary=GlossarySpec(extract=True))

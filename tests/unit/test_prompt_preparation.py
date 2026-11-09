@@ -19,7 +19,7 @@ from ai.orchestration import EpubTranslationOptions, GlossarySpec, TranslationOr
 from ai.ports.provider import ITranslationProvider
 from ai.prompt_preparation import PromptPreparation
 from tests.unit.test_application_contract import RecordingFactory
-from tests.unit.test_orchestration import make_epub
+from tests.unit.test_orchestration import make_epub, make_indexed_epub
 
 
 @pytest.mark.parametrize(
@@ -120,7 +120,7 @@ def test_bad_template_prevents_even_glossary_provider_creation(
 
 def test_template_is_frozen_before_extraction_and_hash_matches_request(tmp_path: Path) -> None:
     source, template = tmp_path / "book.epub", tmp_path / "prompt.txt"
-    make_epub(source)
+    make_indexed_epub(source)
     original = "Translate into {TARGET_LANGUAGE}.\n{GLOSSARY_BLOCK}\n{CUSTOM_INSTRUCTIONS_BLOCK}"
     template.write_text(original)
 

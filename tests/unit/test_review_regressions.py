@@ -21,7 +21,7 @@ from ai.orchestration import (
     QualityPolicy,
 )
 from ai.ports.provider import ITranslationProvider, ProviderAuthenticationError
-from tests.unit.test_orchestration import make_epub
+from tests.unit.test_orchestration import make_epub, make_indexed_epub
 
 
 class OfflineFactory(NoAuditFactory):
@@ -239,7 +239,7 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
         tmp_path / "book.epub",
         tmp_path / ("glossary.json" if standalone else "out.epub"),
     )
-    make_epub(source)
+    make_indexed_epub(source)
     calls: list[str] = []
     constructed: list[dict[str, object]] = []
 
