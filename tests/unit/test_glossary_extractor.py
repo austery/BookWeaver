@@ -406,8 +406,7 @@ def test_validate_and_parse_glossary_rejects_non_object_root() -> None:
 
 def test_extract_glossary_from_epub_writes_json(tmp_path: Path) -> None:
     """Integration: extract_glossary_from_epub calls translate_fn and writes JSON."""
-    index_content = "".join(f"Connascence form {number}, {number}\n" for number in range(8))
-    epub = _make_minimal_epub(tmp_path, index_content=index_content, toc_content="Chapter 1")
+    epub = _make_minimal_epub(tmp_path, index_content="Connascence, 42", toc_content="Chapter 1")
     output_path = tmp_path / "glossary.json"
     model_response = json.dumps(
         {
@@ -615,6 +614,75 @@ def test_extract_glossary_auto_stops_without_an_index_and_calls_no_model(
     assert "--glossary PATH" in str(stopped.value)
     assert calls == []
     assert not output_path.exists()
+
+
+def test_extract_glossary_auto_uses_a_short_index_the_detector_confirms(tmp_path: Path) -> None:
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml", "back.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+            "OEBPS/back.xhtml": _make_xhtml(
+                '<section epub:type="index" xmlns:epub="http://www.idpf.org/2007/ops">'
+                "<h1>Index</h1><p>Connascence, 42</p></section>"
+            ),
+        },
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
+    report = extract_glossary_from_epub(
+        epub_path=epub_path,
+        output_path=tmp_path / "out.json",
+        translate_fn=capture_fn,
+    )
+    assert report["tier"] == "index"
+    assert len(calls) == 1
+    assert "Connascence" in calls[0]
+    assert "Body text here" not in calls[0]
+
+
+@pytest.mark.parametrize(("size", "stops"), [(100, True), (101, False)])
+def test_extract_glossary_auto_length_boundary_for_an_unconfirmed_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, size: int, stops: bool
+) -> None:
+    # No detector signal: only the text length can qualify this index.
+    monkeypatch.setattr("ai.glossary_extractor._select_scored_index_text", lambda _path: "")
+    monkeypatch.setattr(
+        "ai.glossary_extractor.extract_epub_index_and_toc", lambda _path: ("x" * size, "")
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+        },
+    )
+    if stops:
+        with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+            extract_glossary_from_epub(
+                epub_path=epub_path,
+                output_path=tmp_path / "out.json",
+                translate_fn=capture_fn,
+            )
+        assert calls == []
+    else:
+        report = extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=tmp_path / "out.json",
+            translate_fn=capture_fn,
+        )
+        assert report["tier"] == "index"
+        assert len(calls) == 1
 
 
 def test_extract_glossary_auto_stops_on_a_book_with_only_a_toc(

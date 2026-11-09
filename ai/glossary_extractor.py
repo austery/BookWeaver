@@ -496,8 +496,8 @@ def extract_glossary_from_epub(
             flush=True,
         )
 
-        # Check if we have strong index signals (not just TOC)
-        has_strong_index = len(index_text) > 100  # Minimum threshold for meaningful index
+        # Short text counts as an index only when the signal detector confirms it.
+        has_strong_index = len(index_text) > 100 or bool(_select_scored_index_text(epub_path))
 
         if has_strong_index:
             # Tier 1: Use index-based extraction
