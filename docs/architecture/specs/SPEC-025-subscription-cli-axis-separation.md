@@ -99,7 +99,7 @@ The owner pays for Antigravity, ChatGPT (Codex) and Claude (Claude Code) subscri
 Three routes to the same Claude model are acceptable only because each route is a different quota pool. Rules that keep this from becoming the PureSubs state-multiplication pattern:
 
 - The quota pool (= runtime) is an explicit user choice per run. There is no automatic switching between runtimes or pools.
-- Provenance records the runtime as well as the model. Today a checkpoint records `provider: cli` and `model_id`; `claude-opus-5-5` through agy and through Claude Code would be indistinguishable. Add `runtime` (`antigravity`, `codex`, `claude-code`) to per-segment provenance.
+- Provenance records the runtime as well as the model. Today a checkpoint records `provider: cli` and `model_id`; `claude-opus-5-5` through agy and through Claude Code would be indistinguishable. Record the runtime (`antigravity`, `codex`, `claude-code`) in per-segment provenance, through the existing `backend` field (§5).
 - Each runtime is one spec on the shared adapter (§3.5), never a separate provider class.
 
 ### 3.5 One CLI adapter, many specs
@@ -189,9 +189,9 @@ Initial presets (proposal for owner review):
 
 Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0.167.0, Claude Code 2.1.311, agy 1.5.3). No prompt was sent to Codex or Claude Code, so none of these commands is proven end to end yet.
 
-- [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. The roster is `codex debug models`.
+- [x] Codex flags: `-m <model>`, `-c model_reasoning_effort="<effort>"`, `-s read-only`, `--ephemeral`, `--skip-git-repo-check`, `--ignore-user-config`, `--ignore-rules`, `-C <workspace>`, `-o <file>` for the final message. The prompt can come from stdin. Help lists `codex debug models` for the roster; it was not run.
 - [ ] Codex: check that `exec` can never block on an approval request, so that a hang does not become a full timeout.
-- [ ] Codex: the owner pins the flash and pro families. `codex debug models` lists `gpt-6.1-sol` ("latest workhorse"), `gpt-6.1-terra`, `gpt-6-astra` ("frontier"), and `gpt-6-luna` ("fast and affordable").
+- [ ] Codex: the owner pins the flash and pro families. The local cache `~/.codex/models_cache.json` lists `gpt-6.1-sol` ("latest workhorse"), `gpt-6.1-terra`, `gpt-6-astra` ("frontier"), and `gpt-6-luna` ("fast and affordable").
 - [x] Claude Code: **do not use `--bare`.** Its help says Anthropic auth is then "strictly ANTHROPIC_API_KEY or apiKeyHelper" and OAuth is never read. It would fail, or bill a key instead of the subscription. This replaces the earlier candidate flag.
 - [x] Claude Code flags: `-p --restricted --strict-mcp-config --tools "" --no-session-persistence --output-format json --model <family> --effort <effort>`. `--restricted` ignores user, project and local settings files. With no tools the runtime cannot read a prompt file, so the prompt must travel on stdin; the shared adapter needs that input path.
 - [ ] Claude Code: an owner-run probe must confirm that `-p` draws on the subscription pool and not on separate credit. Help text cannot prove this.
@@ -204,8 +204,8 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 ## 6. Phases
 
 1. **Antigravity axis separation + named-preset registry (§3.8) + Argon pro + automatic probe.** Fixes both observed failures. Offline tests through the provider boundary with a fake `agy` executable: argv carries the family once and effort once; unknown version triggers probe; probe failure stops before book batches; checkpoint `model_id` is unchanged for existing flash runs.
-2. **`SubscriptionCliProvider` extraction (done 2026-11-09).** Antigravity moves onto the shared adapter with no behavior change; same tests stay green. `ai/subscription_cli_provider.py` holds the adapter; `ai/antigravity_provider.py` holds the spec.
-3. **Codex and Claude Code specs + `runtime` provenance field.** After §5 items are resolved. Fake-executable tests, then one owner-run three-passage probe per runtime.
+2. **`SubscriptionCliProvider` extraction (done 2026-11-09).** Antigravity moves onto the shared adapter with no behavior change; same tests stay green. One deliberate change: a certification now matches on runtime too, so a record from another runtime no longer counts. Existing records all name `antigravity` and stay valid. `ai/subscription_cli_provider.py` holds the adapter; `ai/antigravity_provider.py` holds the spec.
+3. **Codex and Claude Code specs + runtime provenance through `backend`.** After §5 items are resolved. The shared process call gains stdin input and an explicit child environment; a runtime spec returns them with its argv, and no spec starts its own process. Fake-executable tests, then one owner-run three-passage probe per runtime.
 4. **Evaluation spec, then quality comparison** on one already-validated book: human sample plus cross-vendor AI judge.
 
 ## 7. Verification
