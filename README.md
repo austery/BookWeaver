@@ -53,9 +53,9 @@ Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user inter
 1. Open `POST /runs/upload` on the `/docs` page and press **Try it out**.
 2. Choose the EPUB in `file` (at most 200 MiB).
 3. Confirm the output name. Leave `output_name` empty to use `<book name>.zh.epub`.
-4. Choose the `preset` from the list. The default is `agy-flash-low`.
+4. Choose the `preset` from the list. The default is `agy-flash-low`. Choose the `extraction_model`, the model that extracts the book's key terms. The default is `pro`.
 5. Press **Execute**. The translation starts at once and uses quota or money, as the preset says.
-6. Use `GET /runs/current` to read the state, the progress, and the last log lines.
+6. Use `GET /runs/current` to read the progress: compare `done_segments` with `planned_segments`. It also shows the state and the last log lines. Press **Execute** again to refresh.
 
 A failed run shows its reason in the last log lines. If the Antigravity quota is used up, the line names the model and the time until the quota resets.
 
@@ -98,7 +98,9 @@ curl -X POST http://127.0.0.1:8765/runs \
 
 ### Term extraction
 
-Before the first translation batch, a run extracts the book's key terms and uses them for the whole book. The default configuration uses the `pro` profile for this step, even when the preset is a `flash` one, so the step draws on Pro quota. The log says when the two models differ. To change the model, set `terminology_extraction.extraction_model` in the configuration. The owner's earlier tests found Pro better at this step, so a change to `flash` can lower the quality of the terms.
+Before the first translation batch, a run extracts the book's key terms and uses them for the whole book. The upload uses the `pro` profile for this step by default, even when the preset is a `flash` one, so the step draws on Pro quota. The owner's earlier tests found Pro better at this step, so `flash` can lower the quality of the terms. The log names the model that the step uses.
+
+Choose the model with `extraction_model` on the upload or `--extraction-model` on the CLI. Without the CLI flag, `POST /runs` and the CLI use `terminology_extraction.extraction_model` from the configuration. Different terms change the prompt, so a saved run does not resume with another model's terms.
 
 ## Batch size and fidelity
 

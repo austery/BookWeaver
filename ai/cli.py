@@ -59,6 +59,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--glossary", default=None, help="Path to extracted glossary JSON")
     p.add_argument(
+        "--extraction-model",
+        choices=["flash", "pro"],
+        default=None,
+        help="Model profile for term extraction; overrides the configuration and turns "
+        "extraction on",
+    )
+    p.add_argument(
         "--glossary-mode",
         choices=["auto", "deep-scan"],
         default=None,
@@ -270,7 +277,7 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("Markdown/PDF require --allow-isolated-format")
         if "--resume" in tokens or args.force_resume or args.checkpoint_dir:
             parser.error("Explicit resume is EPUB-only")
-        if args.extract_glossary or args.glossary_mode or args.glossary:
+        if args.extract_glossary or args.glossary_mode or args.glossary or args.extraction_model:
             parser.error("Glossary options are EPUB-only")
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
     model = orchestration.ModelSpec(args.model, args.effort, _is_model_flag_explicit(tokens))
@@ -287,9 +294,10 @@ def main(argv: list[str] | None = None) -> None:
             glossary=orchestration.GlossarySpec(
                 Path(args.glossary) if args.glossary else None,
                 args.glossary_mode,
-                args.extract_glossary,
+                args.extract_glossary or args.extraction_model is not None,
                 args.glossary_min_priority,
                 args.glossary_max_terms,
+                args.extraction_model,
             ),
             resume=orchestration.ResumePolicy(
                 args.resume,

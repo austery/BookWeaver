@@ -184,3 +184,34 @@ def test_audit_never_borrows_identity_from_another_request(
     )  # flash/high and pro/low are both experiment presets
     assert audit["extraction_model"] == "gemini-4-argon-low"
     assert audit["extraction_preset_status"] == "experiment"
+
+
+def test_extraction_model_choice_overrides_the_configuration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    factory = AuditedFactory()
+    options = EpubTranslationOptions(
+        config={"terminology_extraction": {"enabled": True, "extraction_model": "pro"}},
+        glossary=GlossarySpec(extract=True, extraction_model="flash"),
+    )
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source, tmp_path / "out.epub", options, input_format="epub"
+    )
+    assert factory.audits[-1]["extraction_model"] == "gemini-3.8-flash-low"
+    assert "Term extraction uses gemini-3.8-flash-low" in capsys.readouterr().out
+
+
+def test_run_reports_saved_terms_it_reuses(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = tmp_path / "book.epub"
+    make_epub(source)
+    factory = AuditedFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+    options = EpubTranslationOptions(config={}, glossary=GlossarySpec(extract=True))
+    app.translate(source, tmp_path / "out.epub", options, input_format="epub")
+    capsys.readouterr()
+    app.translate(source, tmp_path / "out.epub", options, input_format="epub")
+    assert "Reusing saved terms extracted with gemini-4-argon-low" in capsys.readouterr().out

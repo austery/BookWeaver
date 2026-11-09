@@ -60,6 +60,8 @@ PresetName = StrEnum(
 
 DEFAULT_PRESET = PresetName(orchestration.enabled_presets()[0].name)
 
+ExtractionModel = Literal["pro", "flash"]
+
 RunState = Literal["running", "finished", "failed", "stopped", "ended"]
 
 
@@ -494,6 +496,7 @@ def create_app(
         prompt: str | None,
         glossary: str | None,
         allow_paid_api: bool,
+        extraction_model: ExtractionModel | None = None,
     ) -> RunStatus:
         """Call with the store lock held."""
         try:
@@ -509,6 +512,8 @@ def create_app(
             command.append(f"--prompt={prompt}")
         if glossary is not None:
             command += ["--glossary", str(Path(glossary).expanduser().resolve())]
+        if extraction_model is not None:
+            command += ["--extraction-model", extraction_model]
         if allow_paid_api:
             command.append("--allow-paid-api")
         # Phase 1: record the run before the child exists, so a server that dies right
@@ -618,6 +623,12 @@ def create_app(
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
+        extraction_model: Annotated[
+            ExtractionModel,
+            Form(
+                description="Model profile that extracts the book's key terms before translation."
+            ),
+        ] = "pro",
         allow_paid_api: Annotated[
             bool,
             Form(description="Consent to paid calls for this run, which paid presets require."),
@@ -648,6 +659,7 @@ def create_app(
                     prompt=prompt or None,
                     glossary=None,
                     allow_paid_api=allow_paid_api,
+                    extraction_model=extraction_model,
                 )
             except (HTTPException, OSError) as exc:
                 # A refused upload must not block a corrected copy with the same name.
@@ -661,8 +673,11 @@ def create_app(
     @app.get(
         "/runs/current",
         response_model=RunStatus,
-        summary="Status of the latest run",
-        description="Refresh to update. Done segments come from the run's checkpoint.",
+        summary="Progress of the latest run",
+        description=(
+            "Compare `done_segments` with `planned_segments`; `log_tail` shows the latest log "
+            "lines. Execute again to refresh."
+        ),
     )
     def current_run() -> RunStatus:
         record = store.read()
