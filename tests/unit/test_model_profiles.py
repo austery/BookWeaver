@@ -83,7 +83,7 @@ def test_registry_validation_rejects_duplicates_and_dead_seeds() -> None:
     with pytest.raises(RuntimeError, match="Duplicate"):
         model_profiles._validate_presets((*presets, presets[0]))
     unnamed = model_profiles._CliPreset(
-        "claude-code",  # type: ignore[arg-type]  # a runtime without a prefix entry
+        "other-cli",  # type: ignore[arg-type]  # a runtime without a prefix entry
         "flash",
         "gpt-x",
         "low",
@@ -153,3 +153,18 @@ def test_unknown_preset_names_the_enabled_presets() -> None:
 
     with pytest.raises(ValueError, match=r"Unknown preset 'agy-pro-medium'.*agy-flash-low"):
         find_preset("agy-pro-medium")
+
+
+def test_claude_code_presets_name_the_model_and_stay_experiments() -> None:
+    from ai.model_profiles import enabled_presets
+
+    claude = {p.name: p for p in enabled_presets() if p.runtime == "claude-code"}
+    assert {name: (p.profile, p.model_id) for name, p in claude.items()} == {
+        "claude-sonnet-5-5-low": ("flash", "claude-sonnet-5-5-low"),
+        "claude-opus-5-5-low": ("pro", "claude-opus-5-5-low"),
+    }
+    assert {(p.provider, p.effort, p.status) for p in claude.values()} == {
+        ("cli", "low", "experiment")
+    }
+    assert resolve_preset("claude-opus-5-5-low").family == "claude-opus-5-5"
+    assert resolve_profile("flash").runtime == "antigravity"  # a bare tier never means Claude

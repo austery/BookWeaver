@@ -34,6 +34,15 @@ No request reached Anthropic. The real CLI ran against a local fake endpoint (`A
 4. **`--tools` with a lost empty value swallows the next flag and still exits 0.** A shell that drops the empty string turned `--tools "" --no-session-persistence` into `--tools --no-session-persistence`: tools stayed empty, and the session file was written. `--tools=` gave the same request as `--tools ""` and cannot lose its value.
 5. **The parent environment can change the child.** A shell started by Claude Code exports `ANTHROPIC_BASE_URL`, `CLAUDECODE`, `CLAUDE_CODE_SIMPLE` (the variable `--bare` sets) and other `CLAUDE_CODE_*` variables. The capture avoided them with `env -i`; the effect of inheriting them was not measured.
 
+## Failure behavior against the fake endpoint
+
+- With default retries, a fake HTTP 401 and a fake HTTP 429 each produced 8 requests in 100 seconds and no output before the harness killed the run.
+- With `CLAUDE_CODE_MAX_RETRIES=0` the run ends within a second with exit status 1 and a result object: `is_error: true`, `api_error_status: 429` or `401`, `num_turns: 1`, and the error text in `result`.
+- `modelUsage` names the requested model even when the endpoint's reply names another one, so it cannot confirm which model served the request.
+- A full model name such as `claude-sonnet-5-5` reaches the request unchanged.
+- Whitespace before `/` does not trigger a local command; only a first-character `/` does.
+- An empty prompt exits 1 with no output and no request.
+
 ## Arguments for the provider
 
 ```
@@ -47,7 +56,7 @@ The prompt goes on stdin, and the working directory is empty. `--output-format j
 
 - The request shape under the claude.ai login. That capture was not run, because it sends the real token through a redirect proven only for key authentication.
 - That the subscription pool pays for `-p`. An owner-run probe is still required (SPEC-025 §5).
-- Quota (429) and expired-login (401) behavior.
+- A real quota failure or a real expired login. Only the fake responses below were seen, and with key authentication.
 - Requests to other hosts, such as telemetry.
 - Any translation output; the fake endpoint returned a fixed reply.
 - Behavior on any version other than 2.1.311.

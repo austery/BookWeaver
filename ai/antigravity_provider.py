@@ -113,7 +113,7 @@ class _AntigravitySpec:
     roster_name = "agy models"
     temp_prefix = "bookweaver-agy-"
     version_args = ("--version",)
-    roster_args = ("models",)
+    roster_args: tuple[str, ...] | None = ("models",)
     login_args = None
 
     def child_environment(self) -> dict[str, str] | None:
@@ -122,7 +122,7 @@ class _AntigravitySpec:
     def check_login(self, result: ProcessResult) -> None:
         raise NotImplementedError("Antigravity has no login guard")
 
-    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+    def interpret(self, result: ProcessResult, call: CliCall) -> str:
         return _interpret(result)
 
     def parse_roster(self, text: str) -> set[str]:

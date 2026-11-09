@@ -11,7 +11,7 @@ ProviderName = Literal["cli", MeteredProvider]
 PresetStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
-CliRuntime = Literal["antigravity", "codex"]
+CliRuntime = Literal["antigravity", "codex", "claude-code"]
 # Runtime = quota pool: a subscription CLI, or the metered vendor for API presets.
 PresetRuntime = Literal[CliRuntime, MeteredProvider]
 METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))
@@ -36,9 +36,17 @@ class _CliPreset:
 
 
 # Short runtime names used in preset names; one per CliRuntime.
-_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy", "codex": "codex"}
+_RUNTIME_PREFIX: dict[CliRuntime, str] = {
+    "antigravity": "agy",
+    "codex": "codex",
+    "claude-code": "claude",
+}
 _CODEX_EVIDENCE = "offline fake-server capture only; probed automatically on first use"
 _CODEX_LIVE_EVIDENCE = "codex-cli 0.167.0 live probe 2026-11-09 (segment_tags and delimiter)"
+_CLAUDE_CODE_EVIDENCE = (
+    "Claude Code 2.1.311 offline request capture 2026-11-09; no live call; "
+    "probed automatically on first use"
+)
 
 
 # Named presets, not the Cartesian product: anything absent here is rejected before a run.
@@ -118,6 +126,28 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         _CODEX_EVIDENCE,
         "gpt-6-astra",
         tier_default=False,
+    ),
+    # The same models as the metered Anthropic presets, on the Claude subscription pool. That pool
+    # is the owner's coding quota, so both stay experiments at low effort.
+    _CliPreset(
+        "claude-code",
+        "flash",
+        "claude-sonnet-5-5",
+        "low",
+        "experiment",
+        1,
+        _CLAUDE_CODE_EVIDENCE,
+        "sonnet-5-5",
+    ),
+    _CliPreset(
+        "claude-code",
+        "pro",
+        "claude-opus-5-5",
+        "low",
+        "experiment",
+        1,
+        _CLAUDE_CODE_EVIDENCE,
+        "opus-5-5",
     ),
 )
 

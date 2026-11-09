@@ -72,7 +72,7 @@ class _CodexSpec:
     roster_name = "codex debug models"
     temp_prefix = "bookweaver-codex-"
     version_args = ("--version",)
-    roster_args = ("debug", "models")
+    roster_args: tuple[str, ...] | None = ("debug", "models")
     login_args: tuple[str, ...] | None = ("login", "status")
 
     def __init__(self, home: Path) -> None:
@@ -96,7 +96,8 @@ class _CodexSpec:
         if result.returncode or "using ChatGPT" not in result.stdout + result.stderr:
             raise self._sign_in()
 
-    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+    def interpret(self, result: ProcessResult, call: CliCall) -> str:
+        output_file = call.output_file
         failure = _turn_failure(result.stdout)
         if failure is not None:
             lowered = failure.lower()

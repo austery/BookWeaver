@@ -300,3 +300,38 @@ def test_a_codex_preset_reaches_codex_with_its_own_deadline(
     assert len(provider.translate_batch(["a", "b", "c"], system_prompt="Translate")) == 3
     assert provider.backend == "codex"
     assert deadlines["batch"] == 90 + 30
+
+
+def test_a_claude_code_preset_reaches_claude_code_with_its_own_deadline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from ai import subscription_cli_provider
+    from ai.model_profiles import resolve_preset
+    from ai.subscription_cli_provider import ProcessResult
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))  # keeps the probe record out
+    deadlines: dict[str, float] = {}
+    reply = "".join(f'<segment id="{i}">译文</segment>' for i in (1, 2, 3))
+
+    def execute(args: list[str], *, cwd: object, timeout: float, **_: object) -> ProcessResult:
+        if args[1:] == ["auth", "status"]:
+            return ProcessResult(0, json.dumps({"loggedIn": True, "authMethod": "claude.ai"}), "")
+        if args[1:] == ["--version"]:
+            return ProcessResult(0, "2.1.311 (Claude Code)", "")
+        deadlines["batch"] = timeout
+        return ProcessResult(
+            0, json.dumps({"is_error": False, "num_turns": 1, "result": reply}), ""
+        )
+
+    monkeypatch.setattr(subscription_cli_provider, "run_owned_process", execute)
+    provider = DefaultProviderFactory().create(
+        resolve_preset("claude-opus-5-5-low"),
+        protocol="segment_tags",
+        config=validate_config({"claude_code": {"timeout_seconds": 90}}),
+        allow_paid_api=False,
+        remaining_chars=1,
+    )
+
+    assert len(provider.translate_batch(["a", "b", "c"], system_prompt="Translate")) == 3
+    assert provider.backend == "claude-code"
+    assert deadlines["batch"] == 90 + 30
