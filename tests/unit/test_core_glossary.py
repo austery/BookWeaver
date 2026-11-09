@@ -105,15 +105,42 @@ def test_keep_first_translation_leaves_one_option_and_names_the_changed_terms() 
     assert changed == ["Estrangement", "Humane"]
 
 
-def test_keep_first_translation_does_not_split_a_translation_with_a_plain_slash() -> None:
+@pytest.mark.parametrize(
+    "term,translation",
+    [
+        ("I/O", "输入/输出"),
+        ("I/O", "输入 / 输出"),
+        ("read-write", "读/写"),
+        ("Supply and demand", "供给/需求"),
+        ("CRUD", "增/删/改/查"),
+        ("Network stack", "TCP/IP 协议栈"),
+    ],
+)
+def test_keep_first_translation_keeps_a_slash_that_belongs_to_the_translation(
+    term: str, translation: str
+) -> None:
     data: dict[str, object] = {
-        "critical_terminology": [{"term": "I/O", "suggested_translation": "输入/输出"}]
+        "critical_terminology": [{"term": term, "suggested_translation": translation}]
     }
 
     result, changed = keep_first_translation(data)
 
     assert result == data
     assert changed == []
+
+
+@pytest.mark.parametrize("translation", ["疏离/隔阂", "疏离 / 隔阂", "疏离／隔阂", "疏离 ／ 隔阂"])
+def test_keep_first_translation_splits_every_form_of_alternatives(translation: str) -> None:
+    data: dict[str, object] = {
+        "critical_terminology": [{"term": "Estrangement", "suggested_translation": translation}]
+    }
+
+    result, changed = keep_first_translation(data)
+
+    terms = result["critical_terminology"]
+    assert isinstance(terms, list)
+    assert terms[0]["suggested_translation"] == "疏离"
+    assert changed == ["Estrangement"]
 
 
 def test_keep_first_translation_ignores_malformed_entries() -> None:
@@ -149,3 +176,32 @@ def test_measure_term_usage_counts_each_option_and_each_missing_segment() -> Non
     assert usage["art"].consistent
     assert usage["Absent"].segments == 0
     assert usage["Absent"].consistent
+
+
+def test_measure_term_usage_does_not_count_a_shorter_option_inside_a_longer_one() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "Philosophy of mind", "suggested_translation": "心灵 / 心灵哲学"}
+    ]
+
+    usage = measure_term_usage(terms, [("philosophy of mind", "讨论心灵哲学")])
+
+    assert usage[0].option_counts == {"心灵": 0, "心灵哲学": 1}
+    assert usage[0].consistent
+
+
+def test_keep_first_translation_splits_spaced_alternatives_for_a_hyphenated_term() -> None:
+    data: dict[str, object] = {
+        "critical_terminology": [
+            {
+                "term": "Trade-union consciousness",
+                "suggested_translation": "工联主义意识 / 工联意识",
+            }
+        ]
+    }
+
+    result, changed = keep_first_translation(data)
+
+    terms = result["critical_terminology"]
+    assert isinstance(terms, list)
+    assert terms[0]["suggested_translation"] == "工联主义意识"
+    assert changed == ["Trade-union consciousness"]

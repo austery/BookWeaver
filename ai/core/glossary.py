@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
-# Spaces or a full-width slash mark alternatives. A plain slash can belong to one translation (输入/输出).
-_OPTION_SEPARATOR = re.compile(r"\s+/\s+|\s*／\s*")
+# A slash marks alternatives when spaces or Chinese text surround it. TCP/IP is one name.
+_CJK = r"\u4e00-\u9fff"
+_OPTION_SEPARATOR = re.compile(rf"\s+[/／]\s+|(?<=[{_CJK}）)])\s*[/／]\s*(?=[{_CJK}（(])")
+# A source term built from several parts can have a slash in one translation: I/O, CRUD.
+_COMPOUND_TERM = re.compile(r"[/／&+]|\s(?:[Aa]nd|[Oo]r)\s|^[A-Z0-9]{2,}$")
+# Spaces around a slash still mean alternatives for a hyphenated term; 读/写 does not.
+_SPACED_SEPARATOR = re.compile(r"\s[/／]\s")
 
 
 @dataclass(frozen=True)
@@ -66,8 +71,12 @@ class TermUsage:
         return self.missing == 0 and used <= 1
 
 
-def translation_options(translation: str) -> list[str]:
+def translation_options(term: str, translation: str) -> list[str]:
     """The alternatives a suggested translation offers; one item when it offers no choice."""
+    term = term.strip()
+    hyphen_compound = "-" in term and not _SPACED_SEPARATOR.search(translation)
+    if _COMPOUND_TERM.search(term) or hyphen_compound:
+        return [translation.strip()] if translation.strip() else []
     return [option.strip() for option in _OPTION_SEPARATOR.split(translation) if option.strip()]
 
 
@@ -84,9 +93,10 @@ def keep_first_translation(data: dict[str, object]) -> tuple[dict[str, object], 
     terms: list[object] = []
     for entry in raw_terms:
         translation = entry.get("suggested_translation") if isinstance(entry, dict) else None
-        options = translation_options(translation) if isinstance(translation, str) else []
+        term = str(entry.get("term", "")) if isinstance(entry, dict) else ""
+        options = translation_options(term, translation) if isinstance(translation, str) else []
         if len(options) > 1:
-            changed.append(str(entry.get("term", "")))
+            changed.append(term)
             entry = {**entry, "suggested_translation": options[0]}
         terms.append(entry)
     return {**data, "critical_terminology": terms}, changed
@@ -110,16 +120,21 @@ def measure_term_usage(
         words = r"\s+".join(re.escape(word) for word in term.split())
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
-        options = translation_options(translation)
-        usage.append(
-            TermUsage(
-                term,
-                translation,
-                len(matched),
-                {option: sum(option in target for target in matched) for option in options},
-                sum(not any(option in target for option in options) for target in matched),
-            )
-        )
+        options = translation_options(term, translation)
+        # The longest first, so that 心灵哲学 does not also count as 心灵.
+        ordered = sorted(options, key=len, reverse=True)
+        counts = dict.fromkeys(options, 0)
+        missing = 0
+        for target in matched:
+            remaining = target
+            found = False
+            for option in ordered:
+                if option in remaining:
+                    counts[option] += 1
+                    remaining = remaining.replace(option, "")
+                    found = True
+            missing += not found
+        usage.append(TermUsage(term, translation, len(matched), counts, missing))
     return usage
 
 
