@@ -40,6 +40,7 @@
 /ai/core/config.py @austery
 /config/config.json.example @austery
 /ai/antigravity_provider.py @austery
+/ai/subscription_cli_provider.py @austery
 /ai/runtime_factory.py @austery
 /ai/local_api.py @austery
 /ai/model_probe.py @austery
