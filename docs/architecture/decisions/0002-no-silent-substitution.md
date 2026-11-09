@@ -1,6 +1,6 @@
 # ADR-0002: Stop instead of silently changing the model, effort or output
 
-Status: Proposed (2026-11-09). Merging this file is the owner's acceptance.
+Status: Accepted (2026-11-09). The owner approved it by merging PR 77.
 
 ## Context
 

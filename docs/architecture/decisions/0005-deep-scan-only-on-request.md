@@ -1,6 +1,6 @@
 # ADR-0005: A whole-book term scan runs only when a person asks
 
-Status: Proposed (2026-11-09). Merging this file is the owner's acceptance.
+Status: Accepted (2026-11-09). The owner approved it by merging PR 77.
 
 ## Context
 

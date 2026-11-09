@@ -1,6 +1,6 @@
 # ADR-0004: One atomic checkpoint document for each run
 
-Status: Proposed (2026-11-09). Merging this file is the owner's acceptance.
+Status: Accepted (2026-11-09). The owner approved it by merging PR 77.
 
 ## Context
 

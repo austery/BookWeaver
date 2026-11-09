@@ -1,6 +1,6 @@
 # ADR-0001: Subscription tools first; paid calls only by consent for one run
 
-Status: Proposed (2026-11-09). Merging this file is the owner's acceptance.
+Status: Accepted (2026-11-09). The owner approved it by merging PR 77.
 
 ## Context
 
