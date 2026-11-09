@@ -26,7 +26,7 @@ from ai.adapters.providers._delimiter import (
     join_segments,
     split_response,
 )
-from ai.model_profiles import ResolvedModel
+from ai.ports.model import ResolvedModel
 from ai.ports.provider import (
     ITranslationProvider,
     ProviderQuotaError,

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from ai.antigravity_provider import AntigravityProvider
-from ai.model_profiles import resolve_profile
+from ai.model_profiles import CERTIFIED_AGY_MODELS, resolve_profile
 from ai.ports.provider import (
     ProviderAuthenticationError,
     ProviderQuotaError,
@@ -35,7 +35,10 @@ def test_temp_file_protocol_returns_ordered_translations_and_cleans_up(tmp_path:
     workspace = tmp_path / "prompts"
     workspace.mkdir()
     provider = AntigravityProvider(
-        resolve_profile(), executable=str(executable), temp_root=workspace
+        resolve_profile(),
+        executable=str(executable),
+        temp_root=workspace,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     assert provider.translate_batch(["garden", "moon"], system_prompt="Translate to Chinese") == [
         "花园",
@@ -77,6 +80,7 @@ def test_failure_cleans_prompt_and_does_not_retry(
         temp_root=workspace,
         timeout_seconds=0.2,
         outer_grace_seconds=0,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     with pytest.raises(error):
         provider.translate_batch(["garden", "moon"], system_prompt="Translate")
@@ -93,9 +97,9 @@ def test_missing_model_stops_before_translation(tmp_path: Path) -> None:
     )
     executable.chmod(0o700)
     with pytest.raises(ProviderUnavailableError, match="absent"):
-        AntigravityProvider(resolve_profile(), executable=str(executable)).translate_batch(
-            ["garden"], system_prompt="Translate"
-        )
+        AntigravityProvider(
+            resolve_profile(), executable=str(executable), certified_models=CERTIFIED_AGY_MODELS
+        ).translate_batch(["garden"], system_prompt="Translate")
 
 
 def _fake_agy(
@@ -143,7 +147,9 @@ def _model_calls(log: Path) -> list[list[str]]:
 
 def test_effort_is_passed_once_with_the_model_family(tmp_path: Path) -> None:
     executable, log = _fake_agy(tmp_path, version="1.5.3", reply="translate")
-    provider = AntigravityProvider(resolve_profile(), executable=str(executable))
+    provider = AntigravityProvider(
+        resolve_profile(), executable=str(executable), certified_models=CERTIFIED_AGY_MODELS
+    )
     assert provider.translate_batch(["garden"], system_prompt="Translate") == ["译文1"]
     [argv] = _model_calls(log)
     assert argv[argv.index("--model") + 1] == "gemini-3.8-flash"
@@ -155,7 +161,10 @@ def test_unknown_version_is_probed_once_then_certified(tmp_path: Path) -> None:
     executable, log = _fake_agy(tmp_path, version="9.9.9", reply="translate")
     cache = tmp_path / "state" / "certifications.json"
     provider = AntigravityProvider(
-        resolve_profile(), executable=str(executable), certification_path=cache
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=cache,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     assert provider.translate_batch(["garden"], system_prompt="Translate") == ["译文1"]
     assert len(_model_calls(log)) == 2  # synthetic probe, then the book batch
@@ -163,7 +172,10 @@ def test_unknown_version_is_probed_once_then_certified(tmp_path: Path) -> None:
     assert "9.9.9" in cache.read_text() and "gemini-3.8-flash-low" in cache.read_text()
 
     second = AntigravityProvider(
-        resolve_profile(), executable=str(executable), certification_path=cache
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=cache,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     second.translate_batch(["moon"], system_prompt="Translate")
     assert len(_model_calls(log)) == 3  # cached certification: no second probe
@@ -177,6 +189,7 @@ def test_failed_probe_stops_before_any_book_batch(tmp_path: Path) -> None:
         executable=str(executable),
         certification_path=cache,
         protocol="delimiter",  # the fixed Chinese probe prompt rejects untranslated output
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     with pytest.raises(ProviderUnavailableError, match="compatibility probe"):
         provider.translate_batch(["garden"], system_prompt="Translate")
@@ -192,6 +205,7 @@ def test_delimiter_protocol_probe_is_certified_separately(tmp_path: Path) -> Non
         executable=str(executable),
         certification_path=cache,
         protocol="delimiter",
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     assert provider.translate_batch(["garden", "moon"], system_prompt="Extract") == [
         "译文1",
@@ -203,9 +217,9 @@ def test_delimiter_protocol_probe_is_certified_separately(tmp_path: Path) -> Non
 
 def test_argv_never_carries_the_suffixed_model_id(tmp_path: Path) -> None:
     executable, log = _fake_agy(tmp_path, version="1.5.3", reply="translate")
-    AntigravityProvider(resolve_profile(), executable=str(executable)).translate_batch(
-        ["garden"], system_prompt="Translate"
-    )
+    AntigravityProvider(
+        resolve_profile(), executable=str(executable), certified_models=CERTIFIED_AGY_MODELS
+    ).translate_batch(["garden"], system_prompt="Translate")
     [argv] = _model_calls(log)
     assert "gemini-3.8-flash-low" not in argv
 
@@ -219,6 +233,7 @@ def test_seeded_version_still_probes_an_unseeded_model(tmp_path: Path) -> None:
         resolve_profile("pro", effort="high"),
         executable=str(executable),
         certification_path=cache,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     provider.translate_batch(["garden"], system_prompt="Translate")
     assert len(_model_calls(log)) == 2  # probe for the unseeded pair, then the book batch
@@ -234,6 +249,7 @@ def test_each_protocol_needs_its_own_pass(tmp_path: Path) -> None:
             executable=str(executable),
             certification_path=cache,
             protocol=protocol,
+            certified_models=CERTIFIED_AGY_MODELS,
         ).translate_batch(["garden", "moon"], system_prompt="Translate")
     assert len(_model_calls(log)) == 4  # a segment_tags pass does not certify delimiter
 
@@ -244,6 +260,7 @@ def test_probe_parse_error_halts_instead_of_splitting(tmp_path: Path) -> None:
         resolve_profile(),
         executable=str(executable),
         certification_path=tmp_path / "certifications.json",
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     with pytest.raises(ProviderUnavailableError, match="compatibility probe") as caught:
         provider.translate_batch(["garden"], system_prompt="Translate")
@@ -257,7 +274,10 @@ def test_invalid_certification_record_stops_loudly(tmp_path: Path, content: byte
     cache = tmp_path / "certifications.json"
     cache.write_bytes(content)
     provider = AntigravityProvider(
-        resolve_profile(), executable=str(executable), certification_path=cache
+        resolve_profile(),
+        executable=str(executable),
+        certification_path=cache,
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     with pytest.raises(ProviderUnavailableError, match="fix or remove it"):
         provider.translate_batch(["garden"], system_prompt="Translate")
@@ -273,6 +293,7 @@ def test_unwritable_certification_path_is_a_provider_error(tmp_path: Path) -> No
         resolve_profile(),
         executable=str(executable),
         certification_path=blocker / "certifications.json",
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     with pytest.raises(ProviderUnavailableError, match="Unwritable"):
         provider.translate_batch(["garden"], system_prompt="Translate")
@@ -285,6 +306,7 @@ def test_translation_probe_accepts_output_that_keeps_the_source_language(tmp_pat
         resolve_profile(),
         executable=str(executable),
         certification_path=tmp_path / "certifications.json",
+        certified_models=CERTIFIED_AGY_MODELS,
     )
     outputs = provider.translate_batch(["garden", "moon"], system_prompt="Translate into English")
     assert outputs == ["garden", "moon"]
@@ -309,7 +331,9 @@ def fake_agy_that_fails(tmp_path: Path, stderr_lines: list[str], status: int) ->
 
 
 def failing_provider(tmp_path: Path, executable: str) -> AntigravityProvider:
-    return AntigravityProvider(resolve_profile(), executable=executable)
+    return AntigravityProvider(
+        resolve_profile(), executable=executable, certified_models=CERTIFIED_AGY_MODELS
+    )
 
 
 def test_quota_error_names_the_model_and_the_reset_time(tmp_path: Path) -> None:

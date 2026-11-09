@@ -37,10 +37,16 @@ SAMPLES = list(PROBE_SAMPLES)
 PROFILES = [("flash", "low"), ("pro", "low")]
 
 
-def probe(executable: str, profile: str, effort: str, timeout: float) -> bool:
+def probe(executable: str, version: str, profile: str, effort: str, timeout: float) -> bool:
     model = resolve_profile(profile, effort=effort, provider="cli")
     provider = AntigravityProvider(
-        model, executable=executable, timeout_seconds=timeout, protocol=PROTOCOL_SEGMENT_TAGS
+        model,
+        # Inspect by eye only: treat this pair as seeded, so the provider skips its automatic
+        # probe and leaves the certification cache untouched.
+        certified_models=frozenset({(version, model.model_id)}),
+        executable=executable,
+        timeout_seconds=timeout,
+        protocol=PROTOCOL_SEGMENT_TAGS,
     )
     system_prompt = build_system_prompt("zh", immersive=True)
     started = time.monotonic()
@@ -75,12 +81,8 @@ def main() -> int:
     for line in roster.splitlines():
         if line.strip():
             print(f"  {line.strip()}")
-    # Inspect by eye only: skip the automatic probe and leave the certification cache untouched.
-    antigravity_provider.CERTIFIED_AGY_MODELS = frozenset(
-        (version, resolve_profile(p, effort=e).model_id) for p, e in PROFILES
-    )
 
-    results = [probe(args.executable, p, e, args.timeout) for p, e in PROFILES]
+    results = [probe(args.executable, version, p, e, args.timeout) for p, e in PROFILES]
     passed = all(results)
     print(f"\nRESULT: {'PASS' if passed else 'FAIL'} for Antigravity {version}")
     return 0 if passed else 1

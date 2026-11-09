@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from ai.model_profiles import ResolvedModel
+from ai.ports.model import ResolvedModel
 from ai.ports.provider import (
     ProviderAuthenticationError,
     ProviderQuotaError,

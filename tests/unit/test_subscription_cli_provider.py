@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ai.antigravity_provider import AntigravityProvider
-from ai.model_profiles import ResolvedModel, resolve_profile
+from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel, resolve_profile
 from ai.ports.provider import ProviderTimeoutError, ProviderUnavailableError
 from ai.subscription_cli_provider import CliCall, ProcessResult, SubscriptionCliProvider
 
@@ -137,5 +137,6 @@ def test_a_pass_on_one_runtime_does_not_certify_the_same_model_on_another(tmp_pa
         model,
         executable=_fake_executable(tmp_path / "agy", calls=agy_calls, batch=_reply(1)),
         certification_path=certifications,
+        certified_models=CERTIFIED_AGY_MODELS,
     ).translate_batch(["garden"], system_prompt="Translate")
     assert agy_calls.read_text().count("batch") == 2

@@ -55,23 +55,23 @@ depends_on = []
 
 [[modules]]
 path = "ai.model_profiles"
-depends_on = []
+depends_on = ["ai.ports"]
 
 [[modules]]
 path = "ai.subscription_cli_provider"
-depends_on = ["ai.ports", "ai.adapters", "ai.model_profiles"]
+depends_on = ["ai.ports", "ai.adapters"]
 
 [[modules]]
 path = "ai.codex_provider"
-depends_on = ["ai.ports", "ai.model_profiles", "ai.subscription_cli_provider"]
+depends_on = ["ai.ports", "ai.subscription_cli_provider"]
 
 [[modules]]
 path = "ai.claude_code_provider"
-depends_on = ["ai.ports", "ai.model_profiles", "ai.subscription_cli_provider"]
+depends_on = ["ai.ports", "ai.subscription_cli_provider"]
 
 [[modules]]
 path = "ai.antigravity_provider"
-depends_on = ["ai.ports", "ai.model_profiles", "ai.subscription_cli_provider"]
+depends_on = ["ai.ports", "ai.subscription_cli_provider"]
 
 [[modules]]
 path = "ai.prompt_preparation"

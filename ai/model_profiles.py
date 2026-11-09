@@ -3,15 +3,19 @@
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-ModelProfile = Literal["flash", "pro"]
-Effort = Literal["low", "medium", "high"]
-MeteredProvider = Literal["gemini", "openai", "anthropic"]
-ProviderName = Literal["cli", MeteredProvider]
-# Owner policy for a preset (SPEC-025 §3.8): default, manual (paid), or experiment (not qualified).
-PresetStatus = Literal["default", "manual", "experiment"]
+# The selection types live in the ports, because adapters consume them; this module re-exports them.
+from ai.ports.model import (
+    CliRuntime as CliRuntime,
+    Effort as Effort,
+    MeteredProvider as MeteredProvider,
+    ModelProfile as ModelProfile,
+    PresetStatus as PresetStatus,
+    ProviderName as ProviderName,
+    ResolvedModel as ResolvedModel,
+)
+
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
-CliRuntime = Literal["antigravity", "codex", "claude-code"]
 # Subscription CLIs under model trials. A resume that crosses one of their models stops, and the
 # local API gives each of their presets its own folder (SPEC-025 §3.9 and §3.10).
 TRIAL_CLI_RUNTIMES: frozenset[str] = frozenset({"codex", "claude-code"})
@@ -308,22 +312,6 @@ def find_preset(name: str) -> Preset:
     raise ValueError(
         f"Unknown preset {name!r}; enabled presets: {', '.join(r.name for r in presets)}"
     )
-
-
-@dataclass(frozen=True)
-class ResolvedModel:
-    profile: ModelProfile
-    provider: ProviderName
-    model_id: str
-    effort: Effort | None
-    # Metered providers only: requested output cap and vendor-pinned effort.
-    output_cap: int | None = None
-    api_effort: str | None = None
-    # Subscription CLI only: the family passed to the runtime with ``--effort``.
-    family: str | None = None
-    status: PresetStatus = "manual"
-    # Subscription CLI only: the quota pool this run draws on.
-    runtime: CliRuntime | None = None
 
 
 def is_metered(provider: str) -> bool:
