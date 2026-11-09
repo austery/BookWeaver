@@ -43,3 +43,11 @@ _Avoid_: authorization, always allow
 **Book Library**:
 The local collection where each uploaded book stays with its translation and saved progress.
 _Avoid_: workspace, uploads, cache
+
+**Term Extraction**:
+The step before translation that fixes the book's key terms and their translations for the whole run.
+_Avoid_: glossary generation, dictionary
+
+**Deep Scan**:
+Term Extraction that sends the whole book to a model. It runs only when a person asks for it.
+_Avoid_: Tier 3, full scan

@@ -195,6 +195,8 @@ Scope for this SPEC remains EPUB auto-extraction. Existing manual glossary injec
 |------|--------|------|
 | 2026-04-04 | 📝 草案 (Draft) | Initial adaptive strategy draft from cross-book scan and glossary miss analysis |
 | 2026-04-05 | 📝 草案 (Draft) | Reframed as a three-tier ladder with zero-dependency Tier 2 heuristics and explicit opt-in Tier 3 deep scan |
+| 2026-04-07 | 📝 草案 (Draft) | Code amendment, commit 3b745f1: Tier 2 removed, quoting "Tier 2 heuristics produced 90%+ false positives (sentence-initial caps), completely missed lowercase scientific terms". The same commit made `auto` fall back to Tier 3. That commit records no reason for the fallback, and it contradicted §3 and Phase 5 of this spec. |
+| 2026-11-09 | 📝 草案 (Draft) | Owner decision: `auto` stops with an error when a book has no usable index, before any model call. Tier 3 runs only on explicit request, as this spec first required. Tier 2 stays retired, so the sections on it here are history. Owner's reason: a deep scan uses many tokens and has not been tested on a subscription CLI. |
 
 ## 7. Related
 
