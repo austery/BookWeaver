@@ -133,7 +133,7 @@ class _CodexSpec:
             }
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise ProviderUnavailableError(
-                "Codex model roster has an unexpected shape; update ai/codex_provider.py"
+                "Codex model roster has an unexpected shape; update ai/adapters/providers/codex_provider.py"
             ) from exc
 
     def is_seeded(self, version: str, model_id: str) -> bool:
