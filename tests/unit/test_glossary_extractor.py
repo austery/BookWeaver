@@ -585,10 +585,10 @@ def test_collect_spine_blocks_keeps_content_files_with_toc_substring(tmp_path: P
     assert any("Chapter 2 content." in text for text in texts)
 
 
-def test_extract_glossary_auto_falls_back_to_deep_scan_when_no_index_signals(
+def test_extract_glossary_auto_stops_without_an_index_and_calls_no_model(
     tmp_path: Path,
 ) -> None:
-    """Auto mode must fall back to Tier 3 deep-scan when no index signals exist."""
+    """Auto mode must stop, not start a whole-book request, when the book has no index."""
     epub_path = _make_test_epub(
         tmp_path,
         files={
@@ -604,21 +604,118 @@ def test_extract_glossary_auto_falls_back_to_deep_scan_when_no_index_signals(
         calls.append(prompt)
         return _VALID_GLOSSARY_JSON
 
+    output_path = tmp_path / "out.json"
+    with pytest.raises(ValueError, match="--glossary-mode deep-scan") as stopped:
+        extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=output_path,
+            translate_fn=capture_fn,
+        )
+    assert "--glossary PATH" in str(stopped.value)
+    assert calls == []
+    assert not output_path.exists()
+
+
+def test_extract_glossary_auto_uses_a_short_index_the_detector_confirms(tmp_path: Path) -> None:
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml", "back.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+            "OEBPS/back.xhtml": _make_xhtml(
+                '<section epub:type="index" xmlns:epub="http://www.idpf.org/2007/ops">'
+                "<h1>Index</h1><p>Connascence, 42</p></section>"
+            ),
+        },
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
     report = extract_glossary_from_epub(
         epub_path=epub_path,
         output_path=tmp_path / "out.json",
         translate_fn=capture_fn,
     )
-    assert report["tier"] == "deep-scan", "No-index auto mode must fall back to Tier 3 deep-scan"
+    assert report["tier"] == "index"
     assert len(calls) == 1
-    # Tier 3 prompt should contain the chapter body text (full book scan)
-    assert "body content" in calls[0]
+    assert "Connascence" in calls[0]
+    assert "Body text here" not in calls[0]
 
 
-def test_extract_glossary_auto_toc_only_falls_back_to_deep_scan(
+@pytest.mark.parametrize(("size", "stops"), [(100, True), (101, False)])
+def test_extract_glossary_auto_length_boundary_for_an_unconfirmed_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, size: int, stops: bool
+) -> None:
+    # No detector signal: only the text length can qualify this index.
+    monkeypatch.setattr("ai.glossary_extractor._select_scored_index_text", lambda _path: "")
+    monkeypatch.setattr(
+        "ai.glossary_extractor.extract_epub_index_and_toc", lambda _path: ("x" * size, "")
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+        },
+    )
+    if stops:
+        with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+            extract_glossary_from_epub(
+                epub_path=epub_path,
+                output_path=tmp_path / "out.json",
+                translate_fn=capture_fn,
+            )
+        assert calls == []
+    else:
+        report = extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=tmp_path / "out.json",
+            translate_fn=capture_fn,
+        )
+        assert report["tier"] == "index"
+        assert len(calls) == 1
+
+
+@pytest.mark.parametrize("heading", ["Index", "INDEX:", "Searchable Terms", "索引"])
+def test_extract_glossary_auto_stops_on_an_index_page_with_only_a_heading(
+    tmp_path: Path, heading: str
+) -> None:
+    epub_path = _make_test_epub(
+        tmp_path,
+        files={
+            "OEBPS/content.opf": _make_opf(spine_items=["chapter.xhtml", "index.xhtml"]),
+            "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
+            "OEBPS/index.xhtml": f"<html><body><h1>{heading}</h1></body></html>",
+        },
+    )
+    calls: list[str] = []
+
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
+        return _VALID_GLOSSARY_JSON
+
+    with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+        extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=tmp_path / "out.json",
+            translate_fn=capture_fn,
+        )
+    assert calls == []
+
+
+def test_extract_glossary_auto_stops_on_a_book_with_only_a_toc(
     tmp_path: Path,
 ) -> None:
-    """Auto mode TOC-only books must fall back to Tier 3 deep-scan."""
+    """A table of contents alone is not enough for auto mode."""
     epub_path = _make_test_epub(
         tmp_path,
         files={
@@ -627,16 +724,19 @@ def test_extract_glossary_auto_toc_only_falls_back_to_deep_scan(
             "OEBPS/chapter.xhtml": _make_xhtml("<p>Body text here.</p>"),
         },
     )
+    calls: list[str] = []
 
-    def simple_fn(prompt: str) -> str:
+    def capture_fn(prompt: str) -> str:
+        calls.append(prompt)
         return _VALID_GLOSSARY_JSON
 
-    report = extract_glossary_from_epub(
-        epub_path=epub_path,
-        output_path=tmp_path / "out.json",
-        translate_fn=simple_fn,
-    )
-    assert report["tier"] == "deep-scan", "TOC-only must fall back to Tier 3 deep-scan"
+    with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+        extract_glossary_from_epub(
+            epub_path=epub_path,
+            output_path=tmp_path / "out.json",
+            translate_fn=capture_fn,
+        )
+    assert calls == []
 
 
 def test_extract_glossary_deep_scan_uses_dedicated_prompt(tmp_path: Path) -> None:
@@ -832,42 +932,22 @@ def test_glossary_extraction_regression_matrix_representative_classes(tmp_path: 
     assert report1["tier"] == "index"
     assert output1.exists()
 
-    # Test nonstandard-markup (should hit tier-2 via heuristic or tier-1 if signals strong)
-    output2 = tmp_path / "nonstandard" / "glossary.json"
-    report2 = extract_glossary_from_epub(
-        epub_path=nonstandard_epub,
-        output_path=output2,
-        translate_fn=mock_translate,
-        max_terms=20,
-        mode="auto",
-    )
-    # Tier depends on index signal strength
-    assert report2["tier"] in ("index", "deep-scan")
-    assert output2.exists()
-
-    # Test fiction-no-index (should hit tier-2 local shortlist)
-    output3 = tmp_path / "fiction" / "glossary.json"
-    report3 = extract_glossary_from_epub(
-        epub_path=fiction_epub,
-        output_path=output3,
-        translate_fn=mock_translate,
-        max_terms=20,
-        mode="auto",
-    )
-    assert report3["tier"] == "deep-scan"
-    assert output3.exists()
-
-    # Test low-density-narrative (should hit tier-2 with low candidate count)
-    output4 = tmp_path / "lowdensity" / "glossary.json"
-    report4 = extract_glossary_from_epub(
-        epub_path=low_density_epub,
-        output_path=output4,
-        translate_fn=mock_translate,
-        max_terms=20,
-        mode="auto",
-    )
-    assert report4["tier"] == "deep-scan"
-    assert output4.exists()
+    # Nonstandard markup and books with no index stop instead of scanning the whole book.
+    for name, epub in (
+        ("nonstandard", nonstandard_epub),
+        ("fiction", fiction_epub),
+        ("lowdensity", low_density_epub),
+    ):
+        output = tmp_path / name / "glossary.json"
+        with pytest.raises(ValueError, match="--glossary-mode deep-scan"):
+            extract_glossary_from_epub(
+                epub_path=epub,
+                output_path=output,
+                translate_fn=mock_translate,
+                max_terms=20,
+                mode="auto",
+            )
+        assert not output.exists()
 
 
 def test_deep_scan_prompt_allows_names_and_places() -> None:

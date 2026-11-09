@@ -100,6 +100,11 @@ curl -X POST http://127.0.0.1:8765/runs \
 
 Before the first translation batch, a run extracts the book's key terms and uses them for the whole book. The upload uses the `pro` profile for this step by default, even when the preset is a `flash` one, so the step draws on Pro quota. The owner's earlier tests found Pro better at this step, so `flash` can lower the quality of the terms. The log names the model that the step uses.
 
+Automatic extraction reads the book's back-of-book index and table of contents. If the book has no usable index, the run stops before it calls a model, and the log names the choices. To continue, choose one of these:
+
+- Set `glossary_mode` to `deep-scan` on the upload, or pass `--glossary-mode deep-scan` on the CLI. This sends the whole book in one request, which can use much more quota. It has no live evidence on any subscription CLI yet (issue #71).
+- Supply terms with `--glossary PATH` on the CLI.
+
 Choose the model with `extraction_model` on the upload or `--extraction-model` on the CLI. Without the CLI flag, `POST /runs` and the CLI use `terminology_extraction.extraction_model` from the configuration. Different terms change the prompt, so a saved run does not resume with another model's terms.
 
 ## Batch size and fidelity

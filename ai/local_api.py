@@ -61,6 +61,7 @@ PresetName = StrEnum(
 DEFAULT_PRESET = PresetName(orchestration.enabled_presets()[0].name)
 
 ExtractionModel = Literal["pro", "flash"]
+GlossaryMode = Literal["auto", "deep-scan"]
 
 RunState = Literal["running", "finished", "failed", "stopped", "ended"]
 
@@ -497,6 +498,7 @@ def create_app(
         glossary: str | None,
         allow_paid_api: bool,
         extraction_model: ExtractionModel | None = None,
+        glossary_mode: GlossaryMode = "auto",
     ) -> RunStatus:
         """Call with the store lock held."""
         try:
@@ -514,6 +516,8 @@ def create_app(
             command += ["--glossary", str(Path(glossary).expanduser().resolve())]
         if extraction_model is not None:
             command += ["--extraction-model", extraction_model]
+        if glossary_mode == "deep-scan":
+            command += ["--glossary-mode", "deep-scan"]
         if allow_paid_api:
             command.append("--allow-paid-api")
         # Phase 1: record the run before the child exists, so a server that dies right
@@ -629,6 +633,13 @@ def create_app(
                 description="Model profile that extracts the book's key terms before translation."
             ),
         ] = "pro",
+        glossary_mode: Annotated[
+            GlossaryMode,
+            Form(
+                description="`auto` extracts terms from the book's index and stops if it has "
+                "none. `deep-scan` sends the whole book, which can use much more quota."
+            ),
+        ] = "auto",
         allow_paid_api: Annotated[
             bool,
             Form(description="Consent to paid calls for this run, which paid presets require."),
@@ -660,6 +671,7 @@ def create_app(
                     glossary=None,
                     allow_paid_api=allow_paid_api,
                     extraction_model=extraction_model,
+                    glossary_mode=glossary_mode,
                 )
             except (HTTPException, OSError) as exc:
                 # A refused upload must not block a corrected copy with the same name.

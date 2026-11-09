@@ -44,12 +44,18 @@ def _looks_like_index_content(text: str) -> bool:
     return any(marker in sample for marker in _INDEX_CONTENT_MARKERS)
 
 
+_INDEX_HEADING_WORDS = {"index", "glossary", "searchable", "terms", "索引", "术语表"}
+
+
 def _is_placeholder_index_text(text: str) -> bool:
     """Return True for known placeholder/conversion boilerplate index pages."""
     normalized = " ".join(text.split()).strip().lower()
     if not normalized:
         return True
-    return normalized in {"converted ebook", "converted ebook dead simple python"}
+    if normalized in {"converted ebook", "converted ebook dead simple python"}:
+        return True
+    # A page with only a heading has no entries to extract terms from.
+    return set(re.findall(r"\w+", normalized)) <= _INDEX_HEADING_WORDS
 
 
 def _local_name(tag: str) -> str:
@@ -476,10 +482,13 @@ def extract_glossary_from_epub(
         full_index: When True, translate ALL top-level index entries instead of
                     selecting the most critical ones. More comprehensive but produces
                     a larger glossary.
-        mode: Extraction mode - "auto" (Tier 1 with Tier 3 fallback), "deep-scan" (Tier 3), or legacy.
+        mode: Extraction mode - "auto" (Tier 1, stops without an index), "deep-scan" (Tier 3), or legacy.
 
     Returns:
         A report dict with keys: tier, docs, chars, candidate_count, term_count, skip_reason (optional).
+
+    Raises:
+        ValueError: When "auto" finds no usable index. No model is called.
     """
     print(f"[glossary] Extracting from: {epub_path.name}", flush=True)
     display_mode = "full-index" if full_index else mode
@@ -493,8 +502,8 @@ def extract_glossary_from_epub(
             flush=True,
         )
 
-        # Check if we have strong index signals (not just TOC)
-        has_strong_index = len(index_text) > 100  # Minimum threshold for meaningful index
+        # Short text counts as an index only when the signal detector confirms it.
+        has_strong_index = len(index_text) > 100 or bool(_select_scored_index_text(epub_path))
 
         if has_strong_index:
             # Tier 1: Use index-based extraction
@@ -527,9 +536,14 @@ def extract_glossary_from_epub(
                 "term_count": terms_count,
             }
 
-        # No strong index signals — fall through to Tier 3 deep-scan
-        print("[glossary] No strong index signals, falling back to Tier 3 (deep-scan)", flush=True)
-        mode = "deep-scan"
+        # A whole-book request can use a large share of quota, so only the owner starts one.
+        raise ValueError(
+            "Cannot extract terms automatically: this EPUB has no usable back-of-book index "
+            f"(found {len(index_text)} characters of index text). Automatic extraction never "
+            "scans a whole book. To continue, ask for the whole-book scan with "
+            "--glossary-mode deep-scan (glossary_mode=deep-scan on the upload), or supply the "
+            "terms with --glossary PATH."
+        )
 
     # Tier 3: Deep-scan (whole-book extraction)
     if mode == "deep-scan":
