@@ -205,3 +205,36 @@ def test_unavailable_metered_selection_never_constructs_provider(
             source, tmp_path / "out.epub", options, input_format="epub"
         )
     assert not factory.created
+
+
+def test_a_saved_glossary_keeps_its_prompt_and_the_run_reports_term_usage(tmp_path: Path) -> None:
+    """A glossary on disk stays byte-stable for resume, even with two options for one term."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    manual = tmp_path / "manual.json"
+    manual.write_text(
+        '{"critical_terminology": [{"term": "garden", "suggested_translation": "花园 / 园子", '
+        '"priority": "high"}]}',
+        encoding="utf-8",
+    )
+    factory = RecordingFactory()
+    factory.translation = "园子"
+    output = tmp_path / "out.epub"
+
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source,
+        output,
+        EpubTranslationOptions(config={}, glossary=GlossarySpec(path=manual)),
+        input_format="epub",
+    )
+
+    assert "花园 / 园子" in factory.requests[-1].prompt
+    reports = list(tmp_path.rglob("term-consistency.json"))
+    assert len(reports) == 1
+    report = json.loads(reports[0].read_text(encoding="utf-8"))
+    assert report["terms"][0]["term"] == "garden"
+    assert report["terms"][0]["segments"] > 0
+    assert report["terms"][0]["option_counts"] == {
+        "花园": 0,
+        "园子": report["terms"][0]["segments"],
+    }

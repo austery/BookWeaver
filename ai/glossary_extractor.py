@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from ai.core.glossary import validate_model_output
+from ai.core.glossary import keep_first_translation, validate_model_output
 from ai.core.index_signal_scorer import IndexSignalScore, IndexSignalScorer
 from ai.core.local_glossary_candidates import TextBlock
 from ai.epub_package import load_epub_package, resolve_opf_href
@@ -142,7 +142,7 @@ _EXTRACTION_PROMPT_TEMPLATE = """\
   "critical_terminology": [
     {{
       "term": "原文术语",
-      "suggested_translation": "建议的中文翻译",
+      "suggested_translation": "建议的中文翻译（只写一个译法，不要列出备选）",
       "negative_constraint": "NOT 容易混淆的错误翻译（可选，仅在有易混淆对时填写）",
       "reason": "为什么这个术语容易翻译错误或需要统一翻译",
       "priority": "critical"
@@ -180,7 +180,7 @@ _DEEP_SCAN_PROMPT_TEMPLATE = """\
   "critical_terminology": [
     {{
       "term": "原文术语",
-      "suggested_translation": "建议的中文翻译",
+      "suggested_translation": "建议的中文翻译（只写一个译法，不要列出备选）",
       "negative_constraint": "NOT 容易混淆的错误翻译（可选）",
       "reason": "为什么这个术语容易翻译错误或需要统一翻译",
       "priority": "critical|high|medium"
@@ -216,7 +216,7 @@ _FULL_INDEX_PROMPT_TEMPLATE = """\
   "critical_terminology": [
     {{
       "term": "原文术语",
-      "suggested_translation": "建议中文翻译",
+      "suggested_translation": "建议的中文翻译（只写一个译法，不要列出备选）",
       "negative_constraint": "NOT 错误译法（可选）",
       "reason": "简短说明",
       "priority": "critical|high|medium"
@@ -460,7 +460,13 @@ def _validate_and_parse_glossary(raw_output: str) -> dict[str, object]:
     Raises:
         ValueError: If JSON is invalid or missing 'critical_terminology' key.
     """
-    return validate_model_output(raw_output)
+    glossary, changed = keep_first_translation(validate_model_output(raw_output))
+    if changed:
+        print(
+            f"[glossary] Kept the first of several translations for: {', '.join(changed)}",
+            flush=True,
+        )
+    return glossary
 
 
 def extract_glossary_from_epub(

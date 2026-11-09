@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
+# Spaces or a full-width slash mark alternatives. A plain slash can belong to one translation (输入/输出).
+_OPTION_SEPARATOR = re.compile(r"\s+/\s+|\s*／\s*")
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,79 @@ class GlossaryManager:
                 line += f"（{negative}）"
             lines.append(line)
         return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class TermUsage:
+    """How one glossary term was translated across the segments that contain it."""
+
+    term: str
+    translation: str
+    segments: int
+    option_counts: dict[str, int]
+    missing: int
+
+    @property
+    def consistent(self) -> bool:
+        used = sum(1 for count in self.option_counts.values() if count)
+        return self.missing == 0 and used <= 1
+
+
+def translation_options(translation: str) -> list[str]:
+    """The alternatives a suggested translation offers; one item when it offers no choice."""
+    return [option.strip() for option in _OPTION_SEPARATOR.split(translation) if option.strip()]
+
+
+def keep_first_translation(data: dict[str, object]) -> tuple[dict[str, object], list[str]]:
+    """Leave one translation per term, so a prompt cannot offer a choice that varies by batch.
+
+    Returns the glossary and the terms changed. Only a newly extracted glossary goes through
+    this: a saved glossary feeds the prompt hash, so changing it would break resume.
+    """
+    raw_terms = data.get("critical_terminology")
+    if not isinstance(raw_terms, list):
+        return data, []
+    changed: list[str] = []
+    terms: list[object] = []
+    for entry in raw_terms:
+        translation = entry.get("suggested_translation") if isinstance(entry, dict) else None
+        options = translation_options(translation) if isinstance(translation, str) else []
+        if len(options) > 1:
+            changed.append(str(entry.get("term", "")))
+            entry = {**entry, "suggested_translation": options[0]}
+        terms.append(entry)
+    return {**data, "critical_terminology": terms}, changed
+
+
+def measure_term_usage(
+    terms: Iterable[dict[str, object]], pairs: Iterable[tuple[str, str]]
+) -> list[TermUsage]:
+    """Count the translations used for each term across (source, translated) segment pairs.
+
+    This is a signal, not a verdict: a plural source form is not matched, and a sound
+    rewording counts as missing.
+    """
+    segments = list(pairs)
+    usage: list[TermUsage] = []
+    for entry in terms:
+        term = str(entry.get("term", "")).strip()
+        translation = str(entry.get("suggested_translation", "")).strip()
+        if not term:
+            continue
+        words = r"\s+".join(re.escape(word) for word in term.split())
+        pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
+        matched = [target for source, target in segments if pattern.search(source)]
+        options = translation_options(translation)
+        usage.append(
+            TermUsage(
+                term,
+                translation,
+                len(matched),
+                {option: sum(option in target for target in matched) for option in options},
+                sum(not any(option in target for option in options) for target in matched),
+            )
+        )
+    return usage
 
 
 def validate_model_output(raw_output: str) -> dict[str, object]:

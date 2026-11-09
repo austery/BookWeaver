@@ -57,6 +57,7 @@ from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
+from ai.core.glossary import GlossaryManager, measure_term_usage
 from ai.core.glossary_resolution import resolve_glossary_request
 from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import Segment, TranslatedSegment
@@ -459,7 +460,10 @@ class TranslationOrchestrator:
                 else None
             )
 
+            translated_text = {key: record.translated for key, record in records.items()}
+
             def persist(index: int, batch: list[TranslatedSegment]) -> None:
+                translated_text.update((item.id, item.translated) for item in batch)
                 batch_warnings: list[SanityWarning] = []
                 if probe.enabled:
                     batch_warnings = _sanity_check_batch(
@@ -509,6 +513,18 @@ class TranslationOrchestrator:
                 ),
             )
             result = engine.translate(source, str(output_file), on_source_loaded=loaded)
+            if glossary_path is not None and input_format == "epub":
+                _report_term_usage(
+                    glossary_path,
+                    [
+                        (segment.text, translated_text[segment.id])
+                        for segment in segments
+                        if segment.id in translated_text
+                    ],
+                    checkpoint_directory / "term-consistency.json"
+                    if checkpoint_directory is not None
+                    else output_file.with_name(output_file.name + ".term-consistency.json"),
+                )
             if warning_log is not None:
                 _log_progress(
                     "sanity_summary",
@@ -1332,6 +1348,27 @@ def _format_progress_value(value: object) -> str:
     if any(ch.isspace() for ch in text) or "=" in text or '"' in text:
         return json.dumps(text, ensure_ascii=False)
     return text
+
+
+def _report_term_usage(
+    glossary_path: Path, pairs: Sequence[tuple[str, str]], report_path: Path
+) -> None:
+    """Record how each term was translated. A finished book never fails for this report."""
+    try:
+        usage = measure_term_usage(GlossaryManager.from_json_file(glossary_path).terms, pairs)
+        drifted = sum(not item.consistent for item in usage)
+        report = {
+            "summary": {"terms": len(usage), "inconsistent": drifted},
+            "terms": [
+                {**asdict(item), "consistent": item.consistent}
+                for item in sorted(usage, key=lambda item: item.consistent)
+            ],
+        }
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (OSError, ValueError) as exc:
+        _log_progress("term_usage_not_saved", error=type(exc).__name__)
+        return
+    _log_progress("term_usage", terms=len(usage), inconsistent=drifted, report=report_path)
 
 
 def _log_progress(event: str, *, stderr: bool = False, **fields: object) -> None:
