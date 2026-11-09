@@ -143,6 +143,9 @@ def test_presets_schema_lists_choices_as_enums(client: TestClient) -> None:
     assert preset["status"]["enum"] == ["default", "manual", "experiment"]
     assert "antigravity" in preset["runtime"]["enum"]
     assert "agy-flash-low" in schemas["PresetName"]["enum"]
+    # The /docs dropdown offers every Codex model that the preset table enables.
+    assert "codex" in preset["runtime"]["enum"]
+    assert {"codex-gpt-6-luna-low", "codex-gpt-6-astra-low"} <= set(schemas["PresetName"]["enum"])
 
 
 def test_docs_page_is_served(client: TestClient) -> None:

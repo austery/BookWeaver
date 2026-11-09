@@ -7,7 +7,7 @@ import pytest
 from ai.antigravity_provider import AntigravityProvider
 from ai.model_profiles import ResolvedModel, resolve_profile
 from ai.ports.provider import ProviderTimeoutError, ProviderUnavailableError
-from ai.subscription_cli_provider import SubscriptionCliProvider, run_owned_process
+from ai.subscription_cli_provider import CliCall, ProcessResult, SubscriptionCliProvider
 
 
 class _OtherSpec:
@@ -19,9 +19,16 @@ class _OtherSpec:
     temp_prefix = "bookweaver-other-"
     version_args = ("version",)
     roster_args = ("list",)
+    login_args = None
 
-    def execute(self, args: list[str], *, cwd: Path | None, timeout: float) -> str:
-        return run_owned_process(args, cwd=cwd, timeout=timeout).stdout.strip()
+    def child_environment(self) -> dict[str, str] | None:
+        return None
+
+    def check_login(self, result: ProcessResult) -> None:
+        raise AssertionError("no login guard")
+
+    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+        return result.stdout.strip()
 
     def parse_roster(self, text: str) -> set[str]:
         return set(text.split(","))
@@ -29,8 +36,8 @@ class _OtherSpec:
     def is_seeded(self, version: str, model_id: str) -> bool:
         return False
 
-    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> list[str]:
-        return ["run", prompt_path.name]
+    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> CliCall:
+        return CliCall(["run", prompt_path.name])
 
 
 def _fake_executable(path: Path, *, calls: Path, batch: str) -> str:

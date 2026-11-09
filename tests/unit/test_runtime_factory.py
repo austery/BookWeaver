@@ -208,19 +208,22 @@ def test_invalid_api_timeout_is_rejected(value: object) -> None:
 def test_antigravity_timeout_reaches_executable_boundary(
     monkeypatch: pytest.MonkeyPatch, configured: float | None, expected: float
 ) -> None:
-    from ai import antigravity_provider
+    from ai import subscription_cli_provider
+    from ai.subscription_cli_provider import ProcessResult
 
     calls: list[tuple[list[str], float]] = []
 
-    def execute(args: list[str], *, cwd: object, timeout: float) -> str:
+    def execute(args: list[str], *, cwd: object, timeout: float, **_: object) -> ProcessResult:
         calls.append((args, timeout))
         if args[1:] == ["--version"]:
-            return "1.1.27"
+            return ProcessResult(0, "1.1.27", "")
         if args[1:] == ["models"]:
-            return "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)"
-        return '<segment id="1">花园</segment>\n<segment id="2">月亮</segment>'
+            return ProcessResult(0, "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)", "")
+        return ProcessResult(
+            0, '<segment id="1">花园</segment>\n<segment id="2">月亮</segment>', ""
+        )
 
-    monkeypatch.setattr(antigravity_provider, "_execute", execute)
+    monkeypatch.setattr(subscription_cli_provider, "run_owned_process", execute)
     config: dict[str, object] = (
         {} if configured is None else {"antigravity": {"timeout_seconds": configured}}
     )
@@ -250,3 +253,22 @@ def test_invalid_antigravity_timeout_is_rejected_before_execution(value: object)
 def test_unknown_antigravity_key_is_rejected() -> None:
     with pytest.raises(ValueError, match="print_timeout"):
         validate_config({"antigravity": {"print_timeout": 600}})
+
+
+def test_a_codex_preset_builds_the_codex_runtime_with_its_own_deadline() -> None:
+    from ai.codex_provider import CodexProvider
+    from ai.model_profiles import resolve_preset
+
+    factory = DefaultProviderFactory()
+    provider = factory.create(
+        resolve_preset("codex-gpt-6.1-sol-low"),
+        protocol="segment_tags",
+        config=validate_config({"codex": {"timeout_seconds": 90}}),
+        allow_paid_api=False,
+        remaining_chars=1,
+    )
+
+    assert isinstance(provider, CodexProvider)
+    assert provider.backend == "codex"
+    assert provider._timeout == 90
+    assert factory._runtime["runtime"] == "codex"

@@ -13,6 +13,7 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from ai.antigravity_provider import DEFAULT_TIMEOUT_SECONDS, AntigravityProvider
+from ai.codex_provider import CodexProvider
 from ai.model_profiles import ResolvedModel, is_metered
 from ai.ports.provider import (
     ITranslationProvider,
@@ -182,14 +183,14 @@ class _MeteredProvider(ITranslationProvider):
         return split_response(text, len(segments), protocol=self._protocol)
 
 
-def _antigravity_timeout(config: dict[str, object]) -> float:
-    """Per-batch Antigravity deadline from validated config, else the built-in default."""
-    section = config.get("antigravity", {})
+def _cli_timeout(config: dict[str, object], section_name: str) -> float:
+    """Per-batch subscription CLI deadline from validated config, else the built-in default."""
+    section = config.get(section_name, {})
     value = section.get("timeout_seconds") if isinstance(section, dict) else None
     if value is None:
         return DEFAULT_TIMEOUT_SECONDS
     if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-        raise ValueError("antigravity.timeout_seconds must be a positive number of seconds")
+        raise ValueError(f"{section_name}.timeout_seconds must be a positive number of seconds")
     return float(value)
 
 
@@ -276,6 +277,7 @@ class DefaultProviderFactory:
     ) -> ITranslationProvider:
         self._runtime = {
             "provider": model.provider,
+            "runtime": model.runtime,
             "model": model.model_id,
             "profile": model.profile,
             "effective_effort": model.effort,
@@ -286,8 +288,12 @@ class DefaultProviderFactory:
                 raise PaidAuthorizationError(
                     "--allow-paid-api requires a metered --provider (gemini, openai, or anthropic)"
                 )
+            if model.runtime == "codex":
+                return CodexProvider(
+                    model, protocol=protocol, timeout_seconds=_cli_timeout(config, "codex")
+                )
             return AntigravityProvider(
-                model, protocol=protocol, timeout_seconds=_antigravity_timeout(config)
+                model, protocol=protocol, timeout_seconds=_cli_timeout(config, "antigravity")
             )
         if not self._authorized:
             if not allow_paid_api:

@@ -1,8 +1,9 @@
 """One single-attempt adapter for subscription CLI runtimes (SPEC-025 §3.5).
 
-A runtime supplies a `CliRuntimeSpec` with what differs: its commands, its argv, and how it
-reports failure. This module owns what is the same for all of them: the process group, the
-outer deadline, the private prompt file, segment framing, and the version gate with its probe.
+A runtime supplies a `CliRuntimeSpec` with what differs: its commands, its argv, its child
+environment, and how it reports failure. This module owns what is the same for all of them: the
+process group, the outer deadline, the private prompt file, segment framing, and the version gate
+with its probe. No spec starts its own process.
 """
 
 from __future__ import annotations
@@ -63,22 +64,41 @@ class ProcessResult:
     stderr: str
 
 
-def run_owned_process(args: list[str], *, cwd: Path | None, timeout: float) -> ProcessResult:
+@dataclass(frozen=True)
+class CliCall:
+    """One batch invocation: arguments without the executable, and how text travels."""
+
+    args: list[str]
+    stdin: str | None = None
+    # Where the runtime writes its final message, when stdout does not carry it.
+    output_file: Path | None = None
+
+
+def run_owned_process(
+    args: list[str],
+    *,
+    cwd: Path | None,
+    timeout: float,
+    stdin: str | None = None,
+    env: dict[str, str] | None = None,
+) -> ProcessResult:
     """Run one process in its own group and kill the whole group if the wait is interrupted.
 
     `OSError` from launching and `subprocess.TimeoutExpired` reach the caller unchanged.
+    With `env` of None the child inherits this process's environment.
     """
     process = subprocess.Popen(
         args,
         cwd=cwd,
-        stdin=subprocess.DEVNULL,
+        env=env,
+        stdin=subprocess.DEVNULL if stdin is None else subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
     )
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        stdout, stderr = process.communicate(input=stdin, timeout=timeout)
     except BaseException:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -101,9 +121,19 @@ class CliRuntimeSpec(Protocol):
     temp_prefix: str
     version_args: tuple[str, ...]
     roster_args: tuple[str, ...]
+    # The command that reports the login, or None when the runtime has no such guard.
+    login_args: tuple[str, ...] | None
 
-    def execute(self, args: list[str], *, cwd: Path | None, timeout: float) -> str:
-        """Run the executable; return its usable output, or raise a port error."""
+    def child_environment(self) -> dict[str, str] | None:
+        """The child's whole environment, or None to inherit this process's environment."""
+        ...
+
+    def check_login(self, result: ProcessResult) -> None:
+        """Raise a port error unless `login_args` reported the required login."""
+        ...
+
+    def interpret(self, result: ProcessResult, output_file: Path | None) -> str:
+        """Return the usable output of a finished process, or raise a port error."""
         ...
 
     def parse_roster(self, text: str) -> set[str]:
@@ -114,8 +144,8 @@ class CliRuntimeSpec(Protocol):
         """True when the repository holds recorded probe evidence for this pair."""
         ...
 
-    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> list[str]:
-        """Arguments for one batch, without the executable. Source text stays in the file."""
+    def invocation(self, model: ResolvedModel, prompt_path: Path, timeout: float) -> CliCall:
+        """One batch call. Source text stays out of the arguments."""
         ...
 
 
@@ -273,19 +303,38 @@ class SubscriptionCliProvider(ITranslationProvider):
             spec.runtime,
         )
 
-    def _run(self, args: Sequence[str], *, cwd: Path | None, timeout: float) -> str:
+    def _process(
+        self, args: Sequence[str], *, cwd: Path | None, timeout: float, stdin: str | None = None
+    ) -> ProcessResult:
         try:
-            return self._spec.execute([self._executable, *args], cwd=cwd, timeout=timeout)
+            return run_owned_process(
+                [self._executable, *args],
+                cwd=cwd,
+                timeout=timeout,
+                stdin=stdin,
+                env=self._spec.child_environment(),
+            )
+        except OSError as exc:
+            raise ProviderUnavailableError(
+                f"Unable to launch {self._spec.label}; check the executable"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise ProviderTimeoutError(f"{self._spec.label} exceeded its outer deadline") from exc
+
+    def _run(self, call: CliCall, *, cwd: Path | None, timeout: float) -> str:
+        result = self._process(call.args, cwd=cwd, timeout=timeout, stdin=call.stdin)
+        try:
+            return self._spec.interpret(result, call.output_file)
         except ProviderQuotaError as exc:
             raise ProviderQuotaError(f"{exc} (model {self.model.model_id})") from exc
 
     def _discover(self, system_prompt: str) -> None:
         if self.runtime_version is not None:
             return
-        version = self._run(self._spec.version_args, cwd=None, timeout=30)
-        roster = self._run(self._spec.roster_args, cwd=None, timeout=30)
+        if self._spec.login_args is not None:
+            self._spec.check_login(self._process(self._spec.login_args, cwd=None, timeout=30))
+        version = self._run(CliCall(list(self._spec.version_args)), cwd=None, timeout=30)
+        roster = self._run(CliCall(list(self._spec.roster_args)), cwd=None, timeout=30)
         model_id = self.model.model_id
         if model_id not in self._spec.parse_roster(roster):
             raise ProviderUnavailableError(

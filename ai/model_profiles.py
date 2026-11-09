@@ -11,7 +11,7 @@ ProviderName = Literal["cli", MeteredProvider]
 PresetStatus = Literal["default", "manual", "experiment"]
 # Highest proven evidence layer (SPEC-025 §3.8): 1 legal, 2 executable, 3 qualified.
 EvidenceLayer = Literal[1, 2, 3]
-CliRuntime = Literal["antigravity"]
+CliRuntime = Literal["antigravity", "codex"]
 # Runtime = quota pool: a subscription CLI, or the metered vendor for API presets.
 PresetRuntime = Literal[CliRuntime, MeteredProvider]
 METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))
@@ -28,10 +28,16 @@ class _CliPreset:
     status: PresetStatus
     layer: EvidenceLayer
     evidence: str
+    # The middle of the preset name; the tier when absent. Needed when a tier offers several models.
+    variant: str | None = None
+    # The model a bare tier means on this runtime, such as the extraction model's flash or pro.
+    # Any other preset in that tier runs only when it is selected by name.
+    tier_default: bool = True
 
 
 # Short runtime names used in preset names; one per CliRuntime.
-_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy"}
+_RUNTIME_PREFIX: dict[CliRuntime, str] = {"antigravity": "agy", "codex": "codex"}
+_CODEX_EVIDENCE = "offline fake-server capture only; probed automatically on first use"
 
 
 # Named presets, not the Cartesian product: anything absent here is rejected before a run.
@@ -82,25 +88,69 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         1,
         "agy 1.5.3 roster 2026-11-07; probed automatically on first use",
     ),
+    # Owner decision 2026-11-09: several models stay selectable until test rounds pick one, all at
+    # low thinking. Astra costs the most, so no bare tier ever resolves to it.
+    _CliPreset(
+        "codex", "flash", "gpt-6-luna", "low", "experiment", 1, _CODEX_EVIDENCE, "gpt-6-luna"
+    ),
+    _CliPreset(
+        "codex",
+        "flash",
+        "gpt-6.1-terra",
+        "low",
+        "experiment",
+        1,
+        _CODEX_EVIDENCE,
+        "gpt-6.1-terra",
+        tier_default=False,
+    ),
+    _CliPreset(
+        "codex", "pro", "gpt-6.1-sol", "low", "experiment", 1, _CODEX_EVIDENCE, "gpt-6.1-sol"
+    ),
+    _CliPreset(
+        "codex",
+        "pro",
+        "gpt-6-astra",
+        "low",
+        "experiment",
+        1,
+        _CODEX_EVIDENCE,
+        "gpt-6-astra",
+        tier_default=False,
+    ),
 )
 
 
 def cli_model_id(family: str, effort: str) -> str:
-    """Concrete roster ID for provenance; agy 1.5.3 lists models as ``<family>-<effort>``."""
+    """Concrete ID for provenance: agy 1.5.3 lists ``<family>-<effort>``; for Codex we compose it."""
     return f"{family}-{effort}"
 
 
+def _preset_name(preset: _CliPreset) -> str:
+    return f"{_RUNTIME_PREFIX[preset.runtime]}-{preset.variant or preset.profile}-{preset.effort}"
+
+
 def _validate_presets(presets: tuple[_CliPreset, ...]) -> None:
-    """Layer 1 check at import: one preset per selection, and a known default."""
-    keys = [(preset.runtime, preset.profile, preset.effort) for preset in presets]
-    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    """Layer 1 check at import: unique names, one meaning per bare tier, and a known default."""
+    unnamed = sorted({preset.runtime for preset in presets} - set(_RUNTIME_PREFIX))
+    if unnamed:
+        raise RuntimeError(f"CLI runtimes without a preset-name prefix: {unnamed}")
+    names = [_preset_name(preset) for preset in presets]
+    keys = [
+        (preset.runtime, preset.profile, preset.effort) for preset in presets if preset.tier_default
+    ]
+    duplicates = sorted({name for name in names if names.count(name) > 1}) + sorted(
+        {str(key) for key in keys if keys.count(key) > 1}
+    )
     if duplicates:
         raise RuntimeError(f"Duplicate CLI presets in ai/model_profiles.py: {duplicates}")
     if ("antigravity", "flash", "low") not in keys:
         raise RuntimeError("The default antigravity flash/low preset is missing")
-    unnamed = sorted({preset.runtime for preset in presets} - set(_RUNTIME_PREFIX))
-    if unnamed:
-        raise RuntimeError(f"CLI runtimes without a preset-name prefix: {unnamed}")
+    # Glossary extraction asks the run's runtime for a bare tier at the default effort.
+    for runtime in {preset.runtime for preset in presets}:
+        for profile in ("flash", "pro"):
+            if (runtime, profile, "low") not in keys:
+                raise RuntimeError(f"No tier default for {runtime} {profile}/low")
 
 
 # Seed certifications per (agy version, concrete model): pairs with recorded probe evidence.
@@ -182,7 +232,7 @@ def enabled_presets() -> tuple[Preset, ...]:
     cli = sorted(_CLI_PRESETS, key=lambda preset: preset.status != "default")
     presets = [
         Preset(
-            f"{_RUNTIME_PREFIX[preset.runtime]}-{preset.profile}-{preset.effort}",
+            _preset_name(preset),
             preset.runtime,
             "cli",
             preset.profile,
@@ -235,6 +285,8 @@ class ResolvedModel:
     # Subscription CLI only: the family passed to the runtime with ``--effort``.
     family: str | None = None
     status: PresetStatus = "manual"
+    # Subscription CLI only: the quota pool this run draws on.
+    runtime: CliRuntime | None = None
 
 
 def is_metered(provider: str) -> bool:
@@ -242,10 +294,39 @@ def is_metered(provider: str) -> bool:
     return provider in METERED_PROVIDERS
 
 
+def _resolved_cli(preset: _CliPreset, provider: ProviderName) -> ResolvedModel:
+    return ResolvedModel(
+        preset.profile,
+        provider,
+        cli_model_id(preset.family, preset.effort),
+        preset.effort,
+        family=preset.family,
+        status=preset.status,
+        runtime=preset.runtime,
+    )
+
+
+def resolve_preset(name: str) -> ResolvedModel:
+    """Freeze the selection of one named preset; unknown names fail with the enabled list."""
+    selected = find_preset(name)
+    for preset in _CLI_PRESETS:
+        if _preset_name(preset) == name:
+            return _resolved_cli(preset, "cli")
+    return resolve_profile(selected.profile, provider=selected.provider)
+
+
 def resolve_profile(
-    profile: str = "flash", *, effort: str | None = None, provider: str = "cli"
+    profile: str = "flash",
+    *,
+    effort: str | None = None,
+    provider: str = "cli",
+    runtime: CliRuntime | None = None,
 ) -> ResolvedModel:
-    """Freeze a valid logical selection without discovery or silent fallback."""
+    """Freeze a valid logical selection without discovery or silent fallback.
+
+    A bare tier means Antigravity unless `runtime` says otherwise, so a new runtime's preset
+    cannot take over `--model flash --effort low`.
+    """
     if profile not in ("flash", "pro"):
         raise ValueError(
             "Model profile must be flash or pro; concrete model names are not accepted"
@@ -269,17 +350,16 @@ def resolve_profile(
     effective = effort if effort is not None else "low"
     if effective not in ("low", "medium", "high"):
         raise ValueError("effort must be low, medium, or high")
-    for preset in _CLI_PRESETS:
+    wanted_runtime = runtime if runtime is not None else "antigravity"
+    candidates = [
+        preset
+        for preset in _CLI_PRESETS
+        if preset.runtime == wanted_runtime and preset.tier_default
+    ]
+    for preset in candidates:
         if (preset.profile, preset.effort) == (profile, effective):
-            return ResolvedModel(
-                profile,
-                provider,
-                cli_model_id(preset.family, preset.effort),
-                preset.effort,
-                family=preset.family,
-                status=preset.status,
-            )
-    enabled = ", ".join(f"{preset.profile}/{preset.effort}" for preset in _CLI_PRESETS)
+            return _resolved_cli(preset, "cli")
+    enabled = ", ".join(f"{preset.profile}/{preset.effort}" for preset in candidates)
     raise ValueError(
         f"Unsupported model/effort combination: {profile}/{effective}; enabled presets: {enabled}"
     )

@@ -6,12 +6,14 @@ import json
 
 import pytest
 
+from ai.checkpoint_store import CheckpointMismatchError
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
     EpubTranslationOptions,
     GlossarySpec,
     ModelSpec,
     ProviderSpec,
+    ResumePolicy,
     TranslationOrchestrator,
 )
 from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
@@ -215,3 +217,62 @@ def test_run_reports_saved_terms_it_reuses(
     capsys.readouterr()
     app.translate(source, tmp_path / "out.epub", options, input_format="epub")
     assert "Reusing saved terms extracted with gemini-4-argon-low" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "extraction_model,expected", [("flash", "gpt-6-luna-low"), ("pro", "gpt-6.1-sol-low")]
+)
+def test_a_codex_run_extracts_terms_on_codex_and_records_its_runtime(
+    tmp_path: Path, extraction_model: str, expected: str
+) -> None:
+    """Astra is the translation model here, yet a bare tier never spends Astra on extraction."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    factory = AuditedFactory()
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source,
+        tmp_path / "out.epub",
+        EpubTranslationOptions(
+            config={},
+            model=ModelSpec(preset="codex-gpt-6-astra-low"),
+            glossary=GlossarySpec(extract=True, extraction_model=extraction_model),
+        ),
+        input_format="epub",
+    )
+    assert factory.audits[-1]["extraction_model"] == expected
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    records = json.loads(checkpoint.read_text())["segments"].values()
+    assert {(r["provider"], r["backend"], r["model"]) for r in records} == {
+        ("cli", "codex", "gpt-6-astra-low")
+    }
+
+
+def test_an_antigravity_checkpoint_does_not_silently_resume_on_codex(tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    app = TranslationOrchestrator(provider_factory=AuditedFactory())
+    output = tmp_path / "out.epub"
+    app.translate(source, output, EpubTranslationOptions(config={}), input_format="epub")
+    checkpoint = next(tmp_path.rglob("checkpoint.json"))
+    before = checkpoint.read_bytes()
+    assert {r["backend"] for r in json.loads(before)["segments"].values()} == {"antigravity"}
+
+    with pytest.raises(CheckpointMismatchError, match="model"):
+        app.translate(
+            source,
+            output,
+            EpubTranslationOptions(config={}, model=ModelSpec(preset="codex-gpt-6-luna-low")),
+            input_format="epub",
+        )
+    assert checkpoint.read_bytes() == before
+    continued = app.translate(
+        source,
+        output,
+        EpubTranslationOptions(
+            config={},
+            model=ModelSpec(preset="codex-gpt-6-luna-low"),
+            resume=ResumePolicy(force=True),
+        ),
+        input_format="epub",
+    )
+    assert continued.resumed_segments > 0

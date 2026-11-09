@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the supported application CLI and explicit migration errors."""
     p = argparse.ArgumentParser(
         prog="bookweaver",
-        description="Translate EPUB books through Antigravity or a metered model API.",
+        description="Translate EPUB books through a subscription CLI or a metered model API.",
         epilog="List the named presets for --preset with: bookweaver presets. Start the local API with: bookweaver serve",
     )
     p.add_argument(
@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["cli", "gemini", "openai", "anthropic", "api"],
         metavar="{cli,gemini,openai,anthropic}",
         default="cli",
-        help="Translation backend: cli is Antigravity; gemini/openai/anthropic are metered APIs (default: cli)",
+        help="Translation backend: cli is Antigravity unless --preset names Codex; gemini/openai/anthropic are metered APIs (default: cli)",
     )
     p.add_argument("-p", "--prompt", default=None, help="Additional translation instructions")
     p.add_argument(
@@ -281,7 +281,9 @@ def main(argv: list[str] | None = None) -> None:
         if args.extract_glossary or args.glossary_mode or args.glossary or args.extraction_model:
             parser.error("Glossary options are EPUB-only")
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
-    model = orchestration.ModelSpec(args.model, args.effort, _is_model_flag_explicit(tokens))
+    model = orchestration.ModelSpec(
+        args.model, args.effort, _is_model_flag_explicit(tokens), args.preset
+    )
     provider = orchestration.ProviderSpec(args.provider, args.allow_paid_api)
     quality = orchestration.QualityPolicy(
         not args.no_sanity_probe, args.max_batch_chars, args.max_batch_segments

@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from types import TracebackType
 from ai.checkpoint_store import (
     CheckpointIdentity,
+    CheckpointMismatchError,
     FileSystemCheckpointStoreFactory,
     ICheckpointStoreFactory,
     SegmentRecord,
@@ -36,6 +37,7 @@ from ai.model_profiles import (
     enabled_presets as enabled_presets,
     find_preset as find_preset,
     is_metered,
+    resolve_preset,
     resolve_profile,
 )
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
@@ -74,6 +76,8 @@ class ModelSpec:
     requested: str = "flash"
     effort: str | None = None
     explicit: bool = False
+    # A named preset fixes the exact model, which a tier and an effort alone cannot.
+    preset: str | None = None
 
 
 @dataclass(frozen=True)
@@ -137,12 +141,12 @@ class TranslationSummary:
     glossary_used: Path | None
 
 
-def _segment_backend(provider: ITranslationProvider | None, provider_name: str) -> str:
-    """Provenance backend reported by the provider, else the runtime family's default."""
+def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel) -> str:
+    """Provenance backend reported by the provider, else the selected runtime."""
     reported = provider.backend if provider is not None else None
     if reported:
         return reported
-    return "antigravity" if provider_name == "cli" else "any_llm"
+    return (model.runtime or "antigravity") if model.provider == "cli" else "any_llm"
 
 
 class TranslationOrchestrator:
@@ -170,8 +174,14 @@ class TranslationOrchestrator:
             raise FileNotFoundError(f"Input path does not exist: {input_path}")
         if input_file == output_file:
             raise ValueError("Output must not overwrite the source publication")
-        model = resolve_profile(
-            options.model.requested, effort=options.model.effort, provider=options.provider.name
+        model = (
+            resolve_preset(options.model.preset)
+            if options.model.preset is not None
+            else resolve_profile(
+                options.model.requested,
+                effort=options.model.effort,
+                provider=options.provider.name,
+            )
         )
         if options.provider.allow_paid_api and not is_metered(model.provider):
             raise ValueError("--allow-paid-api requires a metered --provider")
@@ -333,7 +343,9 @@ class TranslationOrchestrator:
                 )
                 if not isinstance(extraction_model, str) or not isinstance(term_limit, int):
                     raise ValueError("Invalid terminology extraction configuration")
-                extraction_selection = resolve_profile(extraction_model, provider=model.provider)
+                extraction_selection = resolve_profile(
+                    extraction_model, provider=model.provider, runtime=model.runtime
+                )
                 glossary_path = glossary_cache_path(
                     output_file.parent,
                     source_signature=content_signature,
@@ -396,6 +408,17 @@ class TranslationOrchestrator:
                 else {}
             )
             previous_models = {record.model for record in records.values()}
+            # The identity keys on tier and effort, which several models can share. Reusing another
+            # enabled model's text would make a model test finish with no call to that model.
+            other_enabled = (previous_models - {model.model_id}) & {
+                preset.model_id for preset in enabled_presets()
+            }
+            if other_enabled and not resume.force:
+                raise CheckpointMismatchError(
+                    f"Checkpoint mismatch: model; it holds {sorted(other_enabled)}, not "
+                    f"{model.model_id}. Use another output folder to compare models, or "
+                    "--force-resume to continue this book on the new model"
+                )
             if previous_models - {model.model_id}:
                 print(
                     f"[resume] Mixed-model continuation: {sorted(previous_models)} -> {model.model_id}; {len(records)} restored segments. Voice or terminology may change."
@@ -479,7 +502,7 @@ class TranslationOrchestrator:
                             item.translated,
                             model.profile,
                             model.provider,
-                            _segment_backend(deferred_provider.delegate, model.provider),
+                            _segment_backend(deferred_provider.delegate, model),
                             model.model_id,
                             model.effort,
                             completed,
