@@ -158,3 +158,21 @@ def test_measure_term_usage_treats_a_whole_compound_translation_as_one_choice() 
 
     assert usage[0].missing == 0
     assert usage[0].consistent
+
+
+def test_measure_term_usage_counts_alternatives_as_other_choices() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "Estrangement", "suggested_translation": "疏离", "alternatives": ["隔阂"]}
+    ]
+
+    usage = measure_term_usage(terms, [("estrangement", "疏离"), ("estrangement again", "隔阂")])
+
+    assert usage[0].option_counts == {"疏离": 1, "隔阂": 1}
+    assert usage[0].missing == 0
+    assert not usage[0].consistent
+
+
+def test_measure_term_usage_skips_a_term_with_no_translation() -> None:
+    terms: list[dict[str, object]] = [{"term": "Estrangement", "suggested_translation": " "}]
+
+    assert measure_term_usage(terms, [("estrangement", "任何译文")]) == []

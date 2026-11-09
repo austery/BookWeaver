@@ -96,12 +96,18 @@ def measure_term_usage(
     for entry in terms:
         term = str(entry.get("term", "")).strip()
         translation = str(entry.get("suggested_translation", "")).strip()
-        if not term:
+        if not term or not translation:
             continue
         words = r"\s+".join(re.escape(word) for word in term.split())
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
-        parts = [part for part in _SLASH.split(translation) if part]
+        listed = entry.get("alternatives")
+        alternatives = (
+            [item.strip() for item in listed if isinstance(item, str) and item.strip()]
+            if isinstance(listed, list)
+            else []
+        )
+        parts = [part for part in [*_SLASH.split(translation), *alternatives] if part]
         # The whole translation and the longest part first, so that a part found only inside
         # a longer one is not counted as a second translation.
         ordered = sorted({translation, *parts}, key=len, reverse=True)
