@@ -43,6 +43,8 @@ from ai.model_profiles import (
 )
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
+from ai.term_panel import PanelError, resolve_panel, run_panel
+from ai.term_panel import ProviderFactory as PanelProviderFactory
 from ai.prompt_preparation import (
     PromptPreparation,
     glossary_cache_path,
@@ -364,7 +366,7 @@ class TranslationOrchestrator:
                 term_limit = (
                     glossary.max_terms
                     if glossary.max_terms is not None
-                    else extraction.get("max_terms", 20)
+                    else _configured_term_limit(config)
                 )
                 if not isinstance(extraction_model, str) or not isinstance(term_limit, int):
                     raise ValueError("Invalid terminology extraction configuration")
@@ -584,6 +586,58 @@ class TranslationOrchestrator:
             model.model_id,
             glossary_path,
         )
+
+
+def run_term_panel(
+    input_path: str | Path,
+    panel_name: str,
+    *,
+    output_dir: str | Path | None = None,
+    mode: str = "auto",
+    max_terms: int | None = None,
+    allow_paid_api: bool = False,
+    config: dict[str, object] | None = None,
+    provider_factory: PanelProviderFactory | None = None,
+) -> Path:
+    """`bookweaver terms`: run a named Term Panel and return its tiered glossary (SPEC-028).
+
+    No translation. The glossary is cached per book and panel, so a rerun makes no call.
+    """
+    if allow_paid_api:
+        raise PanelError("Paid Term Panel members are not supported yet (SPEC-028 Phase 3)")
+    source = Path(input_path)
+    if source.suffix.lower() != ".epub" or not source.is_file():
+        raise PanelError(f"A Term Panel needs an EPUB file: {source}")
+    runtime_config = validate_config(config) if config is not None else load_runtime_config()
+    panel = resolve_panel(panel_name, runtime_config)
+    configured = _configured_term_limit(runtime_config)
+    limit = max_terms if max_terms is not None else configured
+    if not isinstance(limit, int) or not isinstance(configured, int) or limit <= 0:
+        raise PanelError("The term limit must be a positive integer")
+    # SPEC-028 §3.4 rule 7: the limit caps the final glossary; nominators are asked for the
+    # configured number, or more when the cap is larger.
+    nominator_terms = max(configured, limit)
+    book_dir = Path(output_dir) if output_dir is not None else source.parent
+    # No audit directory: panels refuse paid members, and the audit records only metered usage.
+    factory = provider_factory or DefaultProviderFactory()
+    outcome = run_panel(
+        source,
+        panel,
+        book_dir=book_dir,
+        source_signature=_compute_content_signature(source),
+        max_terms=limit,
+        nominator_terms=nominator_terms,
+        mode=mode,
+        config=runtime_config,
+        factory=factory,
+    )
+    return outcome.glossary_path
+
+
+def _configured_term_limit(config: dict[str, object]) -> object:
+    """``terminology_extraction.max_terms``, default 20; the caller checks the type."""
+    extraction = config.get("terminology_extraction", {})
+    return extraction.get("max_terms", 20) if isinstance(extraction, dict) else 20
 
 
 def translate_epub(

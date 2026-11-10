@@ -143,6 +143,38 @@
           "minimum": 1
         }
       }
+    },
+    "terminology_panels": {
+      "type": "object",
+      "description": "Named Term Panels (SPEC-028 §3.10). The key is the name users choose.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nominators"
+        ],
+        "properties": {
+          "nominators": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "judges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "judge_prompt_max_chars": {
+            "type": "integer",
+            "minimum": 20000
+          }
+        }
+      }
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema"

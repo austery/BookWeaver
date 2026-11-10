@@ -176,3 +176,21 @@ def test_failures_map_to_port_errors_and_do_not_retry(
     with pytest.raises(error, match=pattern):
         _provider(tmp_path, executable).translate_batch(["garden"], system_prompt="Translate")
     assert len(log.read_text().splitlines()) == 1  # the probe stops the run
+
+
+def test_check_ready_signs_in_and_reads_the_roster_without_a_model_call(tmp_path: Path) -> None:
+    executable, log = _codex(tmp_path)
+
+    _provider(tmp_path, executable).check_ready()
+
+    assert not log.exists()
+
+
+def test_check_ready_stops_a_login_other_than_chatgpt_before_any_model_call(
+    tmp_path: Path,
+) -> None:
+    executable, log = _codex(tmp_path, login="Logged in using an API key")
+
+    with pytest.raises(ProviderAuthenticationError, match="codex login"):
+        _provider(tmp_path, executable).check_ready()
+    assert not log.exists()

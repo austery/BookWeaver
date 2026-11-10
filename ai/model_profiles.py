@@ -21,6 +21,24 @@ EvidenceLayer = Literal[1, 2, 3]
 TRIAL_CLI_RUNTIMES: frozenset[str] = frozenset({"codex", "claude-code"})
 # Runtime = quota pool: a subscription CLI, or the metered vendor for API presets.
 PresetRuntime = Literal[CliRuntime, MeteredProvider]
+# The company behind a model, which is one vote on a Term Panel (SPEC-028 §3.2). Set from the
+# model family, not the runtime: one runtime can serve another company's models.
+Vendor = Literal["google", "openai", "anthropic"]
+_VENDOR_PREFIXES: tuple[tuple[str, Vendor], ...] = (
+    ("gemini-", "google"),
+    ("gpt-", "openai"),
+    ("claude-", "anthropic"),
+)
+
+
+def vendor_of(model_id: str) -> Vendor:
+    """The vendor of a concrete model ID; an unknown family fails loudly."""
+    for prefix, vendor in _VENDOR_PREFIXES:
+        if model_id.startswith(prefix):
+            return vendor
+    raise ValueError(f"No vendor is known for model {model_id!r}")
+
+
 METERED_PROVIDERS: frozenset[str] = frozenset(get_args(MeteredProvider))
 
 
@@ -258,6 +276,7 @@ class Preset:
     model_id: str
     status: PresetStatus
     layer: EvidenceLayer | None
+    vendor: Vendor
     evidence: str
 
 
@@ -281,6 +300,7 @@ def enabled_presets() -> tuple[Preset, ...]:
             cli_model_id(preset.family, preset.effort),
             preset.status,
             preset.layer,
+            vendor_of(cli_model_id(preset.family, preset.effort)),
             preset.evidence,
         )
         for preset in cli
@@ -296,6 +316,7 @@ def enabled_presets() -> tuple[Preset, ...]:
             entry.model_id,
             "manual",
             None,
+            vendor_of(entry.model_id),
             _METERED_EVIDENCE,
         )
         for (provider, profile), entry in _API_MODELS.items()

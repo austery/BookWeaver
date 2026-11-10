@@ -298,6 +298,8 @@ class SubscriptionCliProvider(ITranslationProvider):
         self.backend = spec.runtime
         self.model = model
         self.runtime_version: str | None = None
+        # Set by check_ready; runtime_version waits for the probe as well.
+        self._checked_version: str | None = None
         self._spec = spec
         self._executable = executable
         self._temp_root = temp_root
@@ -339,9 +341,13 @@ class SubscriptionCliProvider(ITranslationProvider):
         except ProviderQuotaError as exc:
             raise ProviderQuotaError(f"{exc} (model {self.model.model_id})") from exc
 
-    def _discover(self, system_prompt: str) -> None:
-        if self.runtime_version is not None:
-            return
+    def check_ready(self) -> None:
+        """Login, version and roster: everything discovery checks except the model probe."""
+        self._ready_version()
+
+    def _ready_version(self) -> str:
+        if self._checked_version is not None:
+            return self._checked_version
         if self._spec.login_args is not None:
             self._spec.check_login(self._process(self._spec.login_args, cwd=None, timeout=30))
         version = self._run(CliCall(list(self._spec.version_args)), cwd=None, timeout=30)
@@ -353,6 +359,14 @@ class SubscriptionCliProvider(ITranslationProvider):
                     f"Selected model {model_id} is absent from {self._spec.roster_name}; "
                     "update the registry explicitly"
                 )
+        self._checked_version = version
+        return version
+
+    def _discover(self, system_prompt: str) -> None:
+        if self.runtime_version is not None:
+            return
+        version = self._ready_version()
+        model_id = self.model.model_id
         if not self._spec.is_seeded(version, model_id) and not self._certifications.contains(
             version, model_id, self._protocol
         ):

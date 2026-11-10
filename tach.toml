@@ -41,7 +41,7 @@ utility = true
 # file is a module here, so this check does not cover them.
 [[modules]]
 path = "ai.orchestration"
-depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.glossary_extractor"]
+depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.glossary_extractor", "ai.term_panel"]
 
 [[modules]]
 path = "ai.runtime_factory"
@@ -70,6 +70,12 @@ depends_on = []
 [[modules]]
 path = "ai.glossary_extractor"
 depends_on = ["ai.core", "ai.epub_package"]
+
+# Term Panel runner (SPEC-028): its only output is a glossary file. Only run_term_panel in
+# ai.orchestration calls it; the translation functions do not (not enforced by tach).
+[[modules]]
+path = "ai.term_panel"
+depends_on = ["ai.ports", "ai.core", "ai.model_profiles", "ai.glossary_extractor"]
 
 [[modules]]
 path = "ai.glossary_injector"
