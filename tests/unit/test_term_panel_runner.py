@@ -465,3 +465,32 @@ def test_a_rerun_checks_only_the_members_it_must_call(tmp_path: Path) -> None:
 
     assert sorted(rerun.checked) == ["claude-opus-5-5-low", "gpt-6.1-sol-low"]
     assert rerun.calls == [("gpt", "judge"), ("claude", "judge")]
+
+
+def test_a_title_page_marked_only_by_its_epub_type_gives_no_sentences(tmp_path: Path) -> None:
+    book = tmp_path / "book.epub"
+    _book(book)
+    with zipfile.ZipFile(book) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    files["front001.xhtml"] = (
+        b'<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'
+        b'<body epub:type="titlepage"><p>The garden on the title page.</p></body></html>'
+    )
+    files["content.opf"] = (
+        files["content.opf"]
+        .replace(
+            b"</manifest>",
+            b'<item id="tp" href="front001.xhtml" media-type="application/xhtml+xml"/></manifest>',
+        )
+        .replace(b"<spine>", b'<spine><itemref idref="tp"/>')
+    )
+    with zipfile.ZipFile(book, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    members = FakeMembers()
+
+    _run(tmp_path, members)
+
+    judge_prompt = next(p for p in members.prompts if p.startswith("You are reviewing"))
+    candidates = judge_prompt.split("CANDIDATES:\n", 1)[1].split("\n\nTABLE OF CONTENTS:", 1)[0]
+    assert "on the title page" not in candidates

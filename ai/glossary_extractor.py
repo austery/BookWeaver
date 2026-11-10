@@ -485,6 +485,9 @@ def parse_glossary_reply(raw_output: str) -> dict[str, object]:
 
 
 _EPUB3_TOC_NAV_RE = re.compile(r"<nav\b[^>]*\bepub:type\s*=\s*[\"'][^\"']*\btoc\b", re.IGNORECASE)
+_TITLE_PAGE_TYPE_RE = re.compile(
+    r"\bepub:type\s*=\s*[\"'][^\"']*\b(?:titlepage|halftitlepage|cover)\b", re.IGNORECASE
+)
 _TITLE_PAGE_HINT_RE = re.compile(r"(?<![a-z0-9])(?:title|cover)", re.IGNORECASE)
 
 
@@ -513,8 +516,8 @@ def body_documents(epub_path: Path, index_href: str | None) -> list[str]:
                 raw = zf.read(resolve_opf_href(model.opf_path, item.href)).decode("utf-8")
             except (KeyError, UnicodeDecodeError):
                 continue
-            if _EPUB3_TOC_NAV_RE.search(raw):
-                continue  # a table of contents not declared as the navigation document
+            if _EPUB3_TOC_NAV_RE.search(raw) or _TITLE_PAGE_TYPE_RE.search(raw):
+                continue  # an undeclared table of contents, or a semantically marked title page
             text = _xhtml_to_text(raw)
             if text.strip():
                 texts.append(text)
