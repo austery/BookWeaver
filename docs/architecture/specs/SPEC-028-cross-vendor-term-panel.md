@@ -2,7 +2,7 @@
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
 status: Approved by the owner (2026-11-09); amended 2026-11-10 (named panels, panel as its own step, availability, Deep Scan)
-implementationStatus: Phase 1 implemented (PR 94) and adopted after live acceptance (2026-11-10); Phase 2a (`bookweaver terms`) implemented offline, live acceptance pending; Phases 2b-5 not started
+implementationStatus: Phase 1 implemented (PR 94) and adopted after live acceptance (2026-11-10); Phase 2a (`bookweaver terms`, PR 97) accepted on two books (2026-11-10, `docs/plans/2026-11-10-term-panel-acceptance.md`); Phases 2b-5 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
 lastUpdateDate: 2026-11-10
@@ -245,6 +245,7 @@ The plan and the report come from the same resolver that runs the panel; no surf
    - Live acceptance: one chapter with several `preferred` terms (where Cosmic morale or Socratic civility occur; chapters 1 and 2 hold only nine), translated strict and tiered with the same glossary. Also measure register for both.
    - Gate, fixed before the run: adopt tiers when `fixed` drift is zero in the tiered version, register does not fall, and the owner does not prefer the strict version. Otherwise keep one strict block and record why. Closes issue 82 either way.
 2. **Terms command and `--term-panel` on the index path, subscription presets only.** Delivered in two PRs: 2a, `bookweaver terms` with vendors, named panels, the readiness check (`ITranslationProvider.check_ready`, login, version and roster without a model call) and everything below except availability; 2b, `--term-panel` on the translate command and `runtimes.disabled`. Vendor field, named panels in configuration, `runtimes.disabled`, candidates with sentences, judges, aggregator, resolved plan, report, cache, saved replies. Offline tests: the vote rules through `ai/core/term_panel.py` (panel sizes, own-term rule, duplicates, both tie-breaks, the cap, the report); the runner through `run_term_panel` with an in-process fake factory (refusals, readiness, failure stop and reuse, cache reuse and identity, sentences, nav and index exclusion); `check_ready` through a fake `codex` executable. `scripts/` in the owner's trial folder holds the reference pipeline (`replay.py` for the vote rules).
+   - Phase 2a accepted 2026-11-10 (`docs/plans/2026-11-10-term-panel-acceptance.md`); the owner kept the term limit at 100.
    - Live acceptance: the owner adds the `three-vendor` panel to their configuration; then *A Philosophy of Software Design* (index 4,846 characters, no panel data yet) and *Political Thinking*, each with that panel, then translated with `agy-flash-low` into new folders, never resuming old checkpoints. Compare *Political Thinking* with the replay in §2.
 3. **Paid members.** Consent on `bookweaver terms`, through the deep review. Offline tests only, unless the owner authorizes a paid call.
 4. **Local API.** The `term_panel` dropdown, the panel output folder, login status display.
