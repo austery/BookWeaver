@@ -7,11 +7,13 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal, cast
 
 _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
 # SPEC-028 §3.5: a term without a tier is fixed. A glossary with no tier anywhere renders exactly
 # as it did before tiers existed, because the block feeds every saved book's prompt hash.
-_TIERS = ("fixed", "preferred")
+TermTier = Literal["fixed", "preferred"]
+_TIERS: tuple[TermTier, ...] = ("fixed", "preferred")
 _FIXED_HEADING = "【关键术语约束】以下术语必须严格遵守标准译法："
 _PREFERRED_HEADING = (
     "【建议术语】以下译法一般情况下采用；如果某句的语境需要，"
@@ -85,7 +87,7 @@ class TermUsage:
     segments: int
     option_counts: dict[str, int]
     missing: int
-    tier: str | None = None
+    tier: TermTier | None = None
 
     @property
     def consistent(self) -> bool:
@@ -153,7 +155,7 @@ def measure_term_usage(
                 len(matched),
                 counts,
                 missing,
-                tier if isinstance(tier, str) else None,
+                cast(TermTier, tier) if tier in _TIERS else None,
             )
         )
     return usage
