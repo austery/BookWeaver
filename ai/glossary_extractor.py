@@ -484,7 +484,7 @@ def parse_glossary_reply(raw_output: str) -> dict[str, object]:
     return _validate_and_parse_glossary(raw_output)
 
 
-_EPUB3_TOC_NAV_RE = re.compile(r"<nav\b[^>]*\bepub:type=[\"'][^\"']*\btoc\b", re.IGNORECASE)
+_EPUB3_TOC_NAV_RE = re.compile(r"<nav\b[^>]*\bepub:type\s*=\s*[\"'][^\"']*\btoc\b", re.IGNORECASE)
 _TITLE_PAGE_HINT_RE = re.compile(r"(?<![a-z0-9])(?:title|cover)", re.IGNORECASE)
 
 

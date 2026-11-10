@@ -225,9 +225,16 @@ def run_panel(
     }
     replies = directory / "replies"
     calls = {"made": 0, "reused": 0}
+    checked: set[str] = set()
+
+    def ensure_ready(members: Sequence[PanelMember]) -> None:
+        """SPEC-028 §3.12: check only members that will be called, all before the next call."""
+        for member in members:
+            if member.preset.name not in checked:
+                providers[member.preset.name].check_ready()
+                checked.add(member.preset.name)
+
     try:
-        for provider in providers.values():
-            provider.check_ready()
 
         def saved_reply(member: PanelMember, prompt: str, purpose: str) -> Path:
             # Keyed on the model and the exact prompt, so a reused reply is never stale.
@@ -254,6 +261,13 @@ def run_panel(
         extraction_prompt = build_index_extraction_prompt(
             located.index_text, located.toc_text, nominator_terms
         )
+        pending = [
+            m
+            for m in panel.nominators
+            if not saved_reply(m, extraction_prompt, "nominate").exists()
+        ]
+        # New nominations change every judge prompt, so every judge will then be called too.
+        ensure_ready([*pending, *panel.judges] if pending else [])
         for letter, member in zip(_LETTERS, panel.nominators, strict=False):
             raw = call(member, extraction_prompt, "nominate")
             try:
@@ -261,8 +275,16 @@ def run_panel(
             except ValueError as exc:
                 raise PanelError(f"{member.preset.name} nomination is unusable: {exc}") from exc
             try:
-                # The shared glossary validator: a list of objects, or a clear error.
+                # The shared glossary validator (a list of objects), then the two fields a
+                # candidate needs.
                 terms = GlossaryManager.from_dict(parsed, source=member.preset.name).terms
+                for position, entry in enumerate(terms):
+                    for field_name in ("term", "suggested_translation"):
+                        value = entry.get(field_name)
+                        if not isinstance(value, str) or not value.strip():
+                            raise ValueError(
+                                f"term {position} needs a non-empty string {field_name}"
+                            )
             except ValueError as exc:
                 raise PanelError(f"{member.preset.name} nomination is unusable: {exc}") from exc
             keep(member, extraction_prompt, "nominate", raw)
@@ -288,6 +310,16 @@ def run_panel(
         )
         if panel.judges:
             log(f"[terms] {len(candidates)} candidates; each judge makes {len(chunks)} call(s).")
+        ensure_ready(
+            [
+                judge
+                for judge in panel.judges
+                if any(
+                    not saved_reply(judge, render(chunk), f"judge{number}").exists()
+                    for number, chunk in enumerate(chunks, start=1)
+                )
+            ]
+        )
         judges: list[Judge] = []
         for member in panel.judges:
             votes: dict[int, JudgeVote] = {}

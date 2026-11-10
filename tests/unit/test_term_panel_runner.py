@@ -378,7 +378,7 @@ def test_an_epub3_navigation_document_in_the_spine_gives_no_sentences(tmp_path: 
         files = {name: archive.read(name) for name in archive.namelist()}
     files["navigation.xhtml"] = (
         b'<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'
-        b'<body><nav epub:type="toc"><ol><li>The garden in the contents.</li></ol></nav></body></html>'
+        b'<body><nav epub:type = "toc"><ol><li>The garden in the contents.</li></ol></nav></body></html>'
     )
     files["content.opf"] = (
         files["content.opf"]
@@ -429,3 +429,29 @@ def test_a_preset_re_pointed_to_another_model_misses_the_cached_glossary(
 
     assert _run(tmp_path, members) != first
     assert ("gemini", "nominate") in members.calls
+
+
+def test_a_nomination_with_a_null_translation_stops_and_is_not_saved(tmp_path: Path) -> None:
+    members = FakeMembers()
+    members.bad_nomination = "claude"
+    members.bad_reply = (
+        '{"critical_terminology": [{"term": "Unity", "suggested_translation": null}]}'
+    )
+
+    with pytest.raises(PanelError, match="non-empty string suggested_translation"):
+        _run(tmp_path, members)
+    assert not list(tmp_path.rglob("claude-opus-5-5-low-nominate-*.txt"))
+
+
+def test_a_rerun_checks_only_the_members_it_must_call(tmp_path: Path) -> None:
+    members = FakeMembers()
+    members.broken_judge = "gpt"
+    with pytest.raises(PanelError):
+        _run(tmp_path, members)
+
+    rerun = FakeMembers()
+    rerun.logged_out = {"gemini"}  # its nomination is saved, so it is not needed
+    _run(tmp_path, rerun)
+
+    assert sorted(rerun.checked) == ["claude-opus-5-5-low", "gpt-6.1-sol-low"]
+    assert rerun.calls == [("gpt", "judge"), ("claude", "judge")]
