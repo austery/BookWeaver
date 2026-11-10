@@ -2,7 +2,7 @@
 specId: SPEC-025
 title: Subscription CLI Runtimes with Separated Model Axes
 status: Draft for owner review (2026-11-07)
-implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code implemented and live-probed on Sonnet (2026-11-09); Phase 4 not started
+implementationStatus: Phase 1 implemented and live-verified on agy 1.5.3 (2026-11-07); Phase 2 implemented (2026-11-09); Phase 3 Codex implemented and live-probed on Luna and Sol (2026-11-09); Phase 3 Claude Code implemented and live-probed on Sonnet (2026-11-09); runtimes moved under `ai/adapters/providers/` (2026-11-09); Phase 4 not started
 priority: P1 - Runtime Reliability
 creationDate: 2026-11-07
 lastUpdateDate: 2026-11-09
@@ -194,7 +194,7 @@ Evidence comes from running Codex CLI 0.167.0 against a local fake provider, whi
 
 Evidence comes from running Claude Code 2.1.311 against a local fake endpoint (`docs/plans/2026-11-09-claude-code-request-capture.md`). The owner then ran one live probe on `claude-sonnet-5-5-low` (`docs/plans/2026-11-09-claude-code-compatibility-probe.md`).
 
-- **Isolation.** Unlike Codex, no private home is needed: `--restricted` keeps the owner's `CLAUDE.md`, auto-memory, skills and plugins out of the request, so the runtime uses the owner's claude.ai login. The help text does not promise this, so the capture must be repeated after a Claude Code upgrade.
+- **Isolation.** Unlike Codex, no private home is needed: `--restricted` keeps the owner's `CLAUDE.md`, auto-memory, skills and plugins out of the request, so the runtime uses the owner's claude.ai login. The help text does not promise this, so the capture must be repeated after a Claude Code upgrade. Nothing enforces that yet, and the capture harness is not in the repository: issue 91.
 - **Fixed context.** `--system-prompt` cuts the fixed context from about 5,700 to about 1,900 characters. One environment message of about 1,100 characters remains.
 - **Prompt guards.** A prompt whose first character is `/` stops before the process starts, because Claude Code would run it as a local command. A result with a model-turn count other than one is a failure. The child runs in an empty directory, because `@name` in the prompt inlines a file from the working directory.
 - **Billing guard.** The child environment drops every `ANTHROPIC_*` variable, `CLAUDECODE` and every `CLAUDE_*` variable except `CLAUDE_CONFIG_DIR`, plus `OPENAI_API_KEY` and `CODEX_API_KEY`. Discovery stops unless `claude auth status` reports `loggedIn` with `authMethod: claude.ai`.
@@ -234,7 +234,7 @@ Facts below come from local help text and local files on 2026-11-09 (Codex CLI 0
 
 1. **Antigravity axis separation + named-preset registry (§3.8) + Argon pro + automatic probe.** Fixes both observed failures. Offline tests through the provider boundary with a fake `agy` executable: argv carries the family once and effort once; unknown version triggers probe; probe failure stops before book batches; checkpoint `model_id` is unchanged for existing flash runs.
 2. **`SubscriptionCliProvider` extraction (done 2026-11-09).** Antigravity moves onto the shared adapter with no behavior change; same tests stay green. One deliberate change: a certification now matches on runtime too, so a record from another runtime no longer counts. Existing records all name `antigravity` and stay valid. `ai/adapters/providers/subscription_cli_provider.py` holds the adapter; `ai/adapters/providers/antigravity_provider.py` holds the spec.
-3. **Codex and Claude Code specs + runtime provenance through `backend`.** After §5 items are resolved. The shared process call gains stdin input and an explicit child environment; a runtime spec returns them with its argv, and no spec starts its own process. Fake-executable tests, then one owner-run three-passage probe per runtime.
+3. **Codex and Claude Code specs + runtime provenance through `backend` (done 2026-11-09: Codex in PR 85, Claude Code in PR 88, adapter placement in PR 90; `claude-opus-5-5-low` has not run).** After §5 items are resolved. The shared process call gains stdin input and an explicit child environment; a runtime spec returns them with its argv, and no spec starts its own process. Fake-executable tests, then one owner-run three-passage probe per runtime.
 4. **Evaluation spec, then quality comparison** on one already-validated book: human sample plus cross-vendor AI judge.
 
 ## 7. Verification

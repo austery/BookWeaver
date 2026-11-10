@@ -34,7 +34,7 @@ Open parts:
 - Term tiers (`fixed`, `contextual`, `preferred`): issue 82.
 - Fixed candidates from the book's structure: issue 83.
 - One glossary shared across compared models: issue 86.
-- Claude Code as a judge runtime: SPEC-025 Phase 3, second half.
+- Claude Code as a judge runtime: SPEC-025 Phase 3, second half. Done on 2026-11-09 (PR 88): `claude-sonnet-5-5-low` passed a live probe; see `2026-11-09-claude-code-compatibility-probe.md`. No judge run has used it yet.
 
 ## Measures used
 
