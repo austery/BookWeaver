@@ -37,6 +37,6 @@ uv run tach check
 uv run python scripts/check_doc_links.py
 ```
 
-Test behavior through the application, provider, and checkpoint boundaries. Record live probes separately from mocked tests. A tiny EPUB or a passing registry test is not proof of whole-book translation quality. See `docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md` and `docs/plans/2026-09-07-antigravity-protocol-probe.md`.
+Test behavior through the application, provider, and checkpoint boundaries. Record live probes separately from mocked tests. A tiny EPUB or a passing registry test is not proof of whole-book translation quality. Real-book regression checks use real books, never synthetic ones: one humanities book and one technical book from the owner's library, chosen per change (owner, 2026-11-10). Do not commit book content or depend on one fixed book path; record the books used in the PR. See `docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md` and `docs/plans/2026-09-07-antigravity-protocol-probe.md`.
 
 Current book evidence: `docs/plans/2026-09-07-stoic-joy-book-validation.md` and `docs/plans/2026-09-07-book-quality-polish.md`. Preserve original checkpoints when rebuilding editorial revisions; record reused, retranslated, and manually edited provenance separately.
