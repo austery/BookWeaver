@@ -3,8 +3,8 @@
 ## Current product boundary
 
 - Canonical command: `uv run bookweaver`, entry point `ai/cli.py`.
-- Application composition: `ai/orchestration.py` and format-specific translation functions.
-- Supported format: EPUB-to-EPUB, alternating bilingual text. Table cells and conservatively recognized dedicated bibliography documents remain source-only.
+- Application composition: `ai/orchestration.py`; `translate_epub` is the only translation function.
+- Supported format: EPUB-to-EPUB, alternating bilingual text (ADR-0003). The CLI and the local API reject any other input, including Markdown and PDF, with one EPUB-only error; `translate_epub` itself does not check the file name. Table cells and conservatively recognized dedicated bibliography documents remain source-only.
 - Active EPUB batch default: 60,000 characters and 200 segments; CLI `--max-batch-segments` overrides `epub_resilience.max_batch_segments`. Generic/legacy batchers retain an optional unbounded default.
 - Active EPUB segmenter: `epub-leaf-block-v4-source-only-bibliography`; v3 checkpoint reuse is a hard mismatch. Segment-cap changes alone are soft mismatches; historical missing caps mean unbounded.
 - Default runtime: Antigravity through `ai/adapters/providers/antigravity_provider.py`, a runtime spec on the shared adapter `ai/adapters/providers/subscription_cli_provider.py`; model versions are centralized in `ai/model_profiles.py`. Runtime adapters depend only on `ai/ports` (`ResolvedModel` is in `ai/ports/model.py`); `ai/runtime_factory.py` passes the seed list to Antigravity. `tach.toml` is exact: an unused declared dependency fails.
@@ -21,7 +21,7 @@
 
 SPEC-021 is approved for implementation. The new application path and CLI wiring exist, but the migration is not yet fully accepted. One narrative book has complete execution and interruption evidence, plus a selected-chapter fidelity revision. A second book ran through the local API upload on 2026-11-08 (issue #60). Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain outstanding. Historical helper functions still in `ai/orchestration.py` serve legacy tests and are pending deletion; do not extend them or mistake them for the new application path.
 
-`translatebook.sh`, numbered Markdown scripts, Gemini CLI modules, and the orphaned `ai/epub_translate_roundtrip.py` remain retirement candidates. Do not resurrect or route the new application through them. Keep `08_epub_roundtrip_baseline.py`, EPUB package handling, isolated Markdown/PDF adapters, and evaluation assets.
+`translatebook.sh`, numbered Markdown scripts, Gemini CLI modules, and the orphaned `ai/epub_translate_roundtrip.py` remain retirement candidates. Do not resurrect or route the new application through them. Keep `08_epub_roundtrip_baseline.py`, EPUB package handling, and evaluation assets. The isolated Markdown/PDF application paths are removed (issue 53); the numbered scripts that also read Markdown or PDF wait for the legacy retirement.
 
 ## Documents
 

@@ -26,7 +26,6 @@ from ai.ports.source import Segment, TranslatedSegment
 from ai.orchestration import (
     build_system_prompt,
     create_provider,
-    detect_input_format,
     load_config,
     load_glossary_block,
     _run_pipeline as run,
@@ -1062,19 +1061,56 @@ class TestBuildParserFormatRouting:
         args = parser.parse_args(["input.epub", "--output", "out.epub"])
         assert args.input_format == "auto"
 
-    def test_input_format_markdown_with_directory(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(
-            [
-                "./pages_dir",
-                "--output",
-                "out.md",
-                "--allow-isolated-format",
-            ]
+    @pytest.mark.parametrize("kind", ["pdf", "markdown-file", "markdown-directory", "docx"])
+    def test_non_epub_input_fails_with_the_epub_only_error(
+        self,
+        kind: str,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        source = (
+            tmp_path
+            / {
+                "pdf": "report.pdf",
+                "markdown-file": "notes.md",
+                "markdown-directory": "pages",
+                "docx": "book.docx",
+            }[kind]
         )
-        assert args.input_format == "auto"
-        assert args.allow_isolated_format is True
-        assert args.input_path == "./pages_dir"
+        if kind == "markdown-directory":
+            source.mkdir()
+            (source / "page0001.md").write_text("hello", encoding="utf-8")
+        else:
+            source.write_bytes(b"content")
+
+        def fail(*args: object, **kwargs: object) -> None:
+            raise AssertionError("a non-EPUB input must not reach the application")
+
+        monkeypatch.setattr(cli_module, "translate_epub", fail)
+
+        with pytest.raises(SystemExit) as stopped:
+            entry_module.main([str(source), "--output", str(tmp_path / "out.epub")])
+
+        assert stopped.value.code == 2
+        assert "BookWeaver translates EPUB only" in capsys.readouterr().err
+
+    def test_a_directory_named_like_an_epub_is_rejected(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        source = tmp_path / "pages.epub"
+        source.mkdir()
+
+        with pytest.raises(SystemExit):
+            entry_module.main([str(source), "--output", str(tmp_path / "out.epub")])
+
+        assert "BookWeaver translates EPUB only" in capsys.readouterr().err
+
+    def test_the_isolated_format_flag_is_gone(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            entry_module.main(["book.epub", "--output", "out.epub", "--allow-isolated-format"])
+
+        assert "--allow-isolated-format" in capsys.readouterr().err
 
     def test_input_format_epub(self) -> None:
         parser = build_parser()
@@ -1090,26 +1126,6 @@ class TestBuildParserFormatRouting:
         assert args.input_format == "epub"
 
 
-# ── Format detection ─────────────────────────────────────────
-
-
-class TestDetectInputFormat:
-    def test_epub_extension(self) -> None:
-        assert detect_input_format("book.epub") == "epub"
-
-    def test_md_extension(self) -> None:
-        assert detect_input_format("page.md") == "markdown"
-
-    def test_directory_detected_as_markdown(self, tmp_path: Path) -> None:
-        assert detect_input_format(str(tmp_path)) == "markdown"
-
-    def test_unknown_defaults_to_epub(self) -> None:
-        assert detect_input_format("book.unknownext") == "epub"
-
-    def test_pdf_extension(self) -> None:
-        assert detect_input_format("report.pdf") == "pdf"
-
-
 # ── Input validation ─────────────────────────────────────────
 
 
@@ -1121,23 +1137,27 @@ class TestRunInputValidation:
                 output=str(tmp_path / "out.epub"),
             )
 
-    def test_empty_markdown_dir_raises(self, tmp_path: Path) -> None:
-        empty_dir = tmp_path / "empty"
-        empty_dir.mkdir()
-        with pytest.raises(FileNotFoundError, match="No page\\*.md files"):
-            run(
-                input_path=str(empty_dir),
-                output=str(tmp_path / "out.md"),
-                input_format="markdown",
-            )
+    def test_markdown_directory_is_rejected(self, tmp_path: Path) -> None:
+        pages = tmp_path / "pages"
+        pages.mkdir()
+        (pages / "page0001.md").write_text("hello", encoding="utf-8")
+        with pytest.raises(ValueError, match="EPUB only"):
+            run(input_path=str(pages), output=str(tmp_path / "out.md"))
 
-    def test_md_file_with_no_pages_in_parent_raises(self, tmp_path: Path) -> None:
-        fake_input = tmp_path / "notes.md"
-        fake_input.write_text("x")
-        with pytest.raises(FileNotFoundError, match="No page\\*.md files"):
+    @pytest.mark.parametrize("name", ["report.pdf", "notes.md"])
+    def test_markdown_or_pdf_file_is_rejected(self, name: str, tmp_path: Path) -> None:
+        source = tmp_path / name
+        source.write_bytes(b"content")
+        with pytest.raises(ValueError, match="EPUB only"):
+            run(input_path=str(source), output=str(tmp_path / "out.epub"))
+
+    def test_retired_input_format_is_rejected(self, tmp_path: Path) -> None:
+        in_epub = tmp_path / "book.epub"
+        in_epub.write_bytes(b"epub")
+        with pytest.raises(ValueError, match="EPUB only"):
             run(
-                input_path=str(fake_input),
-                output=str(tmp_path / "out.md"),
+                input_path=str(in_epub),
+                output=str(tmp_path / "out.epub"),
                 input_format="markdown",
             )
 
@@ -1480,8 +1500,6 @@ class TestRunGlossaryExtractionOrchestration:
         monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
         monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
         monkeypatch.setattr(cli_module, "EpubSourceAdapter", lambda path: _NoopSource())
-        monkeypatch.setattr(cli_module, "PdfSourceAdapter", lambda path: _NoopSource())
-        monkeypatch.setattr(cli_module, "MarkdownSourceAdapter", lambda path: _NoopSource())
 
     def test_epub_extract_glossary_generates_temp_glossary_and_injects(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1584,45 +1602,6 @@ class TestRunGlossaryExtractionOrchestration:
                 input_format="epub",
                 glossary_max_terms=0,
             )
-
-    @pytest.mark.parametrize("fmt", ["pdf", "markdown"])
-    def test_non_epub_extract_glossary_warns_and_ignores(
-        self,
-        fmt: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        self._patch_base_runtime(monkeypatch)
-
-        if fmt == "pdf":
-            input_path = tmp_path / "report.pdf"
-            input_path.write_bytes(b"%PDF-1.4")
-            output_path = tmp_path / "out.md"
-        else:
-            input_path = tmp_path / "md_dir"
-            input_path.mkdir()
-            (input_path / "page0001.md").write_text("hello", encoding="utf-8")
-            output_path = tmp_path / "out.md"
-
-        def fail_extract(**kwargs: object) -> None:
-            raise AssertionError("extractor should not run for non-epub formats")
-
-        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fail_extract)
-
-        run(
-            input_path=str(input_path),
-            output=str(output_path),
-            input_format=fmt,
-            extract_glossary=True,
-        )
-
-        stdout = capsys.readouterr().out
-        # New code path uses mode-based warning
-        assert (
-            "Glossary extraction is only supported for EPUBs" in stdout
-            or "only supported for EPUBs; skipping extraction" in stdout
-        )
 
     def test_epub_extract_glossary_uses_pro_model_but_translation_stays_flash(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1892,53 +1871,6 @@ class TestRunGlossaryExtractionOrchestration:
 
         captured = capsys.readouterr()
         assert "manual glossary" in captured.out.lower() or "override" in captured.out.lower()
-
-    def test_non_epub_deep_scan_warns_and_skips_extraction(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-    ) -> None:
-        """When glossary_mode is auto/deep-scan but input is not EPUB, warn and skip extraction."""
-        monkeypatch.setattr(cli_module, "load_config", lambda: {})
-        monkeypatch.setattr(
-            cli_module, "resolve_model", lambda name, config, *, explicit=False: (name, False)
-        )
-        monkeypatch.setattr(
-            cli_module,
-            "create_provider",
-            lambda *args, **kwargs: {"provider": "test"},
-        )
-        monkeypatch.setattr(cli_module, "TranslationEngine", _NoopEngine)
-        monkeypatch.setattr(cli_module, "build_system_prompt", lambda *args, **kwargs: "PROMPT")
-        monkeypatch.setattr(cli_module, "MarkdownSourceAdapter", lambda path: _NoopSource())
-        monkeypatch.setattr(cli_module, "load_glossary_block", lambda *args, **kwargs: None)
-
-        # Create markdown directory with page files
-        in_md_dir = tmp_path / "md_dir"
-        in_md_dir.mkdir()
-        (in_md_dir / "page0001.md").write_text("# Title\nContent", encoding="utf-8")
-        out_file = tmp_path / "out.md"
-
-        extract_called = False
-
-        def fake_extract(*args: object, **kwargs: object) -> dict:
-            nonlocal extract_called
-            extract_called = True
-            return {"tier": "none", "term_count": 0}
-
-        monkeypatch.setattr(cli_module, "_extract_glossary_to_path", fake_extract)
-
-        run(
-            input_path=str(in_md_dir),
-            output=str(out_file),
-            model="flash",
-            input_format="markdown",
-            glossary_mode="deep-scan",
-        )
-
-        assert not extract_called, "Extraction should not run for non-EPUB input"
-        captured = capsys.readouterr()
-        assert "epub" in captured.out.lower() and (
-            "skip" in captured.out.lower() or "warn" in captured.out.lower()
-        )
 
 
 class _ResumeProvider:

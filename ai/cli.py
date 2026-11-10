@@ -40,11 +40,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--allow-paid-api", action="store_true")
     p.add_argument(
-        "--allow-isolated-format",
-        action="store_true",
-        help="Opt in to isolated Markdown/PDF translation",
-    )
-    p.add_argument(
         "--provider",
         choices=["cli", "gemini", "openai", "anthropic", "api"],
         metavar="{cli,gemini,openai,anthropic}",
@@ -108,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-format",
         choices=["auto", "epub"],
         default="auto",
-        help="Input format (default: auto-detect from path)",
+        help="Kept for existing scripts; EPUB is the only input format",
     )
     p.add_argument(
         "--resume",
@@ -279,7 +274,7 @@ def _apply_preset(
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Parse intent and dispatch to a format-specific application boundary."""
+    """Parse intent and dispatch to the EPUB application boundary."""
     tokens = argv if argv is not None else sys.argv[1:]
     if tokens[:1] == ["presets"]:
         presets_main(tokens[1:])
@@ -302,22 +297,8 @@ def main(argv: list[str] | None = None) -> None:
             "(gemini, openai, or anthropic) with explicit authorization"
         )
     path = Path(args.input_path)
-    fmt = (
-        "markdown"
-        if path.is_dir()
-        else {".epub": "epub", ".md": "markdown", ".pdf": "pdf"}.get(path.suffix.lower())
-    )
-    if fmt is None:
-        parser.error("Unsupported format; EPUB is supported, DOCX is retired")
-    if args.input_format == "epub" and fmt != "epub":
-        parser.error("--input-format epub requires an EPUB input")
-    if fmt != "epub":
-        if not args.allow_isolated_format:
-            parser.error("Markdown/PDF require --allow-isolated-format")
-        if "--resume" in tokens or args.force_resume or args.checkpoint_dir:
-            parser.error("Explicit resume is EPUB-only")
-        if args.extract_glossary or args.glossary_mode or args.glossary or args.extraction_model:
-            parser.error("Glossary options are EPUB-only")
+    if path.is_dir() or path.suffix.lower() != ".epub":
+        parser.error(orchestration.EPUB_ONLY_MESSAGE)
     spec = orchestration.TranslationSpec(args.output_lang, args.prompt)
     model = orchestration.ModelSpec(
         args.model, args.effort, _is_model_flag_explicit(tokens), args.preset
@@ -326,49 +307,26 @@ def main(argv: list[str] | None = None) -> None:
     quality = orchestration.QualityPolicy(
         not args.no_sanity_probe, args.max_batch_chars, args.max_batch_segments
     )
-    if fmt == "epub":
-        options = orchestration.EpubTranslationOptions(
-            spec=spec,
-            model=model,
-            provider=provider,
-            quality=quality,
-            glossary=orchestration.GlossarySpec(
-                Path(args.glossary) if args.glossary else None,
-                args.glossary_mode,
-                args.extract_glossary or args.extraction_model is not None,
-                args.glossary_min_priority,
-                args.glossary_max_terms,
-                args.extraction_model,
-            ),
-            resume=orchestration.ResumePolicy(
-                args.resume,
-                args.force_resume,
-                Path(args.checkpoint_dir) if args.checkpoint_dir else None,
-            ),
-        )
-        orchestration.translate_epub(path, Path(args.output), options)
-    elif fmt == "markdown":
-        orchestration.translate_markdown(
-            path,
-            Path(args.output),
-            orchestration.MarkdownTranslationOptions(
-                spec=spec,
-                model=model,
-                provider=provider,
-                quality=quality,
-            ),
-        )
-    else:
-        orchestration.translate_pdf(
-            path,
-            Path(args.output),
-            orchestration.PdfTranslationOptions(
-                spec=spec,
-                model=model,
-                provider=provider,
-                quality=quality,
-            ),
-        )
+    options = orchestration.EpubTranslationOptions(
+        spec=spec,
+        model=model,
+        provider=provider,
+        quality=quality,
+        glossary=orchestration.GlossarySpec(
+            Path(args.glossary) if args.glossary else None,
+            args.glossary_mode,
+            args.extract_glossary or args.extraction_model is not None,
+            args.glossary_min_priority,
+            args.glossary_max_terms,
+            args.extraction_model,
+        ),
+        resume=orchestration.ResumePolicy(
+            args.resume,
+            args.force_resume,
+            Path(args.checkpoint_dir) if args.checkpoint_dir else None,
+        ),
+    )
+    orchestration.translate_epub(path, Path(args.output), options)
 
 
 if __name__ == "__main__":

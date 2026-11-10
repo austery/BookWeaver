@@ -9,7 +9,7 @@ An input-to-output translation path that receives the project's full compatibili
 _Avoid_: Main workflow, preferred format
 
 **Isolated Format Capability**:
-A non-supported format capability retained for possible future reuse without receiving current product guarantees or constraining the Supported Product Path.
+A non-supported format capability retained for possible future reuse without receiving current product guarantees or constraining the Supported Product Path. No capability holds this status now: issue 53 removed the Markdown and PDF input paths (ADR-0003).
 _Avoid_: Supported format, legacy support
 
 **Legacy Workflow**:

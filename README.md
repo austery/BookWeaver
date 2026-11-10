@@ -149,7 +149,7 @@ Active EPUB runs default to at most 200 segments and 60,000 source characters pe
 uv run bookweaver book.epub --output translated.epub --max-batch-segments 150
 ```
 
-The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. Legacy and isolated-format batchers have no segment cap unless explicitly supplied.
+The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. Legacy batchers have no segment cap unless explicitly supplied.
 
 Each Antigravity batch waits up to 600 seconds for a response by default. Large batches or the Pro profile may need longer; set `antigravity.timeout_seconds` (positive number, at most 86400) in configuration. Codex and Claude Code have the same default, with `codex.timeout_seconds` and `claude_code.timeout_seconds`. A timed-out batch fails without automatic retry or paid fallback; committed batches remain resumable.
 
@@ -195,7 +195,7 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 ## Scope and verification status
 
-EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. Markdown/PDF adapters are retained behind `--allow-isolated-format`; EPUB glossary/resume controls do not apply there. DOCX is rejected. Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
+EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. The CLI rejects Markdown, PDF, DOCX and every other input with one EPUB-only error (ADR-0003). Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
 
 The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9) and Claude Code through `--preset claude-*` (SPEC-025 §3.10); the comparison method and first evidence are in the [evaluation record](docs/plans/2026-11-09-translation-evaluation-method.md), and no whole-book comparison has run.
 
@@ -214,5 +214,3 @@ New EPUB checkpoints and glossary cache keys use a streamed SHA-256 digest of th
 The source-only bibliography policy uses segmenter `epub-leaf-block-v4-source-only-bibliography`. Older v3 checkpoints, including v1 imports, cannot resume into this policy even with force; preserve them and use a fresh `--checkpoint-dir`. A missing segment-cap field in an otherwise matching checkpoint means the historical unbounded policy; selecting a cap requires explicit force. Changing only the cap is a soft mismatch. The reviewed book is a separately documented reconstruction, not an automatic v3-to-v4 checkpoint migration.
 
 Early schema-v2 checkpoints from PR #25's initial commit used metadata fingerprints. They cannot be reused as content-verified checkpoints: preserve the old directory and choose a fresh `--checkpoint-dir`. Legacy v1 imports require a matching legacy metadata fingerprint plus explicit `--force-resume`; imported segment provenance records `source_verification: legacy_metadata_only`. This acknowledges that historical source bytes cannot be verified from v1 metadata. The original v1 files remain intact.
-
-Isolated Markdown input must be a directory containing translatable numbered `page*.md` files. Ordinary Markdown files and empty page directories fail before writing an output.

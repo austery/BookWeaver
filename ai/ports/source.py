@@ -34,12 +34,10 @@ class TranslatedSegment:
 
 
 class IBookSource(ABC):
-    """Port for book format adapters (EPUB, Markdown, DOCX, etc.).
+    """Port for book format adapters. EPUB is the only adapter (ADR-0003).
 
-    Adapters handle format-specific structure internally:
-    - EPUB: chapters, TOC, manifest, spine ordering, package lifecycle
-    - Markdown: file splitting, heading detection
-    - DOCX: paragraph/table extraction
+    The adapter handles format-specific structure internally: chapters, TOC,
+    manifest, spine ordering and the package lifecycle.
 
     The engine sees only a flat list of :class:`Segment` objects.
     """

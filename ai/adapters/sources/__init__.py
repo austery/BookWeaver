@@ -1,1 +1,1 @@
-"""Book source adapters (EPUB, Markdown, DOCX, etc.)."""
+"""Book source adapters. EPUB is the only one (ADR-0003)."""

@@ -15,7 +15,6 @@ from ai.model_profiles import CERTIFIED_AGY_MODELS, ResolvedModel
 from ai.orchestration import (
     TranslationOrchestrator,
     EpubTranslationOptions,
-    MarkdownTranslationOptions,
     GlossarySpec,
     ResumePolicy,
     QualityPolicy,
@@ -147,20 +146,32 @@ def test_checkpoint_preflight_precedes_glossary_requests(tmp_path: Path, corrupt
     assert factory.calls == ["segment_tags"]
 
 
-@pytest.mark.parametrize("directory", [False, True])
-def test_unsupported_markdown_preserves_destination(tmp_path: Path, directory: bool) -> None:
-    source = tmp_path / ("pages" if directory else "notes.md")
-    if directory:
+@pytest.mark.parametrize(
+    ("kind", "input_format"),
+    [
+        ("markdown-directory", "epub"),
+        ("markdown-directory", "markdown"),
+        ("markdown-file", "markdown"),
+        ("pdf", "pdf"),
+    ],
+)
+def test_non_epub_input_is_rejected_and_preserves_destination(
+    tmp_path: Path, kind: str, input_format: str
+) -> None:
+    source = tmp_path / {"markdown-directory": "pages", "markdown-file": "notes.md"}.get(
+        kind, "report.pdf"
+    )
+    if kind == "markdown-directory":
         source.mkdir()
+        (source / "page0001.md").write_text("A page that must not be translated")
     else:
         source.write_text("Source content")
-        (tmp_path / "page0001.md").write_text("Unrelated page must not be translated")
     output = tmp_path / "out.md"
     output.write_text("Existing destination")
     factory = OfflineFactory()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="EPUB only"):
         TranslationOrchestrator(provider_factory=factory).translate(
-            source, output, MarkdownTranslationOptions(config={}), input_format="markdown"
+            source, output, EpubTranslationOptions(config={}), input_format=input_format
         )
     assert output.read_text() == "Existing destination"
     assert not factory.calls
