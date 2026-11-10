@@ -630,7 +630,7 @@ def default_epub_checkpoint_dir(input_path: Path, output_path: Path) -> Path:
     )
 
 
-# ── Language mapping ──────────────────────────────────────────
+# ── Checkpoint and batch constants ────────────────────────────
 
 _CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _ACTIVE_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v4-source-only-bibliography"
@@ -909,9 +909,6 @@ def _resolve_checkpoint_dir(
     return output_file.parent / _CHECKPOINT_ROOT / input_format / input_file.stem
 
 
-# ── Argument parsing ──────────────────────────────────────────
-
-
 # ── Wiring helpers ────────────────────────────────────────────
 
 
@@ -1038,6 +1035,3 @@ def _log_progress(event: str, *, stderr: bool = False, **fields: object) -> None
         print(line, file=sys.stderr)
         return
     print(line)
-
-
-# ── Main ──────────────────────────────────────────────────────
