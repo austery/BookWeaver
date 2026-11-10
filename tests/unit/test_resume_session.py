@@ -123,14 +123,29 @@ def test_a_same_profile_model_change_restores_with_a_warning(
     assert "[resume] Mixed-model continuation" in capsys.readouterr().out
 
 
-def test_no_resume_restores_nothing_and_writes_nothing(tmp_path: Path) -> None:
-    with _session(None) as session:
+def test_no_resume_restores_nothing_and_never_opens_a_store() -> None:
+    class NoStores:
+        def create(self, directory: Path) -> object:
+            raise AssertionError(f"a no-resume session must not open a store: {directory}")
+
+    session = ResumeSession(
+        store_factory=NoStores(),  # type: ignore[arg-type]
+        directory=None,
+        book=BOOK,
+        model=resolve_preset("agy-flash-low"),
+        requested_effort=None,
+        output_lang="zh",
+        bounds=BOUNDS,
+        segmenter_signature=SEGMENTER,
+        force=True,
+        usage_snapshot=lambda: None,
+    )
+    with session:
         verified = session.verify()
         assert verified.may_reuse is False
         assert session.restore(verified, "prompt-1") == {}
         assert session.commit([TranslatedSegment("s1", "source", "译文")], None) is False
         assert session.directory is None
-    assert list(tmp_path.iterdir()) == []
 
 
 def test_checkpoint_progress_for_missing_and_unreadable_files(tmp_path: Path) -> None:

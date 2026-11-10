@@ -5,8 +5,7 @@ together.  It lives outside the hexagonal boundary modules and is
 allowed to import from all layers.
 
 Usage:
-    python -m ai.cli input.epub --output translated.epub [options]
-    python -m ai.cli ./pages_dir/ --output translated.md [options]
+    uv run bookweaver book.epub --output translated.epub [options]
 """
 
 from __future__ import annotations
@@ -280,7 +279,7 @@ class TranslationOrchestrator:
                     bounds=bounds,
                     segmenter_signature=_ACTIVE_EPUB_SEGMENTER_SIGNATURE,
                     force=resume.force,
-                    usage_snapshot=factory.usage_snapshot,
+                    usage_snapshot=lambda: factory.usage_snapshot(),
                 )
             )
             # Before any external work: the glossary step cannot be planned without it.
@@ -784,6 +783,9 @@ def _compute_input_signature(input_file: Path) -> str:
     stat = input_file.stat()
     payload = f"{input_file.resolve()}|{stat.st_size}|{stat.st_mtime_ns}".encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+# ── Configuration and progress helpers ────────────────────────
 
 
 def _resolve_positive_int_config(

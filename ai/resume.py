@@ -62,7 +62,7 @@ class Verified:
 def checkpoint_directory(*, explicit: Path | None, input_file: Path, output_file: Path) -> Path:
     """``--checkpoint-dir``, else ``<output dir>/.bookweaver_checkpoints/epub/<book stem>``."""
     if explicit is not None:
-        return explicit
+        return Path(explicit)
     return output_file.parent / _CHECKPOINT_ROOT / "epub" / input_file.stem
 
 
@@ -81,7 +81,7 @@ def checkpoint_progress(directory: Path) -> int | None:
     return count if isinstance(count, int) else None
 
 
-def segment_backend(provider: ITranslationProvider | None, model: ResolvedModel) -> str:
+def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel) -> str:
     """Provenance backend reported by the provider, else the selected runtime."""
     reported = provider.backend if provider is not None else None
     if reported:
@@ -89,7 +89,7 @@ def segment_backend(provider: ITranslationProvider | None, model: ResolvedModel)
     return model_runtime(model) if model.provider == "cli" else "any_llm"
 
 
-def refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
+def _refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
     """Stop a resume that crosses a Codex or Claude Code model.
 
     The identity keys on tier and effort, which those models share with each other and with the
@@ -192,7 +192,7 @@ class ResumeSession:
             legacy_input_signature=self._book.legacy_signature,
         )
         if not self._force:
-            refuse_trial_model_change(saved, self._model)
+            _refuse_trial_model_change(saved, self._model)
             self._store.load(
                 self._identity,
                 segment_ids=set(self._book.segment_ids),
@@ -240,7 +240,7 @@ class ResumeSession:
                 translated=item.translated,
                 profile=self._model.profile,
                 provider=self._model.provider,
-                backend=segment_backend(provider, self._model),
+                backend=_segment_backend(provider, self._model),
                 model=self._model.model_id,
                 effort=self._model.effort,
                 completed_at=completed,
