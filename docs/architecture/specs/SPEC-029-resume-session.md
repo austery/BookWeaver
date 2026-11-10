@@ -1,8 +1,8 @@
 ---
 specId: SPEC-029
 title: Resume Session — one module for checkpoint verify, restore and commit
-status: Draft for owner review (2026-11-10), revised after independent review
-implementationStatus: Not started
+status: Approved by the owner (2026-11-10) — three-step delivery (§5) and interface (§2.1), including the tach.toml change; §6 items 2 and 3 still open
+implementationStatus: Step 1 (blank-segment fix, §6 item 1) merged in PR 108; PR A and PR B wait for SPEC-028 Phase 2b
 priority: P2 - Reliability
 creationDate: 2026-11-10
 lastUpdateDate: 2026-11-10
@@ -163,7 +163,7 @@ SPEC-028 Phase 2b (`--term-panel`, issue 100, session "Session Handoff 阶段 2b
 
 ## 8. Open questions for the owner
 
-1. Fix the blank-segment gap (§6 item 1) first, as its own change?
-2. Approve the three-step delivery (§5) and the interface in §2.1, including the `tach.toml` change?
+1. ~~Fix the blank-segment gap first~~ — approved and merged (PR 108, 2026-11-10).
+2. ~~Approve the three-step delivery and the interface~~ — approved by the owner, 2026-11-10.
 3. Check soft mismatches before term extraction (§6 item 2)?
 4. Keep the warning-only rule for non-trial model changes (§6 item 3)?
