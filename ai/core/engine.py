@@ -237,9 +237,14 @@ class TranslationEngine:
         or when only one segment remains.
         """
         try:
-            return self._provider.translate_batch(
+            translated = self._provider.translate_batch(
                 segments, system_prompt=self._config.system_prompt
             )
+            # A blank translation must not reach the checkpoint: every later load refuses it,
+            # which would lock the whole book out of resume. Fail the batch so it splits.
+            if any(not text.strip() for text in translated):
+                raise TranslationError("provider returned a blank translation for a segment")
+            return translated
         except RateLimitError:
             raise
         except TranslationError as exc:
