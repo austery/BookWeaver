@@ -121,8 +121,12 @@ def measure_term_usage(
     counts as missing, and a part of a compound translation can count as another option.
     """
     segments = list(pairs)
+    entries = list(terms)
+    # In a tiered glossary a term without a tier is fixed (SPEC-028 §3.5); an untiered glossary
+    # keeps the old counting, where alternatives are acceptable choices.
+    tiered = any("tier" in entry for entry in entries)
     usage: list[TermUsage] = []
-    for entry in terms:
+    for entry in entries:
         term = str(entry.get("term", "")).strip()
         translation = str(entry.get("suggested_translation", "")).strip()
         if not term or not translation:
@@ -131,8 +135,9 @@ def measure_term_usage(
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
         tier = entry.get("tier")
+        fixed = tier == "fixed" or (tiered and tier is None)
         # A fixed term must use its own translation; its alternatives then count as missing.
-        alternatives = [] if tier == "fixed" else _alternatives(entry)
+        alternatives = [] if fixed else _alternatives(entry)
         parts = [part for part in [*_SLASH.split(translation), *alternatives] if part]
         # The whole translation and the longest part first, so that a part found only inside
         # a longer one is not counted as a second translation.

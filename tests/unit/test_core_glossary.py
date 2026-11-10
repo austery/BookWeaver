@@ -304,3 +304,25 @@ def test_a_fixed_term_using_only_its_alternative_is_drift() -> None:
 
     assert usage[0].missing == 2
     assert not usage[0].consistent
+
+
+def test_in_a_tiered_glossary_a_term_without_a_tier_is_fixed_for_drift() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "garden", "suggested_translation": "花园", "alternatives": ["园子"]},
+        {"term": "unity", "suggested_translation": "统一", "tier": "preferred"},
+    ]
+
+    usage = {item.term: item for item in measure_term_usage(terms, [("garden", "园子")])}
+
+    assert usage["garden"].missing == 1
+    assert not usage["garden"].consistent
+
+
+def test_in_an_untiered_glossary_alternatives_stay_acceptable() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "garden", "suggested_translation": "花园", "alternatives": ["园子"]}
+    ]
+
+    usage = measure_term_usage(terms, [("garden", "园子")])
+
+    assert (usage[0].missing, usage[0].option_counts) == (0, {"花园": 0, "园子": 1})
