@@ -46,6 +46,10 @@ mkdir -p ~/.local/state/bookweaver/codex-home
 CODEX_HOME=~/.local/state/bookweaver/codex-home codex login
 ```
 
+### Comparing models
+
+Vendors release new models about every six months, so comparing them is a recurring task. Today, translate the same book once per preset, each into its own output folder, and read the results side by side. Subscription CLIs change often: a new CLI version needs a fresh probe, and a vendor can drop a model from its list. A paid API preset pins one model version in `ai/model_profiles.py`, so it can fit a run that must give stable quality. A benchmark that translates a sample of a book's segments with several presets and prompts is planned in [issue 103](https://github.com/austery/BookWeaver/issues/103).
+
 ## Local API
 
 Start the local API server. It stays in the foreground of your terminal, on `127.0.0.1` only:
@@ -197,7 +201,11 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. The CLI rejects Markdown, PDF, DOCX and every other input with one EPUB-only error (ADR-0003). The legacy shell entry point and numbered scripts were retired (issue 21); `uv run bookweaver` is the only entry point.
 
+Keep books, translations and their checkpoints outside this program folder, for example in `~/Documents/BookWeaver/`, where the local API stores uploads. The default checkpoint directory is `.bookweaver_checkpoints/` beside the output file, so an output written inside the program folder leaves book data there.
+
 The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, and full CLI/config coverage remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9) and Claude Code through `--preset claude-*` (SPEC-025 §3.10); the comparison method and first evidence are in the [evaluation record](docs/plans/2026-11-09-translation-evaluation-method.md), and no whole-book comparison has run.
+
+The automated tests use small synthetic EPUBs. They prove the mechanics, not translation quality or real-book segmentation. A change to segmentation, the prompt or term handling is also checked on real books: one humanities book and one technical book from the owner's library, chosen for that change. Real books are not committed.
 
 ```bash
 uv run ruff check .
