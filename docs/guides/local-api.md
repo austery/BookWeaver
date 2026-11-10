@@ -17,7 +17,7 @@ Then open <http://127.0.0.1:8765/docs> in a browser. That page is the user inter
 1. Open `POST /runs/upload` on the `/docs` page and press **Try it out**.
 2. Choose the EPUB in `file` (at most 200 MiB).
 3. Confirm the output name. Leave `output_name` empty to use `<book name>.zh.epub`.
-4. Choose the `preset` from the list. The default is `agy-flash-low`. Choose the `extraction_model`, the model that extracts the book's key terms (see [Terms](terms.md)). The default is `pro`.
+4. Choose the `preset` from the list. The default is `agy-flash-low`. Choose the `extraction_model`, the model that extracts the book's key terms (see [Terms](terms.md)). The default is `pro`. To let several vendors choose the terms instead, choose a `term_panel` from your configuration; the default `none` keeps `extraction_model`. A panel ignores `extraction_model` and cannot be combined with `glossary_mode` `deep-scan`.
 5. Press **Execute**. The translation starts at once and uses quota or money, as the preset says.
 6. Use `GET /runs/current` to read the progress: compare `done_segments` with `planned_segments`. It also shows the state and the last log lines. Press **Execute** again to refresh.
 
@@ -30,12 +30,15 @@ The book and its translation stay in one folder. `<book name>` is the uploaded f
   <book name>.epub       the uploaded copy
   <book name>.zh.epub    the translation
   <codex or claude preset>/  that run's translation, log, and saved progress
+  panel-<name>-<id>/<preset>/  a Term Panel run's translation, log, and saved progress
+  .bookweaver_glossaries/panel/  the Term Panel glossaries, shared by every preset
 ```
 
 The run log and the saved progress are in the same folder as the translation.
 
 - Upload the same file with the same preset and prompt to resume. A different prompt, profile, or effort fails, because the API has no `--force-resume`; use the CLI for that.
 - Each Codex or Claude Code preset works in its own `<preset>/` folder inside the book's folder, so you can upload the same book again with another of those models and compare the results. Each folder extracts its own terms, so such a comparison can differ in its glossary as well as its model.
+- With a Term Panel, every preset works in `panel-<name>-<id>/<preset>/` and all of them share the panel's glossary, which the first run creates; later uploads with another preset reuse it with no model call. `<id>` comes from the panel's members and the book, so after you edit a panel, the next upload starts in a new folder instead of resuming with other terms. The panel list is read when the server starts; restart it after you change `terminology_panels`.
 - A preset from another vendor with the same profile and no effort setting (for example `gemini-flash` to `anthropic-flash`) resumes with a warning. The book then mixes translations from two models.
 - BookWeaver never replaces the uploaded copy. A different file with the same name returns 409. Rename the file to upload it.
 - A new run rewrites the translation file. Copy the file first if you edited it by hand.
