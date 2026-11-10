@@ -19,9 +19,9 @@
 
 ## Migration status
 
-SPEC-021 is approved for implementation. The new application path and CLI wiring exist, but the migration is not yet fully accepted. One narrative book has complete execution and interruption evidence, plus a selected-chapter fidelity revision. A second book ran through the local API upload on 2026-11-08 (issue #60). Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain outstanding. Historical helper functions still in `ai/orchestration.py` serve legacy tests and are pending deletion; do not extend them or mistake them for the new application path.
+SPEC-021 is approved for implementation. The new application path and CLI wiring exist, but the migration is not yet fully accepted. One narrative book has complete execution and interruption evidence, plus a selected-chapter fidelity revision. A second book ran through the local API upload on 2026-11-08 (issue #60). Complete reader/layout acceptance, additional books, and full CLI/config coverage remain outstanding. The legacy pipeline is retired (issue 21, 2026-11-10): `_run_pipeline` and its helpers, `translatebook.sh`, the numbered scripts `01`–`07`, the Gemini CLI modules and `ai/epub_translate_roundtrip.py` are deleted. Recovery anchor: tag `legacy-before-retirement-2026-11-10`.
 
-`translatebook.sh`, numbered Markdown scripts, Gemini CLI modules, and the orphaned `ai/epub_translate_roundtrip.py` remain retirement candidates. Do not resurrect or route the new application through them. Keep `08_epub_roundtrip_baseline.py`, EPUB package handling, and evaluation assets. The isolated Markdown/PDF application paths are removed (issue 53); the numbered scripts that also read Markdown or PDF wait for the legacy retirement.
+Do not resurrect the deleted legacy code or route the new application through it. Keep `00_extract_glossary.py`, `08_epub_roundtrip_baseline.py`, `generate_test_epub.py`, EPUB package handling, and evaluation assets. `benchmark_models.py` and `ai/gemini_provider.py` stay until an EPUB-based replacement exists; they no longer run, because they read the `page*.md` chunks of the retired PDF path.
 
 ## Documents
 

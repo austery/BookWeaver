@@ -113,9 +113,9 @@ change that adds, modifies or deletes anything under these paths has
   (`~/Documents/global-skills/agents/DOC-LIFECYCLE.md`, "Task closeout").
 - **EPUB output format:** the bilingual EPUB that `ai/epub_package.py` writes is
   the product the owner keeps and reads in other apps.
-- **Legacy stores** (their consumers are Unknown, see below, but the formats are
-  known): the model probe cache `~/.cache/bookweaver/model_probe_cache.json`
-  (`ai/model_probe.py`) and the SQLite table `quota_usage` (`ai/quota_tracker.py`).
+- **Legacy stores:** the model probe cache `~/.cache/bookweaver/model_probe_cache.json`
+  and the SQLite table `quota_usage`. No code reads or writes them since the legacy
+  retirement (issue 21); files on disk are left alone.
 
 Structure = touched means:
 
@@ -149,28 +149,12 @@ checkpoint, prompt and source modules it depends on.
 Not yet mapped, so treat these as **Unknown** and name the missing evidence in
 the PR:
 
-- **Legacy code pending retirement** (`AGENTS.md`, "Migration status"):
-  - the historical helpers in the lower half of `ai/orchestration.py`, such as
-    `CheckpointMetadata`, `resolve_model`, `create_provider` and the v1
-    checkpoint writers. The same region also holds current-path helpers
-    (Structure paths above), so check each function's callers; never retire by
-    line range;
-  - `ai/model_resolver.py`, `ai/model_probe.py` and `ai/provider_factory.py`,
-    used by those helpers;
-  - `ai/gemini_provider.py`, `ai/gemini_api_provider.py`, `ai/model_selector.py`,
-    `ai/quota_tracker.py`, `ai/bilingual_merger.py` and the orphaned
-    `ai/epub_translate_roundtrip.py`;
-  - `ai/adapters/providers/gemini_*_adapter.py`. `ai/orchestration.py:53-54`
-    imports them at module load, so a broken adapter breaks every command;
-  - the root `0*_*.py` scripts, `translatebook.sh`, `benchmark_models.py`,
-    `generate_test_epub.py`, `pipeline_utils.py`, and the committed
-    `glossary_auto.json` (no runtime reader found by search).
-
-  Missing evidence: no complete consumer map exists. Legacy tests import some of
-  these files (`tests/unit/test_translate_step3_refactor.py`,
-  `tests/unit/test_epub_baseline_cli.py`). Deleting them is a retirement
-  decision for the owner, not a Leaf cleanup. `08_epub_roundtrip_baseline.py`
-  is an evaluation asset (Always stop).
+- **Remaining legacy files:** `benchmark_models.py` and `ai/gemini_provider.py`
+  (they read the `page*.md` chunks of the retired PDF path and no longer run; kept
+  until an EPUB-based benchmark replaces them), and the committed
+  `glossary_auto.json` (no runtime reader found by search). Deleting them is an
+  owner decision. `08_epub_roundtrip_baseline.py` is an evaluation asset (Always
+  stop).
 - `config/prompts/`: no code references it by path, and both files contain the
   `START`/`END` markers that `PromptPreparation.from_config` rejects for EPUB.
   A user configuration may still name one as a template.
