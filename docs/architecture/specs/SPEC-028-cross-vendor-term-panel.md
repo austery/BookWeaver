@@ -2,7 +2,7 @@
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
 status: Approved by the owner (2026-11-09); amended 2026-11-10 (named panels, panel as its own step, availability, Deep Scan)
-implementationStatus: Phase 1 implemented (PR 94) and adopted by the owner after live acceptance (2026-11-10); Phases 2-4 not started
+implementationStatus: Phase 1 implemented (PR 94) and adopted after live acceptance (2026-11-10); Phase 2a (`bookweaver terms`) implemented offline, live acceptance pending; Phases 2b-5 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
 lastUpdateDate: 2026-11-10
@@ -39,7 +39,7 @@ All runs used the trimmed EPUB of chapters 1 and 2 with the full book's index an
 - **Book sentences help judges a little.** With up to three body sentences per term, Sol changed 14 of 107 translations; between two runs without sentences it changed 7 of 95. Some changes were clear gains (private ownership 私人所有权 → 私人所有制, from a passage about economic systems).
 - **A preferred tier did no harm in chapters 1 and 2, and showed no benefit.** Flash translated the chapters twice with the same 91 terms: all strict, or 59 strict plus 32 as suggestions. Strict terms were used 38 of 38 times in both. Suggested terms were used 51 of 52 and 49 of 52 times; the two changes used the listed alternative. Only 9 suggested terms occur in these chapters.
 - **Register dropped, cause unknown.** Both arms scored lower on the literary-word measure (5.53 and 5.98 per 1,000 characters) than both earlier Flash runs on the same chapters (6.13 each, with 50 and 78 terms). Run-to-run variation has not been measured, and the 91-term glossary is the largest so far. A large glossary may cost the style the translator was chosen for.
-- **The vote rules replay.** Rules §3.4 applied offline to the second-round data (vendors: Google nominator; OpenAI and Anthropic as nominators and judges) gave 59 `fixed`, 34 `preferred` and 14 dropped. The dropped terms were single-vendor generic words (Power, Freedom), entries that judges called duplicates, and index-only terms. Every two-judge disagreement went to the tie-break, so the tie-break decides much of a two-judge panel.
+- **The vote rules replay.** Rules §3.4 applied offline to the second-round data (vendors: Google nominator; OpenAI and Anthropic as nominators and judges) gave 59 `fixed`, 34 `preferred` and 14 dropped. The dropped terms were single-vendor generic words (Power, Freedom), entries that judges called duplicates, and index-only terms. Every two-judge disagreement went to the tie-break, so the tie-break decides much of a two-judge panel; under rule 5 that is Sol (§5).
 
 ## 3. Decisions
 
@@ -179,7 +179,7 @@ These are Structure paths in `docs/agents/impact-radius.md`. This list is the de
 | Glossary block (`GlossaryManager.format_block`) | Second block for `preferred` terms; unchanged output when no term has `tier` |
 | Glossary cache (`glossary_cache_path`) | New panel location and identity (§3.7); the existing single-extraction identity and files are unchanged |
 | New files | `term-panel-report.json` and saved member replies under `.bookweaver_glossaries/panel/` |
-| Runtime configuration schema | Optional `terminology_panels` (named panels, §3.10) and `runtimes.disabled` (§3.12); `config/config.json.example` gains one example panel |
+| Runtime configuration schema | Optional `terminology_panels` (named panels, §3.10) and `runtimes.disabled` (§3.12); `config/config.json.example` gains one example panel. The validator in `ai/runtime_config.py` gains `array`, `items`, `minItems`, `minLength` and `required`, which no earlier key used |
 | Model registry (`ai/model_profiles.py`) | `vendor` on every preset, subscription and metered; no `model_id` changes |
 | Deep Scan prompt (`ai/glossary_extractor.py`, Phase 5) | Real title and table of contents; bumps `extractor_version` for Deep Scan caches only |
 | Term report (`term-consistency.json`) | Per-tier grading; reports without tiers keep their current shape |
@@ -213,6 +213,7 @@ The owner's rule: hide no setting, but tier the views, and build every view from
 - **Ordinary:** choose a preset and, optionally, a panel name.
 - **Confirm:** before the first call, `bookweaver terms` prints the resolved plan: each member's preset, runtime (quota pool), vendor and planned calls, and whether any call is paid. The upload returns the same plan in its response.
 - **Inspect:** `term-panel-report.json` (votes, merges, tiers, bias, failures) and `term-consistency.json`.
+- A panel may set `judge_prompt_max_chars` (default 200,000); a judge prompt longer than that is split into chunks (§3.9).
 
 The plan and the report come from the same resolver that runs the panel; no surface keeps a second copy of the rules.
 
@@ -229,7 +230,7 @@ The plan and the report come from the same resolver that runs the panel; no surf
 ## 5. Open items
 
 - [x] Owner confirmed on 2026-11-09: one vote per vendor (§3.2), not one per preset.
-- [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement; in the replay it chose Opus.
+- [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement. Correction, 2026-11-10: the replay first ranked judges by the absolute gap and named Opus. Under rule 5 as written, a negative self-preference counts as zero, both judges score zero, and configured order decides: Sol, the first judge of `three-vendor`. The counts (59 fixed, 34 preferred, 14 dropped) are unchanged; tied terms such as Cosmic morale (面对宇宙的精神底气) and Cosmopolis (宇宙城邦) follow Sol. `ai/core/term_panel.py` reproduces this replay exactly.
 - [x] Run-to-run register variation, measured on ch007 (2026-11-10): two strict runs differed by 0.54 per 1,000 characters; the 91-term glossary did not lower register there.
 - [x] Owner feedback, 2026-11-10: do not normalize terms fully; adapting a word to the sentence is welcome. Decision: no new field. The judge prompt defines `enforce: fixed` narrowly: an author's coined concept, a person's name, a title, or an established doctrine or school. Everything else is `preferred`.
 - [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
@@ -242,7 +243,7 @@ The plan and the report come from the same resolver that runs the panel; no surf
 1. **Tiered glossary (done; adopted 2026-11-10, `docs/plans/2026-11-10-tiered-glossary-acceptance.md`).** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report.
    - Live acceptance: one chapter with several `preferred` terms (where Cosmic morale or Socratic civility occur; chapters 1 and 2 hold only nine), translated strict and tiered with the same glossary. Also measure register for both.
    - Gate, fixed before the run: adopt tiers when `fixed` drift is zero in the tiered version, register does not fall, and the owner does not prefer the strict version. Otherwise keep one strict block and record why. Closes issue 82 either way.
-2. **Terms command and `--term-panel` on the index path, subscription presets only.** Vendor field, named panels in configuration, `runtimes.disabled`, candidates with sentences, judges, aggregator, resolved plan, report, cache, saved replies. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, availability, cache identity. `scripts/` in the owner's trial folder holds the reference pipeline (`replay.py` for the vote rules).
+2. **Terms command and `--term-panel` on the index path, subscription presets only.** Delivered in two PRs: 2a, `bookweaver terms` with vendors, named panels, the readiness check (`ITranslationProvider.check_ready`, login, version and roster without a model call) and everything below except availability; 2b, `--term-panel` on the translate command and `runtimes.disabled`. Vendor field, named panels in configuration, `runtimes.disabled`, candidates with sentences, judges, aggregator, resolved plan, report, cache, saved replies. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, availability, cache identity. `scripts/` in the owner's trial folder holds the reference pipeline (`replay.py` for the vote rules).
    - Live acceptance: the owner adds the `three-vendor` panel to their configuration; then *A Philosophy of Software Design* (index 4,846 characters, no panel data yet) and *Political Thinking*, each with that panel, then translated with `agy-flash-low` into new folders, never resuming old checkpoints. Compare *Political Thinking* with the replay in §2.
 3. **Paid members.** Consent on `bookweaver terms`, through the deep review. Offline tests only, unless the owner authorizes a paid call.
 4. **Local API.** The `term_panel` dropdown, the panel output folder, login status display.

@@ -23,5 +23,11 @@
     "min_cjk_density": 0.3,
     "min_cjk_source_length": 40,
     "heartbeat_chars": 60
+  },
+  "terminology_panels": {
+    "three-vendor": {
+      "nominators": ["agy-flash-low", "codex-gpt-6.1-sol-low", "claude-opus-5-5-low"],
+      "judges": ["codex-gpt-6.1-sol-low", "claude-opus-5-5-low"]
+    }
   }
 }

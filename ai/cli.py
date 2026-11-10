@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="bookweaver",
         description="Translate EPUB books through a subscription CLI or a metered model API.",
-        epilog="List the named presets for --preset with: bookweaver presets. Start the local API with: bookweaver serve",
+        epilog="List the named presets for --preset with: bookweaver presets. Start the local API with: bookweaver serve. Choose terms with a Term Panel: bookweaver terms BOOK.epub --panel NAME",
     )
     p.add_argument(
         "input_path",
@@ -160,6 +160,7 @@ def _format_presets(presets: tuple[orchestration.Preset, ...]) -> str:
         "MODEL",
         "STATUS",
         "LAYER",
+        "VENDOR",
         "EVIDENCE",
     )
     lines = [
@@ -172,6 +173,7 @@ def _format_presets(presets: tuple[orchestration.Preset, ...]) -> str:
             preset.model_id,
             preset.status,
             "-" if preset.layer is None else str(preset.layer),
+            preset.vendor,
             preset.evidence,
         )
         for preset in presets
@@ -197,6 +199,38 @@ def presets_main(tokens: list[str]) -> None:
         print(json.dumps([asdict(preset) for preset in presets], indent=2))
     else:
         print(_format_presets(presets))
+
+
+def terms_main(tokens: list[str]) -> None:
+    """`bookweaver terms`: run a named Term Panel and write only a tiered glossary."""
+    parser = argparse.ArgumentParser(
+        prog="bookweaver terms",
+        description="Choose the book's terms with a named Term Panel (SPEC-028). No translation; "
+        "translate afterwards with --glossary PATH.",
+    )
+    parser.add_argument("input_path", help="Source EPUB file")
+    parser.add_argument("--panel", required=True, help="Term Panel name from your configuration")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Book folder for the glossary cache (default: the EPUB's)",
+    )
+    parser.add_argument("--glossary-mode", choices=["auto", "deep-scan"], default="auto")
+    parser.add_argument("--glossary-max-terms", type=int, default=None)
+    parser.add_argument("--allow-paid-api", action="store_true")
+    args = parser.parse_args(tokens)
+    try:
+        path = orchestration.run_term_panel(
+            args.input_path,
+            args.panel,
+            output_dir=args.output_dir,
+            mode=args.glossary_mode,
+            max_terms=args.glossary_max_terms,
+            allow_paid_api=args.allow_paid_api,
+        )
+    except orchestration.PanelError as exc:
+        parser.exit(2, f"bookweaver terms: {exc}\n")
+    print(path)
 
 
 def serve_main(tokens: list[str]) -> None:
@@ -251,6 +285,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if tokens[:1] == ["serve"]:
         serve_main(tokens[1:])
+        return
+    if tokens[:1] == ["terms"]:
+        terms_main(tokens[1:])
         return
     parser = build_parser()
     args = parser.parse_args(tokens)

@@ -116,6 +116,24 @@ The extraction prompt asks for one translation per term and puts other acceptabl
 
 A term in a glossary you supply can carry `"tier": "fixed"` or `"tier": "preferred"` (SPEC-028). A fixed term, and any term without a tier, must always use its translation. A preferred term is a suggestion: the prompt lists it in a separate block with its `alternatives`, and the model may use a better fitting translation in a sentence. `term-consistency.json` then counts only fixed drift as inconsistent and reports preferred variation as `preferred_varied`. A glossary with no tier anywhere produces exactly the prompt it produced before, so saved books resume unchanged. Term extraction does not write tiers yet.
 
+### Term Panel (several models choose the terms)
+
+`bookweaver terms BOOK.epub --panel NAME` lets models from different vendors propose and judge the book's terms, then writes a tiered glossary (SPEC-028). It translates nothing; translate afterwards with `--glossary PATH`, using the path it prints. Define panels by name in your configuration, for example:
+
+```json
+"terminology_panels": {
+  "three-vendor": {
+    "nominators": ["agy-flash-low", "codex-gpt-6.1-sol-low", "claude-opus-5-5-low"],
+    "judges": ["codex-gpt-6.1-sol-low", "claude-opus-5-5-low"]
+  }
+}
+```
+
+- Each vendor (Google, OpenAI, Anthropic) casts one vote; two presets of one vendor in one list are refused.
+- Before any model call the command prints the plan and checks that every member's CLI is signed in.
+- The glossary and `term-panel-report.json` (votes, tiers, judge bias) are cached in `.bookweaver_glossaries/panel/` in the book folder; a rerun with the same panel makes no call, and a run stopped by one member reuses the other members' replies.
+- It needs a book with an index. Paid presets and Deep Scan are not supported in a panel yet.
+
 Automatic extraction reads the book's back-of-book index and table of contents. If the book has no usable index, the run stops before it calls a model, and the log names the choices. To continue, choose one of these:
 
 - Set `glossary_mode` to `deep-scan` on the upload, or pass `--glossary-mode deep-scan` on the CLI. This sends the whole book in one request, which can use much more quota. It has no live evidence on any subscription CLI yet (issue #71).

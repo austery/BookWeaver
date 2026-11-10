@@ -25,6 +25,7 @@ def _validate(value: object, schema: dict[str, object], path: str) -> None:
         float: "number",
         bool: "boolean",
         dict: "object",
+        list: "array",
         type(None): "null",
     }.get(type(value))
     if actual not in kinds and not (actual == "integer" and "number" in kinds):
@@ -45,7 +46,26 @@ def _validate(value: object, schema: dict[str, object], path: str) -> None:
                 )
                 if invalid:
                     raise ValueError(f"Value out of range at {path}")
+    if isinstance(value, str):
+        shortest = schema.get("minLength")
+        if isinstance(shortest, int) and len(value) < shortest:
+            raise ValueError(f"Value too short at {path}")
+    if isinstance(value, list):
+        fewest = schema.get("minItems")
+        if isinstance(fewest, int) and len(value) < fewest:
+            raise ValueError(f"Too few items at {path}")
+        items = schema.get("items")
+        for number, item in enumerate(value):
+            if not isinstance(items, dict):
+                raise ValueError(f"Unexpected list at {path}")
+            _validate(item, dict(items), f"{path}[{number}]")
     if isinstance(value, dict):
+        required = schema.get("required", [])
+        missing = (
+            [key for key in required if key not in value] if isinstance(required, list) else []
+        )
+        if missing:
+            raise ValueError(f"Missing configuration key: {path}.{missing[0]}")
         properties = _mapping(schema.get("properties", {}))
         for key, child in value.items():
             if not isinstance(key, str):

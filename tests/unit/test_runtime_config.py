@@ -81,3 +81,30 @@ def test_legacy_config_is_rejected_without_rewriting(
     with pytest.raises(ValueError, match="Legacy"):
         load_runtime_config()
     assert legacy.read_text() == "{}"
+
+
+@pytest.mark.parametrize(
+    "panel,message",
+    [
+        ({"nominators": "agy-flash-low"}, "Invalid type"),
+        ({"judges": ["codex-gpt-6.1-sol-low"]}, "Missing configuration key"),
+        ({"nominators": [""]}, "too short"),
+        ({"nominators": ["agy-flash-low"], "members": []}, "unknown configuration key"),
+    ],
+)
+def test_term_panels_are_validated(panel: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_config({"terminology_panels": {"three-vendor": panel}})
+
+
+def test_a_named_panel_is_valid_configuration() -> None:
+    config: dict[str, object] = {
+        "terminology_panels": {
+            "three-vendor": {
+                "nominators": ["agy-flash-low", "codex-gpt-6.1-sol-low"],
+                "judges": ["codex-gpt-6.1-sol-low"],
+            }
+        }
+    }
+
+    assert validate_config(config) == config

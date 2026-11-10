@@ -11,6 +11,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -283,6 +284,11 @@ def _separate_mixed_index(text: str) -> tuple[str, str]:
 
 
 def _select_scored_index_text(epub_path: Path) -> str:
+    """Text of the strongest index candidate; see ``_select_scored_index``."""
+    return _select_scored_index(epub_path)[0]
+
+
+def _select_scored_index(epub_path: Path) -> tuple[str, str | None]:
     """Select index/glossary text using signal-based scoring.
 
     Scans all spine documents and scores them for index/glossary signals
@@ -300,6 +306,7 @@ def _select_scored_index_text(epub_path: Path) -> str:
 
     best_score: IndexSignalScore | None = None
     best_text = ""
+    best_href: str | None = None
 
     with zipfile.ZipFile(epub_path, "r") as zf:
         for idref in model.spine_itemrefs:
@@ -327,11 +334,27 @@ def _select_scored_index_text(epub_path: Path) -> str:
                 # Separate mixed English+Chinese if needed
                 english_part, _ = _separate_mixed_index(extracted)
                 best_text = english_part if english_part.strip() else extracted
+                best_href = item.href
 
-    return best_text
+    return best_text, best_href
+
+
+@dataclass(frozen=True)
+class IndexAndToc:
+    """The index and TOC text that term extraction reads, and the index document it came from."""
+
+    index_text: str
+    toc_text: str
+    index_href: str | None
 
 
 def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
+    """(index_text, toc_text); see ``locate_index_and_toc``."""
+    located = locate_index_and_toc(epub_path)
+    return located.index_text, located.toc_text
+
+
+def locate_index_and_toc(epub_path: Path) -> IndexAndToc:
     """Extract plain text from Index and TOC documents inside the EPUB.
 
     Detection is four-stage (Tier 1):
@@ -348,19 +371,19 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
     and preferring English for terminology extraction.
 
     Returns:
-        (index_text, toc_text) — either may be empty string if not found.
+        The index and TOC text (either may be empty) and the index document's href.
     """
     model = load_epub_package(epub_path)
-    index_text = ""
     toc_text = ""
 
     # Pass 0: Signal-scored detection (Tier 1 enhancement)
     # Checks ALL spine docs for strong index/glossary signals before fallback passes
-    index_text = _select_scored_index_text(epub_path)
+    index_text, index_href = _select_scored_index(epub_path)
 
     with zipfile.ZipFile(epub_path, "r") as zf:
         # Pass 1: filename-based detection + TOC
         weak_index_candidate = ""
+        weak_index_href: str | None = None
         for item_id, item in model.manifest_items.items():
             resolved_path = resolve_opf_href(model.opf_path, item.href)
 
@@ -375,14 +398,17 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                     ):
                         english_part, chinese_part = _separate_mixed_index(extracted)
                         index_text = english_part if english_part.strip() else extracted
+                        index_href = item.href
                         continue
                     if not weak_index_candidate:
                         weak_index_candidate = extracted
+                        weak_index_href = item.href
                         continue
                     # Separate mixed English+Chinese if needed
                     english_part, chinese_part = _separate_mixed_index(extracted)
                     # Use English part if available (more valuable for terminology)
                     index_text = english_part if english_part.strip() else extracted
+                    index_href = item.href
                 except (KeyError, UnicodeDecodeError):
                     pass
 
@@ -398,6 +424,7 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
         if not index_text and weak_index_candidate:
             english_part, chinese_part = _separate_mixed_index(weak_index_candidate)
             index_text = english_part if english_part.strip() else weak_index_candidate
+            index_href = weak_index_href
 
         # Pass 2: content-based fallback for Kindle/non-standard EPUBs
         if not index_text and model.spine_itemrefs:
@@ -414,6 +441,7 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                         # Separate mixed content here too
                         english_part, chinese_part = _separate_mixed_index(candidate)
                         index_text = english_part if english_part.strip() else candidate
+                        index_href = item.href
                         break
                 except (KeyError, UnicodeDecodeError):
                     pass
@@ -432,11 +460,73 @@ def extract_epub_index_and_toc(epub_path: Path) -> tuple[str, str]:
                         extracted = _xhtml_to_text(raw)
                         english_part, chinese_part = _separate_mixed_index(extracted)
                         index_text = english_part if english_part.strip() else extracted
+                        index_href = item.href
                         break
                 except (KeyError, UnicodeDecodeError):
                     pass
 
-    return index_text, toc_text
+    return IndexAndToc(index_text, toc_text, index_href if index_text else None)
+
+
+def has_usable_index(epub_path: Path, index_text: str) -> bool:
+    """Whether automatic extraction may read this index; short text needs the signal detector."""
+    return len(index_text) > 100 or bool(_select_scored_index_text(epub_path))
+
+
+def build_index_extraction_prompt(index_text: str, toc_text: str, max_terms: int) -> str:
+    """The Tier 1 extraction prompt, as the single-model path sends it."""
+    return _build_extraction_prompt(index_text, toc_text, max_terms)
+
+
+def parse_glossary_reply(raw_output: str) -> dict[str, object]:
+    """Parse one extraction reply, as the single-model path does."""
+    return _validate_and_parse_glossary(raw_output)
+
+
+_TITLE_PAGE_HINT_RE = re.compile(r"(?<![a-z0-9])(?:title|cover)", re.IGNORECASE)
+
+
+def body_documents(epub_path: Path, index_href: str | None) -> list[str]:
+    """Plain text of the spine documents that hold the book's body (SPEC-028 §3.3).
+
+    Excluded: the index document the extraction read, the navigation and TOC documents, and
+    title or cover pages.
+    """
+    model = load_epub_package(epub_path)
+    texts: list[str] = []
+    with zipfile.ZipFile(epub_path, "r") as zf:
+        for idref in model.spine_itemrefs:
+            item = model.manifest_items.get(idref)
+            if item is None or idref == model.toc_item_id:
+                continue
+            stem = Path(item.href).stem
+            if (
+                item.href == index_href
+                or _looks_like_toc_href(item.href)
+                or _TITLE_PAGE_HINT_RE.search(stem)
+            ):
+                continue
+            try:
+                raw = zf.read(resolve_opf_href(model.opf_path, item.href)).decode("utf-8")
+            except (KeyError, UnicodeDecodeError):
+                continue
+            text = _xhtml_to_text(raw)
+            if text.strip():
+                texts.append(text)
+    return texts
+
+
+def book_title(epub_path: Path) -> str:
+    """The package's dc:title, or the file name without its extension."""
+    model = load_epub_package(epub_path)
+    with zipfile.ZipFile(epub_path, "r") as zf:
+        try:
+            opf = zf.read(model.opf_path).decode("utf-8")
+        except (KeyError, UnicodeDecodeError):
+            return epub_path.stem
+    found = re.search(r"<dc:title[^>]*>(.*?)</dc:title>", opf, re.DOTALL)
+    title = " ".join(found.group(1).split()) if found else ""
+    return title or epub_path.stem
 
 
 def _build_extraction_prompt(
@@ -513,8 +603,7 @@ def extract_glossary_from_epub(
             flush=True,
         )
 
-        # Short text counts as an index only when the signal detector confirms it.
-        has_strong_index = len(index_text) > 100 or bool(_select_scored_index_text(epub_path))
+        has_strong_index = has_usable_index(epub_path, index_text)
 
         if has_strong_index:
             # Tier 1: Use index-based extraction
