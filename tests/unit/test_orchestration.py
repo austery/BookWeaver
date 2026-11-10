@@ -14,8 +14,6 @@ from ai.orchestration import (
     EpubTranslationOptions,
     TranslationOrchestrator,
     translate_epub,
-    translate_markdown,
-    translate_pdf,
 )
 from ai.model_profiles import ResolvedModel
 from ai.ports.provider import ITranslationProvider
@@ -104,13 +102,19 @@ def test_epub_application_resumes_without_constructing_provider(tmp_path: Path) 
         assert "花园大门敞开着。" in archive.read("chapter.xhtml").decode()
 
 
-def test_public_application_functions_keep_three_arguments() -> None:
-    for entrypoint in (translate_epub, translate_markdown, translate_pdf):
-        assert list(inspect.signature(entrypoint).parameters) == [
-            "input_path",
-            "output_path",
-            "options",
-        ]
+def test_public_application_function_keeps_three_arguments() -> None:
+    assert list(inspect.signature(translate_epub).parameters) == [
+        "input_path",
+        "output_path",
+        "options",
+    ]
+
+
+def test_markdown_and_pdf_entry_points_are_retired() -> None:
+    import ai.orchestration
+
+    for name in ("translate_markdown", "translate_pdf", "MarkdownTranslationOptions"):
+        assert not hasattr(ai.orchestration, name)
 
 
 def test_cli_does_not_import_concrete_runtime_adapters() -> None:

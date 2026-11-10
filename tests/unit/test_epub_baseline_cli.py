@@ -1,18 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 import ai.orchestration as cli_module
-
-
-def test_detect_input_format_epub_and_directory(tmp_path: Path) -> None:
-    epub_path = tmp_path / "book.epub"
-    epub_path.write_bytes(b"epub")
-    assert cli_module.detect_input_format(str(epub_path)) == "epub"
-    assert cli_module.detect_input_format(str(tmp_path)) == "markdown"
 
 
 def test_cli_resolve_api_key_prefers_environment(monkeypatch: pytest.MonkeyPatch) -> None:

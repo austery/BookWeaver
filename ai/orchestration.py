@@ -58,14 +58,16 @@ from ai.adapters.providers._delimiter import SEPARATOR_OVERHEAD
 from ai.adapters.providers.gemini_api_adapter import GeminiAPIAdapter
 from ai.adapters.providers.gemini_cli_adapter import GeminiCLIAdapter
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
-from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
-from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.core.glossary import GlossaryManager, TermUsage, measure_term_usage
 from ai.core.glossary_resolution import resolve_glossary_request
 from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import Segment, TranslatedSegment
+
+
+# The one error for any input that is not an EPUB file (ADR-0003).
+EPUB_ONLY_MESSAGE = "BookWeaver translates EPUB only; the input must be an .epub file"
 
 
 @dataclass(frozen=True)
@@ -114,21 +116,12 @@ class GlossarySpec:
 
 
 @dataclass(frozen=True)
-class MarkdownTranslationOptions:
+class EpubTranslationOptions:
     spec: TranslationSpec = field(default_factory=TranslationSpec)
     model: ModelSpec = field(default_factory=ModelSpec)
     provider: ProviderSpec = field(default_factory=ProviderSpec)
     quality: QualityPolicy = field(default_factory=QualityPolicy)
     config: dict[str, object] | None = None
-
-
-@dataclass(frozen=True)
-class PdfTranslationOptions(MarkdownTranslationOptions):
-    """Isolated PDF translation intent without EPUB resume or glossary options."""
-
-
-@dataclass(frozen=True)
-class EpubTranslationOptions(MarkdownTranslationOptions):
     glossary: GlossarySpec = field(default_factory=GlossarySpec)
     resume: ResumePolicy = field(default_factory=ResumePolicy)
 
@@ -189,13 +182,15 @@ class TranslationOrchestrator:
         self,
         input_path: str | Path,
         output_path: str | Path,
-        options: MarkdownTranslationOptions,
+        options: EpubTranslationOptions,
         *,
         input_format: str,
     ) -> TranslationSummary:
         input_file, output_file = Path(input_path).resolve(), Path(output_path).resolve()
         if not input_file.exists():
             raise FileNotFoundError(f"Input path does not exist: {input_path}")
+        if input_format != "epub" or not input_file.is_file():
+            raise ValueError(EPUB_ONLY_MESSAGE)
         if input_file == output_file:
             raise ValueError("Output must not overwrite the source publication")
         model = (
@@ -216,7 +211,7 @@ class TranslationOrchestrator:
             config,
             output_lang=options.spec.output_lang,
             custom_prompt=options.spec.custom_prompt,
-            immersive=input_format == "epub",
+            immersive=True,
         )
         extraction_config = config.get("terminology_extraction", {})
         extraction = extraction_config if isinstance(extraction_config, dict) else {}
@@ -228,50 +223,28 @@ class TranslationOrchestrator:
         factory = self._provider_factory or DefaultProviderFactory(
             audit_directory=output_file.parent / ".bookweaver_runs"
         )
-        source: IBookSource
-        if input_format == "epub":
-            source = EpubSourceAdapter(input_file)
-        elif input_format == "markdown":
-            if not input_file.is_dir():
-                raise ValueError("Markdown input must be a directory of numbered page*.md files")
-            source = MarkdownSourceAdapter(str(input_file))
-        elif input_format == "pdf":
-            source = PdfSourceAdapter(str(input_file))
-        else:
-            raise ValueError("Unsupported input format")
+        source: IBookSource = EpubSourceAdapter(input_file)
         segments = source.get_segments()
-        if input_format == "markdown" and not segments:
-            raise ValueError("Markdown directory contains no translatable numbered page*.md files")
         segment_ids = {segment.id for segment in segments}
         if len(segment_ids) != len(segments):
             raise ValueError("Source segment IDs must be unique")
         source_chars = sum(len(segment.text) for segment in segments)
-        glossary = (
-            options.glossary if isinstance(options, EpubTranslationOptions) else GlossarySpec()
-        )
-        resume = (
-            options.resume
-            if isinstance(options, EpubTranslationOptions)
-            else ResumePolicy(enabled=False)
-        )
+        glossary = options.glossary
+        resume = options.resume
         batch_chars = (
             options.quality.max_batch_chars
             if options.quality.max_batch_chars is not None
-            else _resolve_default_batch_chars(
-                fmt=input_format, is_pro=model.profile == "pro", config=config
-            )
+            else _resolve_default_batch_chars(is_pro=model.profile == "pro", config=config)
         )
         if batch_chars <= 0:
             raise ValueError("max_batch_chars must be positive")
         batch_segments = options.quality.max_batch_segments
-        if batch_segments is None and input_format == "epub":
+        if batch_segments is None:
             batch_segments = resilience.get("max_batch_segments", 200)
         if batch_segments is not None and (type(batch_segments) is not int or batch_segments <= 0):
             raise ValueError("max_batch_segments must be a positive integer")
-        content_signature = (
-            _compute_content_signature(input_file) if input_format == "epub" else None
-        )
-        legacy_signature = _compute_input_signature(input_file) if input_format == "epub" else None
+        content_signature = _compute_content_signature(input_file)
+        legacy_signature = _compute_input_signature(input_file)
         identity = (
             CheckpointIdentity(
                 content_signature,
@@ -330,7 +303,7 @@ class TranslationOrchestrator:
             stack.push(finalize_audit)
             store = None
             checkpoint_directory: Path | None = None
-            if input_format == "epub" and (resume.enabled or resume.force):
+            if resume.enabled or resume.force:
                 directory = _resolve_checkpoint_dir(
                     checkpoint_dir=str(resume.checkpoint_dir) if resume.checkpoint_dir else None,
                     input_file=input_file,
@@ -354,8 +327,7 @@ class TranslationOrchestrator:
             request = resolve_glossary_request(
                 glossary=str(glossary_path) if glossary_path else None,
                 glossary_mode=glossary.mode,
-                extract_glossary=glossary.extract
-                or (input_format == "epub" and extraction.get("enabled") is True),
+                extract_glossary=glossary.extract or extraction.get("enabled") is True,
             )
             if glossary.max_terms is not None and glossary.max_terms <= 0:
                 raise ValueError("glossary_max_terms must be positive")
@@ -456,7 +428,7 @@ class TranslationOrchestrator:
                         active_provider = None
                         self.delegate = factory.create(
                             model,
-                            protocol="segment_tags" if input_format == "epub" else "delimiter",
+                            protocol="segment_tags",
                             config=config,
                             allow_paid_api=options.provider.allow_paid_api,
                             remaining_chars=remaining_chars,
@@ -552,7 +524,7 @@ class TranslationOrchestrator:
                 ),
             )
             result = engine.translate(source, str(output_file), on_source_loaded=loaded)
-            if glossary_path is not None and input_format == "epub":
+            if glossary_path is not None:
                 _report_term_usage(
                     glossary_path,
                     [
@@ -650,26 +622,6 @@ def translate_epub(
     )
 
 
-def translate_markdown(
-    input_path: str | Path,
-    output_path: str | Path,
-    options: MarkdownTranslationOptions | None = None,
-) -> TranslationSummary:
-    return TranslationOrchestrator().translate(
-        input_path, output_path, options or MarkdownTranslationOptions(), input_format="markdown"
-    )
-
-
-def translate_pdf(
-    input_path: str | Path,
-    output_path: str | Path,
-    options: PdfTranslationOptions | None = None,
-) -> TranslationSummary:
-    return TranslationOrchestrator().translate(
-        input_path, output_path, options or PdfTranslationOptions(), input_format="pdf"
-    )
-
-
 def count_epub_segments(input_path: Path) -> int:
     """Segments a run of this EPUB will plan, from the same segmenter the run uses."""
     return len(EpubSourceAdapter(input_path).get_segments())
@@ -684,14 +636,6 @@ def default_epub_checkpoint_dir(input_path: Path, output_path: Path) -> Path:
 
 # ── Language mapping ──────────────────────────────────────────
 
-# ── Format detection ──────────────────────────────────────────
-
-
-_FORMAT_MAP: dict[str, str] = {
-    ".epub": "epub",
-    ".md": "markdown",
-    ".pdf": "pdf",
-}
 _CHECKPOINT_SCHEMA_VERSION = 1
 _CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _CHECKPOINT_STATE_FILE = "state.json"
@@ -699,8 +643,6 @@ _CHECKPOINT_TRANSLATIONS_FILE = "translations.json"
 _EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v3"  # Historical pipeline only.
 _ACTIVE_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v4-source-only-bibliography"
 _DEFAULT_BATCH_CHARS_PRO_EPUB = 60_000
-_DEFAULT_BATCH_CHARS_PRO = 60_000
-_DEFAULT_BATCH_CHARS_STANDARD = 10_000
 _DEFAULT_BATCH_CHARS_STANDARD_EPUB = 60_000
 
 
@@ -949,20 +891,6 @@ def _emit_batch_sample(
         src=src_snippet,
         tgt=tgt_snippet,
     )
-
-
-def detect_input_format(input_path: str) -> str:
-    """Detect input format from path.
-
-    Returns ``"markdown"`` for directories or ``.md`` files,
-    ``"pdf"`` for ``.pdf`` files, ``"epub"`` for ``.epub``,
-    and ``"epub"`` as default.
-    """
-    p = Path(input_path)
-    if p.is_dir():
-        return "markdown"
-    suffix = p.suffix.lower()
-    return _FORMAT_MAP.get(suffix, "epub")
 
 
 @dataclass(frozen=True)
@@ -1377,28 +1305,23 @@ def _resolve_positive_int_config(
 
 def _resolve_default_batch_chars(
     *,
-    fmt: str,
     is_pro: bool,
     config: dict[str, object] | None,
 ) -> int:
-    if fmt == "epub":
-        resilience = (config or {}).get("epub_resilience", {})
-        if not isinstance(resilience, dict):
-            resilience = {}
-        if is_pro:
-            return _resolve_positive_int_config(
-                resilience,
-                key="pro_epub_max_batch_chars",
-                default=_DEFAULT_BATCH_CHARS_PRO_EPUB,
-            )
+    resilience = (config or {}).get("epub_resilience", {})
+    if not isinstance(resilience, dict):
+        resilience = {}
+    if is_pro:
         return _resolve_positive_int_config(
             resilience,
-            key="standard_epub_max_batch_chars",
-            default=_DEFAULT_BATCH_CHARS_STANDARD_EPUB,
+            key="pro_epub_max_batch_chars",
+            default=_DEFAULT_BATCH_CHARS_PRO_EPUB,
         )
-    if is_pro:
-        return _DEFAULT_BATCH_CHARS_PRO
-    return _DEFAULT_BATCH_CHARS_STANDARD
+    return _resolve_positive_int_config(
+        resilience,
+        key="standard_epub_max_batch_chars",
+        default=_DEFAULT_BATCH_CHARS_STANDARD_EPUB,
+    )
 
 
 def _resolve_api_key(config: dict[str, object] | None) -> str | None:
@@ -1567,7 +1490,9 @@ def _run_pipeline(
             msg = f"Input path does not exist: {input_path}"
             raise FileNotFoundError(msg)
 
-        fmt = input_format if input_format != "auto" else detect_input_format(input_path)
+        if input_format not in ("auto", "epub") or not input_file.is_file():
+            raise ValueError(EPUB_ONLY_MESSAGE)
+        fmt = "epub"
         _log_progress("input", format=fmt, input=input_path, output=output, output_lang=output_lang)
 
         stage = "glossary-request"
@@ -1599,47 +1524,42 @@ def _run_pipeline(
         if glossary_request.mode in ("auto", "deep-scan"):
             stage = "glossary-extraction"
 
-            if fmt != "epub":
-                print(
-                    f"Warning: Glossary extraction mode '{glossary_request.mode}' is only supported for EPUBs; skipping extraction."
-                )
-            else:
-                temp_dir = _resolve_extraction_temp_dir(input_path)
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                extracted_glossary = temp_dir / "extracted_glossary.json"
-                _log_progress(
-                    "glossary",
-                    action="extract",
-                    mode=glossary_request.mode,
-                    output=extracted_glossary,
-                )
-                extract_model, extract_is_pro = resolve_model("pro", runtime_config)
-                extract_provider_adapter = create_provider(
-                    provider,
-                    extract_model,
-                    is_pro=extract_is_pro,
-                    use_segment_tags=False,
-                    config=runtime_config,
-                    cli_api_fallback=cli_api_fallback,
-                )
-                report = _extract_glossary_to_path(
-                    epub_path=input_file,
-                    output_path=extracted_glossary,
-                    provider_adapter=extract_provider_adapter,
-                    max_terms=glossary_max_terms or 20,
-                    mode=glossary_request.mode,
-                )
-                _log_progress(
-                    "glossary",
-                    action="resolved",
-                    mode=glossary_request.mode,
-                    tier=report.get("tier"),
-                    docs=report.get("docs", 0),
-                    chars=report.get("chars", 0),
-                    candidate_count=report.get("candidate_count", 0),
-                    term_count=report.get("term_count", 0),
-                )
-                effective_glossary = str(extracted_glossary)
+            temp_dir = _resolve_extraction_temp_dir(input_path)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            extracted_glossary = temp_dir / "extracted_glossary.json"
+            _log_progress(
+                "glossary",
+                action="extract",
+                mode=glossary_request.mode,
+                output=extracted_glossary,
+            )
+            extract_model, extract_is_pro = resolve_model("pro", runtime_config)
+            extract_provider_adapter = create_provider(
+                provider,
+                extract_model,
+                is_pro=extract_is_pro,
+                use_segment_tags=False,
+                config=runtime_config,
+                cli_api_fallback=cli_api_fallback,
+            )
+            report = _extract_glossary_to_path(
+                epub_path=input_file,
+                output_path=extracted_glossary,
+                provider_adapter=extract_provider_adapter,
+                max_terms=glossary_max_terms or 20,
+                mode=glossary_request.mode,
+            )
+            _log_progress(
+                "glossary",
+                action="resolved",
+                mode=glossary_request.mode,
+                tier=report.get("tier"),
+                docs=report.get("docs", 0),
+                chars=report.get("chars", 0),
+                candidate_count=report.get("candidate_count", 0),
+                term_count=report.get("term_count", 0),
+            )
+            effective_glossary = str(extracted_glossary)
 
         stage = "prompt-build"
         language_name = _get_language_name(output_lang)
@@ -1648,7 +1568,7 @@ def _run_pipeline(
             language_name,
             glossary_block=glossary_block,
             custom_prompt=prompt,
-            immersive=fmt == "epub",
+            immersive=True,
         )
 
         stage = "provider-init"
@@ -1656,7 +1576,7 @@ def _run_pipeline(
             provider,
             resolved_model,
             is_pro=is_pro,
-            use_segment_tags=fmt == "epub",
+            use_segment_tags=True,
             config=runtime_config,
             cli_api_fallback=cli_api_fallback,
         )
@@ -1664,7 +1584,6 @@ def _run_pipeline(
         stage = "engine-config"
         if max_batch_chars is None:
             batch_chars = _resolve_default_batch_chars(
-                fmt=fmt,
                 is_pro=is_pro,
                 config=runtime_config,
             )
@@ -1674,50 +1593,46 @@ def _run_pipeline(
         _persist_fn: Callable[[int, list[TranslatedSegment]], None] | None = None
         resume_enabled = resume or force_resume
         if resume_enabled:
-            if fmt != "epub":
-                print("Warning: Resume is only supported for EPUB input; ignoring resume flags.")
-                _log_progress("resume", enabled=False, reason="non-epub")
-            else:
-                checkpoint_path = _resolve_checkpoint_dir(
-                    checkpoint_dir=checkpoint_dir,
-                    input_file=input_file,
-                    output_file=Path(output),
-                    input_format=fmt,
-                )
-                checkpoint_metadata = _build_checkpoint_metadata(
-                    input_file=input_file,
-                    input_format=fmt,
-                    output_lang=output_lang,
-                    model=resolved_model,
-                    provider=provider,
-                    max_batch_chars=batch_chars,
-                    separator_overhead=SEPARATOR_OVERHEAD,
-                    system_prompt=system_prompt,
-                )
-                resume_translations = _load_checkpoint_translations(
+            checkpoint_path = _resolve_checkpoint_dir(
+                checkpoint_dir=checkpoint_dir,
+                input_file=input_file,
+                output_file=Path(output),
+                input_format=fmt,
+            )
+            checkpoint_metadata = _build_checkpoint_metadata(
+                input_file=input_file,
+                input_format=fmt,
+                output_lang=output_lang,
+                model=resolved_model,
+                provider=provider,
+                max_batch_chars=batch_chars,
+                separator_overhead=SEPARATOR_OVERHEAD,
+                system_prompt=system_prompt,
+            )
+            resume_translations = _load_checkpoint_translations(
+                checkpoint_dir=checkpoint_path,
+                metadata=checkpoint_metadata,
+                force_resume=force_resume,
+            )
+            _log_progress(
+                "resume",
+                checkpoint=checkpoint_path,
+                restored_segments=len(resume_translations),
+                force=force_resume,
+            )
+
+            persisted_translations = dict(resume_translations)
+
+            def _persist(_batch_index: int, translated: list[TranslatedSegment]) -> None:
+                for item in translated:
+                    persisted_translations[item.id] = item.translated
+                _persist_checkpoint(
                     checkpoint_dir=checkpoint_path,
                     metadata=checkpoint_metadata,
-                    force_resume=force_resume,
-                )
-                _log_progress(
-                    "resume",
-                    checkpoint=checkpoint_path,
-                    restored_segments=len(resume_translations),
-                    force=force_resume,
+                    translations=persisted_translations,
                 )
 
-                persisted_translations = dict(resume_translations)
-
-                def _persist(_batch_index: int, translated: list[TranslatedSegment]) -> None:
-                    for item in translated:
-                        persisted_translations[item.id] = item.translated
-                    _persist_checkpoint(
-                        checkpoint_dir=checkpoint_path,
-                        metadata=checkpoint_metadata,
-                        translations=persisted_translations,
-                    )
-
-                _persist_fn = _persist
+            _persist_fn = _persist
 
         probe_config = _load_probe_config(runtime_config)
         if no_sanity_probe:
@@ -1750,20 +1665,7 @@ def _run_pipeline(
         engine = TranslationEngine(provider_adapter, engine_config)
 
         stage = "source-init"
-        if fmt == "markdown":
-            md_dir = str(input_file) if input_file.is_dir() else str(input_file.parent)
-            md_dir_path = Path(md_dir)
-            if not md_dir_path.is_dir():
-                msg = f"Markdown directory does not exist: {md_dir}"
-                raise FileNotFoundError(msg)
-            if not list(md_dir_path.glob("page*.md")):
-                msg = f"No page*.md files found in: {md_dir}"
-                raise FileNotFoundError(msg)
-            source = MarkdownSourceAdapter(md_dir)
-        elif fmt == "pdf":
-            source = PdfSourceAdapter(input_path)
-        else:
-            source = EpubSourceAdapter(input_path)
+        source = EpubSourceAdapter(input_path)
 
         _log_progress("translate", input=input_path, output=output, output_lang=output_lang)
 

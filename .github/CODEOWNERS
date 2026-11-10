@@ -34,7 +34,6 @@
 /ai/cli.py @austery
 /ai/core/glossary_resolution.py @austery
 /ai/glossary_extractor.py @austery
-/ai/adapters/sources/markdown_adapter.py @austery
 /ai/config_schema.json @austery
 /ai/runtime_config.py @austery
 /ai/core/config.py @austery

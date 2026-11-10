@@ -95,7 +95,7 @@ Show estimated remaining source volume and mixed-model continuity warning. If gl
 
 Implement #19's strict JSON schema and removed-key migration errors, including schema/loader key parity. Keep only flash/pro public profiles, remove size-driven model switching, and stop reading the example config as production defaults. Preserve ignored user config; report actionable migration steps without rewriting it.
 
-EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-isolated-format`; reject DOCX and unknown formats. Preserve default-on EPUB resume and the explicit-resume error on isolated runs. Retire legacy shell and numbered Markdown orchestration only after the new entrypoint passes its gates, using Git recovery anchors and separate deletion review. Keep baseline EPUB tooling and evaluation assets. Do not reintroduce the orphaned legacy translation module to accelerate the migration.
+EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-isolated-format`; reject DOCX and unknown formats. (Superseded by ADR-0003, accepted 2026-11-09: issue 53 removed the Markdown/PDF paths and `--allow-isolated-format`; every non-EPUB input now fails with one error. The same holds for `translate_markdown` and `translate_pdf` in §3.1.) Preserve default-on EPUB resume and the explicit-resume error on isolated runs. Retire legacy shell and numbered Markdown orchestration only after the new entrypoint passes its gates, using Git recovery anchors and separate deletion review. Keep baseline EPUB tooling and evaluation assets. Do not reintroduce the orphaned legacy translation module to accelerate the migration.
 
 ## 4. Implementation phases
 
