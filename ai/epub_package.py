@@ -45,6 +45,8 @@ class ManifestItem:
     id: str
     href: str
     media_type: str | None
+    # Space-separated OPF item properties, such as "nav" for the EPUB 3 navigation document.
+    properties: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -567,6 +569,7 @@ def _extract_manifest_items(opf_root: ET.Element) -> dict[str, ManifestItem]:
             id=item_id,
             href=href,
             media_type=item.get("media-type"),
+            properties=item.get("properties") or "",
         )
     return manifest_items
 

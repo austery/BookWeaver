@@ -371,14 +371,24 @@ def test_the_term_limit_caps_the_glossary_not_what_nominators_are_asked_for(
     assert len(json.loads(path.read_text(encoding="utf-8"))["critical_terminology"]) == 1
 
 
-def test_an_epub3_navigation_document_in_the_spine_gives_no_sentences(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "nav",
+    [
+        b'<nav epub:type = "toc">',  # spaces around =
+        b'<nav ops:type="toc" xmlns:ops="http://www.idpf.org/2007/ops">',  # another prefix
+        b'<x:nav xmlns:x="http://www.w3.org/1999/xhtml" epub:type="toc">',
+    ],
+)
+def test_an_epub3_navigation_document_in_the_spine_gives_no_sentences(
+    tmp_path: Path, nav: bytes
+) -> None:
     book = tmp_path / "book.epub"
     _book(book)
     with zipfile.ZipFile(book) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
     files["navigation.xhtml"] = (
         b'<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'
-        b'<body><nav epub:type = "toc"><ol><li>The garden in the contents.</li></ol></nav></body></html>'
+        b"<body>" + nav + b"<ol><li>The garden in the contents.</li></ol></nav></body></html>"
     )
     files["content.opf"] = (
         files["content.opf"]

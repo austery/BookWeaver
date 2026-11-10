@@ -504,6 +504,7 @@ def body_documents(epub_path: Path, index_href: str | None) -> list[str]:
             stem = Path(item.href).stem
             if (
                 item.href == index_href
+                or "nav" in item.properties.split()
                 or _looks_like_toc_href(item.href)
                 or _TITLE_PAGE_HINT_RE.search(stem)
             ):
@@ -513,7 +514,7 @@ def body_documents(epub_path: Path, index_href: str | None) -> list[str]:
             except (KeyError, UnicodeDecodeError):
                 continue
             if _EPUB3_TOC_NAV_RE.search(raw):
-                continue  # an EPUB 3 navigation document in the spine
+                continue  # a table of contents not declared as the navigation document
             text = _xhtml_to_text(raw)
             if text.strip():
                 texts.append(text)
