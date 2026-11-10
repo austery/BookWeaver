@@ -558,12 +558,20 @@ def configured_term_panels() -> tuple[str, ...]:
     return tuple(names)
 
 
-def panel_folder_id(input_path: str | Path, panel_name: str) -> str:
-    """First eight characters of the panel cache identity a ``--term-panel`` run will use.
+@dataclass(frozen=True)
+class PanelUploadPlan:
+    """What the local API shows and names for a Term Panel upload (SPEC-028 §3.10, §3.14)."""
+
+    folder_id: str  # first eight characters of the panel cache identity
+    lines: tuple[str, ...]  # the resolved plan, as `bookweaver terms` prints it
+
+
+def panel_upload_plan(input_path: str | Path, panel_name: str) -> PanelUploadPlan:
+    """The panel plan a ``--term-panel`` run of this EPUB will use, with no model call.
 
     Computed exactly as the translate command plans it (the EPUB's folder, the configured
-    term limits, ``auto`` mode), with no model call. The local API names the output folder
-    after it (SPEC-028 §3.10), so editing a panel's members gives a new folder.
+    term limits, ``auto`` mode). The local API names the output folder after the identity, so
+    editing a panel's members gives a new folder, and returns the plan in its response.
     """
     source = Path(input_path)
     config = load_runtime_config()
@@ -576,7 +584,7 @@ def panel_folder_id(input_path: str | Path, panel_name: str) -> str:
         nominator_terms=nominator_terms,
         mode="auto",
     )
-    return plan.identity[:8]
+    return PanelUploadPlan(plan.identity[:8], tuple(plan.describe()))
 
 
 def run_term_panel(

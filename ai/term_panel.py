@@ -201,6 +201,13 @@ class PanelPlan:
     def reused(self) -> bool:
         return self.glossary_path.exists()
 
+    def describe(self) -> list[str]:
+        """The Confirm view (SPEC-028 §3.14) for this book, with no call: the cached glossary,
+        or each member's preset, vendor, runtime and planned calls."""
+        if self.reused:
+            return [f"[terms] Panel {self.panel.name}: reusing the saved glossary; no model call."]
+        return _plan_text(self.panel, self.nominator_terms, self.max_terms).splitlines()
+
     def audit(self) -> dict[str, object]:
         """The invocation audit's ``term_panel`` field: which quota pools the panel draws on."""
         return {

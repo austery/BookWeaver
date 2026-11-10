@@ -108,6 +108,11 @@ class RunStatus(BaseModel):
     ended_at: str | None
     log_path: str
     log_tail: list[str]
+    term_panel_plan: list[str] | None = Field(
+        default=None,
+        description="Upload response only: the resolved Term Panel plan before any call "
+        "(SPEC-028 §3.14), each member's preset, vendor, runtime and planned calls.",
+    )
 
 
 @dataclass(frozen=True)
@@ -375,6 +380,15 @@ def _checked_file_name(name: str, label: str) -> str:
     return name
 
 
+def _is_plain_folder_name(name: str) -> bool:
+    """True when ``_checked_file_name`` accepts ``name``, with room for the identity suffix."""
+    try:
+        _checked_file_name(f"{name}-00000000", "folder")
+    except HTTPException:
+        return False
+    return True
+
+
 def _is_epub_name(name: str) -> bool:
     return Path(name).suffix.lower() == ".epub"
 
@@ -469,12 +483,19 @@ def create_app(
         else None
     )
     preset_field = Form(description="Model and effort to use, as `GET /presets` explains them.")
-    panels = term_panels if term_panels is not None else orchestration.configured_term_panels()
+    configured = term_panels if term_panels is not None else orchestration.configured_term_panels()
+    # The panel name becomes part of a folder name; a name that cannot be one is not offered.
+    panels = [name for name in configured if _is_plain_folder_name(f"panel-{name}")]
     # "none" is a real choice, not an optional field: anyOf with null would hide the dropdown.
     PanelChoice = StrEnum(  # type: ignore[misc]
         "TermPanelName",
+        # Member names are internal: a panel name such as "mro" is not a valid enum name.
         [(orchestration.NO_TERM_PANEL, orchestration.NO_TERM_PANEL)]
-        + [(name, name) for name in panels if name != orchestration.NO_TERM_PANEL],
+        + [
+            (f"panel_{number}", name)
+            for number, name in enumerate(panels)
+            if name != orchestration.NO_TERM_PANEL
+        ],
     )
     panel_field = Form(
         description="A Term Panel from your configuration chooses the book's terms before "
@@ -482,11 +503,12 @@ def create_app(
         "The run works in `<book name>/panel-<name>-<id>/<preset>/`."
     )
 
-    def _with_preset_choices(endpoint: Callable[..., RunStatus]) -> Callable[..., RunStatus]:
-        """Give ``preset`` this app's choices, and make it required when it has no default.
+    def _with_form_choices(endpoint: Callable[..., RunStatus]) -> Callable[..., RunStatus]:
+        """Give ``preset`` and ``term_panel`` this app's choices; ``preset`` is required when
+        its default runtime is disabled.
 
         This module's string annotations cannot name a type built here, so the signature
-        FastAPI reads carries the type object. Keyword-only parameters let a required
+        FastAPI reads carries the type objects. Keyword-only parameters let a required
         ``preset`` follow parameters with defaults; FastAPI passes form fields by name.
         """
         signature = inspect.signature(endpoint)
@@ -689,7 +711,7 @@ def create_app(
             "fails, because this API has no `--force-resume`. Only one run at a time."
         ),
     )
-    @_with_preset_choices
+    @_with_form_choices
     def upload_run(
         file: Annotated[
             UploadFile,
@@ -699,7 +721,7 @@ def create_app(
             str,
             Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
-        preset: Annotated[str, preset_field] = DEFAULT_PRESET.value,  # see _with_preset_choices
+        preset: Annotated[str, preset_field] = DEFAULT_PRESET.value,  # see _with_form_choices
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
@@ -716,7 +738,7 @@ def create_app(
                 "none. `deep-scan` sends the whole book, which can use much more quota."
             ),
         ] = "auto",
-        term_panel: Annotated[str, panel_field] = "none",  # see _with_preset_choices
+        term_panel: Annotated[str, panel_field] = "none",  # see _with_form_choices
         allow_paid_api: Annotated[
             bool,
             Form(description="Consent to paid calls for this run, which paid presets require."),
@@ -758,20 +780,23 @@ def create_app(
             created = False
             try:
                 created = _store_upload(file, source)
+                panel_plan = None
                 if panel is not None:
                     # The panel folder is named after the panel's cache identity, which needs
                     # the stored book (SPEC-028 §3.10); a run never resumes another glossary.
                     try:
-                        folder_id = orchestration.panel_folder_id(source, panel)
+                        panel_plan = orchestration.panel_upload_plan(source, panel)
                     except ValueError as exc:
                         raise HTTPException(400, f"Term Panel {panel}: {exc}") from exc
                     panel_dir = book_dir / _checked_file_name(
-                        f"panel-{panel}-{folder_id}", "The Term Panel folder"
+                        f"panel-{panel}-{panel_plan.folder_id}", "The Term Panel folder"
                     )
                     output_dir = panel_dir / selected.name
-                    folders = [output_dir, panel_dir, book_dir]
+                    # Checked before cleanup may touch them: rmdir through a link could
+                    # remove a folder outside the library.
                     refuse_links(panel_dir, output_dir, output_dir / output_file_name)
-                return launch(
+                    folders = [output_dir, panel_dir, book_dir]
+                status = launch(
                     selected,
                     source,
                     output_dir / output_file_name,
@@ -783,6 +808,9 @@ def create_app(
                     glossary_mode=glossary_mode,
                     term_panel=panel,
                 )
+                if panel_plan is None:
+                    return status
+                return status.model_copy(update={"term_panel_plan": list(panel_plan.lines)})
             except (HTTPException, OSError) as exc:
                 # A refused upload must not block a corrected copy with the same name.
                 if created:

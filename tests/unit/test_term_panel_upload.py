@@ -12,8 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ai import local_api, orchestration
+from ai.orchestration import EpubTranslationOptions, GlossarySpec, TranslationOrchestrator
 from ai.orchestration import run_term_panel
 from tests.unit.test_term_panel_runner import _PANEL, FakeMembers, _book
+from tests.unit.test_term_panel_translation import PanelAndTranslator
 
 BASE_URL = "http://127.0.0.1:8765"
 # Echoes its arguments, like the fake child of the local API tests.
@@ -90,9 +92,12 @@ def test_a_panel_upload_runs_the_panel_in_its_own_folder(
     assert args[args.index("--term-panel") + 1] == "three-vendor"
     assert "--extraction-model" not in args  # the panel replaces it (SPEC-028 §3.10)
     book = tmp_path / "library" / "garden" / "garden.epub"
-    folder = f"panel-three-vendor-{orchestration.panel_folder_id(book, 'three-vendor')}"
+    folder = f"panel-three-vendor-{orchestration.panel_upload_plan(book, 'three-vendor').folder_id}"
     expected = tmp_path / "library" / "garden" / folder / "agy-flash-low" / "garden.zh.epub"
     assert args[args.index("--output") + 1] == str(expected)
+    plan = response.json()["term_panel_plan"]  # SPEC-028 §3.14, before any call
+    assert plan[0].startswith("[terms] Panel three-vendor:")
+    assert any("codex-gpt-6.1-sol-low (openai, runtime codex)" in line for line in plan)
 
 
 def test_the_folder_id_is_the_cache_identity_the_translate_command_uses(
@@ -104,8 +109,10 @@ def test_the_folder_id_is_the_cache_identity_the_translate_command_uses(
 
     glossary = run_term_panel(book, "three-vendor", config=_PANEL, provider_factory=FakeMembers())
 
-    assert glossary.parent.name.startswith(orchestration.panel_folder_id(book, "three-vendor"))
-    assert len(orchestration.panel_folder_id(book, "three-vendor")) == 8
+    assert glossary.parent.name.startswith(
+        orchestration.panel_upload_plan(book, "three-vendor").folder_id
+    )
+    assert len(orchestration.panel_upload_plan(book, "three-vendor").folder_id) == 8
 
 
 def test_editing_the_panel_gives_a_new_folder(
@@ -114,7 +121,7 @@ def test_editing_the_panel_gives_a_new_folder(
     book = tmp_path / "garden.epub"
     _book(book)
     monkeypatch.setattr(orchestration, "load_runtime_config", lambda: _PANEL)
-    before = orchestration.panel_folder_id(book, "three-vendor")
+    before = orchestration.panel_upload_plan(book, "three-vendor").folder_id
     edited = {
         "terminology_panels": {
             "three-vendor": {
@@ -125,7 +132,7 @@ def test_editing_the_panel_gives_a_new_folder(
     }
     monkeypatch.setattr(orchestration, "load_runtime_config", lambda: edited)
 
-    assert orchestration.panel_folder_id(book, "three-vendor") != before
+    assert orchestration.panel_upload_plan(book, "three-vendor").folder_id != before
 
 
 def test_without_a_panel_the_upload_is_unchanged(client: TestClient, tmp_path: Path) -> None:
@@ -134,6 +141,7 @@ def test_without_a_panel_the_upload_is_unchanged(client: TestClient, tmp_path: P
     assert response.status_code == 202, response.text
     args = _child_args(client)
     assert "--term-panel" not in args
+    assert response.json()["term_panel_plan"] is None
     assert args[args.index("--extraction-model") + 1] == "pro"
     assert args[args.index("--output") + 1] == str(
         tmp_path / "library" / "garden" / "garden.zh.epub"
@@ -184,3 +192,79 @@ def test_only_valid_panels_are_offered(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(orchestration, "load_runtime_config", lambda: config)
 
     assert orchestration.configured_term_panels() == ("three-vendor",)
+
+
+def test_any_panel_name_keeps_the_server_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A panel name is a value, never an enum member name ("mro" is reserved there)."""
+    app = local_api.create_app(
+        state_dir=tmp_path / "state",
+        library_dir=tmp_path / "library",
+        disabled_runtimes=frozenset(),
+        term_panels=("mro", "_private_"),
+    )
+    schema = TestClient(app, base_url=BASE_URL).get("/openapi.json").json()
+
+    assert schema["components"]["schemas"]["TermPanelName"]["enum"] == ["none", "mro", "_private_"]
+
+
+def test_a_cached_panel_glossary_shows_as_reused_in_the_plan(
+    tmp_path: Path, configured: None
+) -> None:
+    book = tmp_path / "garden.epub"
+    _book(book)
+    run_term_panel(book, "three-vendor", config=_PANEL, provider_factory=FakeMembers())
+
+    lines = orchestration.panel_upload_plan(book, "three-vendor").lines
+
+    assert lines == ("[terms] Panel three-vendor: reusing the saved glossary; no model call.",)
+
+
+def test_the_folder_id_matches_a_term_panel_translation(tmp_path: Path, configured: None) -> None:
+    """Through the translate path itself, not only `bookweaver terms`."""
+    book = tmp_path / "garden.epub"
+    _book(book)
+
+    summary = TranslationOrchestrator(provider_factory=PanelAndTranslator()).translate(
+        book,
+        tmp_path / "out" / "garden.zh.epub",
+        EpubTranslationOptions(config=_PANEL, glossary=GlossarySpec(term_panel="three-vendor")),
+        input_format="epub",
+    )
+
+    assert summary.glossary_used is not None
+    assert summary.glossary_used.parent.name.startswith(
+        orchestration.panel_upload_plan(book, "three-vendor").folder_id
+    )
+
+
+def test_a_panel_name_that_cannot_be_a_folder_is_not_offered(tmp_path: Path) -> None:
+    app = local_api.create_app(
+        state_dir=tmp_path / "state",
+        library_dir=tmp_path / "library",
+        disabled_runtimes=frozenset(),
+        term_panels=("three-vendor", "a/b", "tab\there"),
+    )
+    schema = TestClient(app, base_url=BASE_URL).get("/openapi.json").json()
+
+    assert schema["components"]["schemas"]["TermPanelName"]["enum"] == ["none", "three-vendor"]
+
+
+def test_a_linked_panel_folder_is_refused_without_touching_its_target(
+    client: TestClient, tmp_path: Path
+) -> None:
+    content = _book_bytes(tmp_path)
+    book_dir = tmp_path / "library" / "garden"
+    book_dir.mkdir(parents=True)
+    (book_dir / "garden.epub").write_bytes(content)
+    folder_id = orchestration.panel_upload_plan(book_dir / "garden.epub", "three-vendor").folder_id
+    outside = tmp_path / "outside"
+    (outside / "agy-flash-low").mkdir(parents=True)
+    (book_dir / f"panel-three-vendor-{folder_id}").symlink_to(outside)
+
+    response = _upload(client, content, term_panel="three-vendor")
+
+    assert response.status_code == 400
+    assert "symbolic link" in response.json()["detail"]
+    assert (outside / "agy-flash-low").is_dir()  # never removed through the link
