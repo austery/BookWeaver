@@ -238,3 +238,47 @@ def test_a_saved_glossary_keeps_its_prompt_and_the_run_reports_term_usage(tmp_pa
         "花园": 0,
         "园子": report["terms"][0]["segments"],
     }
+    assert "tier" not in report["terms"][0]
+    assert report["summary"] == {"terms": 1, "inconsistent": 0}
+
+
+def test_a_tiered_glossary_reports_only_fixed_drift_as_a_problem(tmp_path: Path) -> None:
+    """SPEC-028 §3.5: a preferred term may vary; a fixed term may not."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    tiered = tmp_path / "tiered.json"
+    tiered.write_text(
+        json.dumps(
+            {
+                "critical_terminology": [
+                    {"term": "garden", "suggested_translation": "花园", "tier": "fixed"},
+                    {
+                        "term": "garden",
+                        "suggested_translation": "苑囿",
+                        "alternatives": ["园子"],
+                        "tier": "preferred",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    factory = RecordingFactory()
+    factory.translation = "园子"
+
+    TranslationOrchestrator(provider_factory=factory).translate(
+        source,
+        tmp_path / "out.epub",
+        EpubTranslationOptions(config={}, glossary=GlossarySpec(path=tiered)),
+        input_format="epub",
+    )
+
+    prompt = factory.requests[-1].prompt
+    assert "必须严格遵守标准译法：\n  • garden → 花园" in prompt
+    assert "【建议术语】" in prompt and "garden → 苑囿（也可：园子）" in prompt
+    report = json.loads(next(tmp_path.rglob("term-consistency.json")).read_text(encoding="utf-8"))
+    assert report["summary"] == {"terms": 2, "inconsistent": 1, "preferred_varied": 0}
+    by_tier = {entry["tier"]: entry for entry in report["terms"]}
+    assert not by_tier["fixed"]["consistent"]
+    assert by_tier["preferred"]["option_counts"]["园子"] > 0

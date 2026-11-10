@@ -60,7 +60,7 @@ from ai.adapters.sources.markdown_adapter import MarkdownSourceAdapter
 from ai.adapters.sources.pdf_adapter import PdfSourceAdapter
 from ai.core.config import ConfigRegistry
 from ai.core.engine import EngineConfig, TranslationEngine
-from ai.core.glossary import GlossaryManager, measure_term_usage
+from ai.core.glossary import GlossaryManager, TermUsage, measure_term_usage
 from ai.core.glossary_resolution import resolve_glossary_request
 from ai.ports.provider import ITranslationProvider, RateLimitError, TranslationError
 from ai.ports.source import Segment, TranslatedSegment
@@ -1393,13 +1393,26 @@ def _report_term_usage(
     """Record how each term was translated. A finished book never fails for this report."""
     try:
         usage = measure_term_usage(GlossaryManager.from_json_file(glossary_path).terms, pairs)
-        drifted = sum(not item.consistent for item in usage)
+        # SPEC-028 §3.5: only fixed drift is a problem. Without tiers the report keeps its shape.
+        tiered = any(item.tier is not None for item in usage)
+        drifted = sum(not item.consistent for item in usage if item.tier != "preferred")
+        summary: dict[str, int] = {"terms": len(usage), "inconsistent": drifted}
+        if tiered:
+            summary["preferred_varied"] = sum(
+                not item.consistent for item in usage if item.tier == "preferred"
+            )
+
+        def entry(item: TermUsage) -> dict[str, object]:
+            fields = {**asdict(item), "consistent": item.consistent}
+            if not tiered:
+                fields.pop("tier")
+            elif item.tier is None:
+                fields["tier"] = "fixed"
+            return fields
+
         report = {
-            "summary": {"terms": len(usage), "inconsistent": drifted},
-            "terms": [
-                {**asdict(item), "consistent": item.consistent}
-                for item in sorted(usage, key=lambda item: item.consistent)
-            ],
+            "summary": summary,
+            "terms": [entry(item) for item in sorted(usage, key=lambda item: item.consistent)],
         }
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     except (OSError, ValueError) as exc:

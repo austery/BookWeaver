@@ -2,7 +2,7 @@
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
 status: Draft for owner review (2026-11-09)
-implementationStatus: Not started
+implementationStatus: Phase 1 implemented offline (2026-11-09); its live acceptance has not run; Phases 2-4 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
 lastUpdateDate: 2026-11-09

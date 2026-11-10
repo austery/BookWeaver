@@ -9,6 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2}
+# SPEC-028 §3.5: a term without a tier is fixed. A glossary with no tier anywhere renders exactly
+# as it did before tiers existed, because the block feeds every saved book's prompt hash.
+_TIERS = ("fixed", "preferred")
+_FIXED_HEADING = "【关键术语约束】以下术语必须严格遵守标准译法："
+_PREFERRED_HEADING = (
+    "【建议术语】以下译法一般情况下采用；如果某句的语境需要，"
+    "可以改用更贴切、更通顺的译法，但不得改变原意："
+)
 # A slash can mark alternatives (疏离 / 隔阂) or belong to one translation (客户端/服务器架构).
 _SLASH = re.compile(r"\s*[/／]\s*")
 
@@ -38,16 +46,34 @@ class GlossaryManager:
         if not terms:
             return ""
 
-        lines = ["【关键术语约束】以下术语必须严格遵守标准译法："]
-        for entry in terms:
-            term = str(entry.get("term", ""))
-            translation = str(entry.get("suggested_translation", ""))
-            negative = str(entry.get("negative_constraint", "") or "")
-            line = f"  • {term} → {translation}"
-            if negative:
-                line += f"（{negative}）"
-            lines.append(line)
-        return "\n".join(lines)
+        fixed = [term for term in terms if term.get("tier") != "preferred"]
+        preferred = [term for term in terms if term.get("tier") == "preferred"]
+        blocks: list[str] = []
+        if fixed:
+            blocks.append("\n".join([_FIXED_HEADING, *(_term_line(term) for term in fixed)]))
+        if preferred:
+            lines = [_term_line(term, with_alternatives=True) for term in preferred]
+            blocks.append("\n".join([_PREFERRED_HEADING, *lines]))
+        return "\n\n".join(blocks)
+
+
+def _term_line(entry: dict[str, object], *, with_alternatives: bool = False) -> str:
+    line = f"  • {entry.get('term', '')} → {entry.get('suggested_translation', '')}"
+    if with_alternatives:
+        alternatives = _alternatives(entry)
+        if alternatives:
+            line += f"（也可：{'、'.join(alternatives)}）"
+    negative = str(entry.get("negative_constraint", "") or "")
+    if negative:
+        line += f"（{negative}）"
+    return line
+
+
+def _alternatives(entry: dict[str, object]) -> list[str]:
+    listed = entry.get("alternatives")
+    if not isinstance(listed, list):
+        return []
+    return [item.strip() for item in listed if isinstance(item, str) and item.strip()]
 
 
 @dataclass(frozen=True)
@@ -59,6 +85,7 @@ class TermUsage:
     segments: int
     option_counts: dict[str, int]
     missing: int
+    tier: str | None = None
 
     @property
     def consistent(self) -> bool:
@@ -101,12 +128,7 @@ def measure_term_usage(
         words = r"\s+".join(re.escape(word) for word in term.split())
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
-        listed = entry.get("alternatives")
-        alternatives = (
-            [item.strip() for item in listed if isinstance(item, str) and item.strip()]
-            if isinstance(listed, list)
-            else []
-        )
+        alternatives = _alternatives(entry)
         parts = [part for part in [*_SLASH.split(translation), *alternatives] if part]
         # The whole translation and the longest part first, so that a part found only inside
         # a longer one is not counted as a second translation.
@@ -122,7 +144,17 @@ def measure_term_usage(
                     remaining = remaining.replace(option, "")
                     found = True
             missing += not found
-        usage.append(TermUsage(term, translation, len(matched), counts, missing))
+        tier = entry.get("tier")
+        usage.append(
+            TermUsage(
+                term,
+                translation,
+                len(matched),
+                counts,
+                missing,
+                tier if isinstance(tier, str) else None,
+            )
+        )
     return usage
 
 
@@ -161,6 +193,11 @@ def _validate_glossary_payload(data: dict[str, object], *, source: str) -> list[
         if not isinstance(entry, dict):
             raise ValueError(
                 f"{source} critical_terminology[{index}] must be an object, got {type(entry).__name__}"
+            )
+        if "tier" in entry and entry["tier"] not in _TIERS:
+            raise ValueError(
+                f"{source} critical_terminology[{index}] has tier {entry['tier']!r}; "
+                f"use one of {', '.join(_TIERS)}"
             )
         terms.append(entry)
     return terms
