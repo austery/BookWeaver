@@ -46,7 +46,7 @@ uv run bookweaver BOOK.epub --output OUT.epub --preset agy-flash-low --term-pane
 - It uses the same cache as `bookweaver terms` (beside the EPUB), so a glossary that command already wrote is reused with no model call. If you ran `bookweaver terms` with `--output-dir`, pass the printed path with `--glossary` instead; `--term-panel` looks only beside the EPUB.
 - It replaces term extraction: it cannot be combined with `--glossary`, `--extraction-model` or `--extract-glossary`, and it overrides `terminology_extraction.enabled` in the configuration.
 - The run's audit file (`.bookweaver_runs/<run_id>.json`) names the panel and its members in `term_panel`.
-- The local API upload does not offer a panel yet (issue 100, SPEC-028 Phase 4).
+- The local API upload offers it as `term_panel` (see [Local API](local-api.md)).
 
 ## Switching off a subscription
 

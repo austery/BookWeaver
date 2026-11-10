@@ -252,6 +252,7 @@ The plan and the report come from the same resolver that runs the panel; no surf
    - Live acceptance: the owner adds the `three-vendor` panel to their configuration; then *A Philosophy of Software Design* (index 4,846 characters, no panel data yet) and *Political Thinking*, each with that panel, then translated with `agy-flash-low` into new folders, never resuming old checkpoints. Compare *Political Thinking* with the replay in §2.
 3. **Paid members.** Consent on `bookweaver terms`, through the deep review. Offline tests only, unless the owner authorizes a paid call.
 4. **Local API.** The `term_panel` dropdown, the panel output folder, login status display.
+   - Implemented 2026-11-10 (issue 100): `term_panel` lists `none` and every configured panel that resolves (no unknown or paid preset), read when `serve` starts; the child gets `--term-panel NAME` and no `--extraction-model`; the output folder is `<book>/panel-<name>-<id>/<preset>/`, where `panel_upload_plan` in `ai/orchestration.py` computes `<id>` with the translate command's own plan; the upload response carries that plan in `term_panel_plan` (§3.14), or says the saved glossary is reused; Deep Scan with a panel returns 400. Login status display moved to issue 112 (owner, 2026-11-10).
 5. **Deep Scan with a panel.** After issue 71 has live evidence. One nominator, title and table of contents in the prompt.
 
 ## 7. Verification

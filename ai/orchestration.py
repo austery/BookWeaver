@@ -457,6 +457,57 @@ class TranslationOrchestrator:
         )
 
 
+NO_TERM_PANEL = "none"
+
+
+def configured_term_panels() -> tuple[str, ...]:
+    """Panels the local API upload offers (SPEC-028 Phase 4): configured and valid.
+
+    A panel that names an unknown or paid preset is left out, as is a panel called
+    ``none``, the upload's choice for no panel.
+    """
+    config = load_runtime_config()
+    panels = config.get("terminology_panels")
+    names: list[str] = []
+    for name in sorted(panels) if isinstance(panels, dict) else []:
+        try:
+            resolve_panel(name, config)
+        except PanelError:
+            continue
+        if name != NO_TERM_PANEL:
+            names.append(name)
+    return tuple(names)
+
+
+@dataclass(frozen=True)
+class PanelUploadPlan:
+    """What the local API shows and names for a Term Panel upload (SPEC-028 §3.10, §3.14)."""
+
+    folder_id: str  # first eight characters of the panel cache identity
+    lines: tuple[str, ...]  # the resolved plan, as `bookweaver terms` prints it
+
+
+def panel_upload_plan(input_path: str | Path, panel_name: str) -> PanelUploadPlan:
+    """The panel plan a ``--term-panel`` run of this EPUB will use, with no model call.
+
+    Computed exactly as the translate command plans it (the EPUB's folder, the configured
+    term limits, ``auto`` mode). The local API names the output folder after the identity, so
+    editing a panel's members gives a new folder, and returns the plan in its response.
+    """
+    source = Path(input_path)
+    config = load_runtime_config()
+    limit, nominator_terms = panel_term_limits(config, None)
+    plan = plan_panel(
+        resolve_panel(panel_name, config),
+        book_dir=source.parent,
+        source_signature=_compute_content_signature(source),
+        max_terms=limit,
+        nominator_terms=nominator_terms,
+        mode="auto",
+    )
+    return PanelUploadPlan(plan.identity[:8], tuple(plan.describe()))
+
+
 def run_term_panel(
     input_path: str | Path,
     panel_name: str,

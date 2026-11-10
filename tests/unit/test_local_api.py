@@ -70,8 +70,10 @@ def make_epub(path: Path) -> Path:
 
 @pytest.fixture(autouse=True)
 def no_runtime_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Every runtime enabled, whatever the owner's configuration says (SPEC-028 §3.12)."""
+    """Every runtime enabled and no Term Panel, whatever the owner's configuration says
+    (SPEC-028 §3.10, §3.12)."""
     monkeypatch.setattr(orchestration, "configured_disabled_runtimes", lambda: frozenset())
+    monkeypatch.setattr(orchestration, "configured_term_panels", lambda: ())
 
 
 @pytest.fixture

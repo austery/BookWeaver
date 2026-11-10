@@ -91,6 +91,12 @@ class PanelAndTranslator(FakeMembers):
             self.audits.append(runtime)
 
 
+@pytest.fixture(autouse=True)
+def no_configured_panels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The local API reads the panel list at start; keep the owner's configuration out."""
+    monkeypatch.setattr(orchestration, "configured_term_panels", lambda: ())
+
+
 @pytest.fixture
 def book(tmp_path: Path) -> Path:
     path = tmp_path / "library" / "book.epub"
