@@ -477,11 +477,22 @@ def create_app(
         summary="List enabled presets",
         description=(
             "Every selection a run may use, the default preset first. Metered presets are paid "
-            "and need per-run consent."
+            "and need per-run consent. Presets on a runtime that `runtimes.disabled` in the "
+            "configuration switches off are left out."
         ),
     )
     def list_presets() -> list[orchestration.Preset]:
-        return list(orchestration.enabled_presets())
+        disabled = orchestration.configured_disabled_runtimes()
+        return [p for p in orchestration.enabled_presets() if p.runtime not in disabled]
+
+    def refuse_disabled(preset: orchestration.Preset) -> None:
+        """SPEC-028 §3.12: the run would fail before any call; say so before starting it."""
+        if preset.runtime in orchestration.configured_disabled_runtimes():
+            raise HTTPException(
+                400,
+                f"Preset {preset.name} runs on {preset.runtime}, which runtimes.disabled in "
+                "the configuration switches off; choose another preset",
+            )
 
     def ensure_idle() -> None:
         """Call with the store lock held."""
@@ -575,6 +586,7 @@ def create_app(
     @app.post("/runs", status_code=202, response_model=RunStatus, include_in_schema=False)
     def start_run(body: RunRequest) -> RunStatus:
         preset = orchestration.find_preset(body.preset.value)
+        refuse_disabled(preset)
         _check_consent(preset, body.allow_paid_api)
         source = Path(body.source).expanduser().resolve()
         output = Path(body.output).expanduser().resolve()
@@ -647,6 +659,7 @@ def create_app(
         ] = False,
     ) -> RunStatus:
         selected = orchestration.find_preset(preset.value)
+        refuse_disabled(selected)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:
             raise HTTPException(400, "prompt must not contain a NUL character")

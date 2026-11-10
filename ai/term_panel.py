@@ -38,7 +38,14 @@ from ai.glossary_extractor import (
     locate_index_and_toc,
     parse_glossary_reply,
 )
-from ai.model_profiles import Preset, ResolvedModel, find_preset, is_metered, resolve_preset
+from ai.model_profiles import (
+    Preset,
+    ResolvedModel,
+    find_preset,
+    is_metered,
+    refuse_disabled_runtime,
+    resolve_preset,
+)
 from ai.ports.provider import ITranslationProvider
 
 DEFAULT_JUDGE_PROMPT_MAX_CHARS = 200_000
@@ -171,8 +178,47 @@ def panel_identity(
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
-def run_panel(
-    epub_path: Path,
+@dataclass(frozen=True)
+class PanelPlan:
+    """Where a panel's glossary lives and whether it exists; decided without any model call."""
+
+    panel: ResolvedPanel
+    identity: str
+    directory: Path
+    max_terms: int
+    nominator_terms: int
+    mode: str
+
+    @property
+    def glossary_path(self) -> Path:
+        return self.directory / "glossary.json"
+
+    @property
+    def report_path(self) -> Path:
+        return self.directory / "term-panel-report.json"
+
+    @property
+    def reused(self) -> bool:
+        return self.glossary_path.exists()
+
+    def audit(self) -> dict[str, object]:
+        """The invocation audit's ``term_panel`` field: which quota pools the panel draws on."""
+        return {
+            "name": self.panel.name,
+            "identity": self.identity,
+            "reused": self.reused,
+            "members": [
+                {"role": role, "preset": m.preset.name, "model": m.model.model_id}
+                for role, members in (
+                    ("nominator", self.panel.nominators),
+                    ("judge", self.panel.judges),
+                )
+                for m in members
+            ],
+        }
+
+
+def plan_panel(
     panel: ResolvedPanel,
     *,
     book_dir: Path,
@@ -180,11 +226,8 @@ def run_panel(
     max_terms: int,
     nominator_terms: int,
     mode: str,
-    config: dict[str, object],
-    factory: ProviderFactory,
-    log: Callable[[str], None] = print,
-) -> PanelOutcome:
-    """Run the panel once per identity; a cached glossary is reused without any call."""
+) -> PanelPlan:
+    """The panel's cache folder and identity (SPEC-028 §3.7); refusals before any call."""
     if mode != "auto":
         raise PanelError(
             "A Term Panel reads the book's index; Deep Scan with a panel is not supported yet "
@@ -200,11 +243,39 @@ def run_panel(
         mode=mode,
     )
     directory = book_dir / ".bookweaver_glossaries" / "panel" / identity
-    glossary_path = directory / "glossary.json"
-    report_path = directory / "term-panel-report.json"
+    return PanelPlan(panel, identity, directory, max_terms, nominator_terms, mode)
+
+
+def refuse_disabled_members(panel: ResolvedPanel, config: Mapping[str, object]) -> None:
+    """SPEC-028 §3.12: a panel that must call a disabled runtime stops and names the member.
+
+    Checked only when the panel will run; a cached glossary needs no member.
+    """
+    for member in (*panel.nominators, *panel.judges):
+        try:
+            refuse_disabled_runtime(member.model, config, f"Term Panel member {member.preset.name}")
+        except ValueError as exc:
+            raise PanelError(f"Term Panel {panel.name!r}: {exc}") from exc
+
+
+def run_panel(
+    epub_path: Path,
+    plan: PanelPlan,
+    *,
+    config: dict[str, object],
+    factory: ProviderFactory,
+    log: Callable[[str], None] = print,
+) -> PanelOutcome:
+    """Run the planned panel once per identity; a cached glossary is reused without any call."""
+    panel = plan.panel
+    max_terms, nominator_terms = plan.max_terms, plan.nominator_terms
+    directory = plan.directory
+    glossary_path = plan.glossary_path
+    report_path = plan.report_path
     if glossary_path.exists():
         log(f"[terms] Reusing the {panel.name} glossary: {glossary_path}")
         return PanelOutcome(glossary_path, report_path, True)
+    refuse_disabled_members(panel, config)
 
     located = locate_index_and_toc(epub_path)
     if not has_usable_index(epub_path, located.index_text):
