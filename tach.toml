@@ -69,7 +69,7 @@ depends_on = []
 path = "ai.glossary_extractor"
 depends_on = ["ai.core", "ai.epub_package"]
 
-# Which glossary a run uses and which model extracts it (SPEC-028 Phase 2b, first step).
+# Which glossary a run uses and which model extracts it (prepared for SPEC-028 Phase 2b).
 [[modules]]
 path = "ai.term_extraction"
 depends_on = ["ai.ports", "ai.model_profiles", "ai.glossary_extractor"]

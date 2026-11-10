@@ -1,7 +1,8 @@
 """Which glossary a translation run uses, and which model extracts it.
 
 One place for the glossary decision that used to be spread over the translation method, the
-prompt module and a request helper (SPEC-028 Phase 2b, first step). It works in two steps so the
+prompt module and a request helper. Done before SPEC-028 Phase 2b, so the Term Panel can become
+one more source behind the same plan. It works in two steps so the
 caller can record the extraction model for the audit before it constructs the extractor:
 
 1. ``plan_glossary`` decides, with no model call: no glossary, the user's file, a cached
@@ -35,7 +36,7 @@ ExtractionMode = Literal["auto", "deep-scan"]
 DEFAULT_TERM_LIMIT = 20
 
 
-def glossary_mode(
+def _glossary_mode(
     *, glossary_path: Path | None, requested_mode: str | None, extract: bool
 ) -> GlossaryMode:
     """Precedence: a supplied file, then Deep Scan, then ``auto`` (by flag or request)."""
@@ -122,17 +123,19 @@ def plan_glossary(
 ) -> GlossaryPlan:
     """Decide the run's glossary without any model call.
 
-    ``extract`` already includes ``terminology_extraction.enabled`` from configuration.
+    ``extract`` is an explicit request (``--extract-glossary`` or ``--extraction-model``);
+    ``terminology_extraction.enabled`` in ``config`` requests extraction as well.
     ``may_reuse`` is true when the run keeps a resume store.
     """
-    mode = glossary_mode(
-        glossary_path=glossary_path, requested_mode=requested_mode, extract=extract
+    extraction = config.get("terminology_extraction", {})
+    enabled = isinstance(extraction, dict) and extraction.get("enabled") is True
+    mode = _glossary_mode(
+        glossary_path=glossary_path, requested_mode=requested_mode, extract=extract or enabled
     )
     if max_terms is not None and max_terms <= 0:
         raise ValueError("glossary_max_terms must be positive")
     if mode not in ("auto", "deep-scan"):
         return GlossaryPlan(glossary_path, None)
-    extraction = config.get("terminology_extraction", {})
     profile = extraction_model or (
         extraction.get("extraction_model", "pro") if isinstance(extraction, dict) else "pro"
     )

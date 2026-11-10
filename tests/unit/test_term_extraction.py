@@ -1,4 +1,4 @@
-"""Glossary choice for a run (ai/term_extraction.py): precedence, cache identity, reuse."""
+"""Which glossary a run uses (ai/term_extraction.py), through its plan and the application."""
 
 from __future__ import annotations
 
@@ -7,23 +7,35 @@ from pathlib import Path
 import pytest
 
 from ai.model_profiles import resolve_profile
-from ai.term_extraction import glossary_cache_path, glossary_mode, plan_glossary
+from ai.orchestration import EpubTranslationOptions, GlossarySpec, ResumePolicy
+from ai.orchestration import TranslationOrchestrator
+from ai.term_extraction import GlossaryPlan, glossary_cache_path, plan_glossary
+from tests.unit.test_application_contract import RecordingFactory
+from tests.unit.test_orchestration import make_indexed_epub
 
 
-@pytest.mark.parametrize(
-    "path,requested,extract,expected",
-    [
-        (Path("g.json"), "deep-scan", True, "manual"),  # a supplied file wins
-        (None, "deep-scan", True, "deep-scan"),
-        (None, "auto", False, "auto"),
-        (None, None, True, "auto"),  # --extract-glossary or configuration
-        (None, None, False, "none"),
-    ],
-)
-def test_glossary_mode_precedence(
-    path: Path | None, requested: str | None, extract: bool, expected: str
-) -> None:
-    assert glossary_mode(glossary_path=path, requested_mode=requested, extract=extract) == expected
+def _plan(
+    tmp_path: Path,
+    *,
+    glossary_path: Path | None = None,
+    requested_mode: str | None = None,
+    extract: bool = False,
+    max_terms: int | None = None,
+    config: dict[str, object] | None = None,
+    may_reuse: bool = True,
+) -> GlossaryPlan:
+    return plan_glossary(
+        glossary_path=glossary_path,
+        requested_mode=requested_mode,
+        extract=extract,
+        max_terms=max_terms,
+        extraction_model=None,
+        config=config if config is not None else {},
+        translation_model=resolve_profile("flash"),
+        book_dir=tmp_path,
+        source_signature="sha256:abc",
+        may_reuse=may_reuse,
+    )
 
 
 def test_the_cache_file_name_is_pinned() -> None:
@@ -42,64 +54,76 @@ def test_the_cache_file_name_is_pinned() -> None:
     )
 
 
-def test_a_cached_glossary_is_reused_only_with_a_resume_store(tmp_path: Path) -> None:
-    model = resolve_profile("flash")
+def test_a_supplied_glossary_wins_and_plans_no_extraction(tmp_path: Path) -> None:
+    supplied = tmp_path / "g.json"
 
-    def plan(may_reuse: bool):  # noqa: ANN202
-        return plan_glossary(
-            glossary_path=None,
-            requested_mode=None,
-            extract=True,
-            max_terms=None,
-            extraction_model=None,
-            config={},
-            translation_model=model,
-            book_dir=tmp_path,
-            source_signature="sha256:abc",
-            may_reuse=may_reuse,
-        )
+    plan = _plan(tmp_path, glossary_path=supplied, requested_mode="deep-scan", extract=True)
 
-    first = plan(True)
-    assert first.needs_extraction and first.extraction is not None
-    first.extraction.cache_path.parent.mkdir(parents=True)
-    first.extraction.cache_path.write_text("{}", encoding="utf-8")
-
-    assert not plan(True).needs_extraction
-    assert plan(False).needs_extraction  # without resume, extraction always runs again
+    assert (plan.path, plan.extraction) == (supplied, None)
 
 
-def test_no_glossary_and_a_supplied_glossary_plan_no_extraction(tmp_path: Path) -> None:
-    model = resolve_profile("flash")
-    common = {
-        "max_terms": None,
-        "extraction_model": None,
-        "config": {},
-        "translation_model": model,
-        "book_dir": tmp_path,
-        "source_signature": None,
-        "may_reuse": True,
-    }
+@pytest.mark.parametrize(
+    "requested,extract,config,expected",
+    [
+        ("deep-scan", True, {}, "deep-scan"),
+        ("auto", False, {}, "auto"),
+        (None, True, {}, "auto"),  # --extract-glossary or --extraction-model
+        (None, False, {"terminology_extraction": {"enabled": True}}, "auto"),
+    ],
+)
+def test_extraction_is_planned_by_request_or_configuration(
+    tmp_path: Path,
+    requested: str | None,
+    extract: bool,
+    config: dict[str, object],
+    expected: str,
+) -> None:
+    plan = _plan(tmp_path, requested_mode=requested, extract=extract, config=config)
 
-    none = plan_glossary(glossary_path=None, requested_mode=None, extract=False, **common)
-    manual = plan_glossary(
-        glossary_path=tmp_path / "g.json", requested_mode="auto", extract=True, **common
-    )
+    assert plan.extraction is not None and plan.extraction.mode == expected
+    assert plan.path == plan.extraction.cache_path
 
-    assert (none.path, none.extraction) == (None, None)
-    assert (manual.path, manual.extraction) == (tmp_path / "g.json", None)
+
+def test_nothing_requested_means_no_glossary(tmp_path: Path) -> None:
+    plan = _plan(tmp_path)
+
+    assert (plan.path, plan.extraction, plan.needs_extraction) == (None, None, False)
 
 
 def test_a_non_positive_term_limit_fails_before_anything_else(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="glossary_max_terms must be positive"):
-        plan_glossary(
-            glossary_path=Path("g.json"),
-            requested_mode=None,
-            extract=False,
-            max_terms=0,
-            extraction_model=None,
-            config={},
-            translation_model=resolve_profile("flash"),
-            book_dir=tmp_path,
-            source_signature=None,
-            may_reuse=True,
-        )
+        _plan(tmp_path, glossary_path=Path("g.json"), max_terms=0)
+
+
+def test_without_resume_a_run_extracts_terms_again(tmp_path: Path) -> None:
+    """The reuse rule: a cached glossary is reused only when the run keeps a resume store."""
+    source = tmp_path / "book.epub"
+    make_indexed_epub(source)
+    glossary = GlossarySpec(extract=True)
+    factory = RecordingFactory()
+    app = TranslationOrchestrator(provider_factory=factory)
+
+    app.translate(
+        source,
+        tmp_path / "a.epub",
+        EpubTranslationOptions(config={}, glossary=glossary),
+        input_format="epub",
+    )
+    app.translate(
+        source,
+        tmp_path / "a.epub",
+        EpubTranslationOptions(config={}, glossary=glossary),
+        input_format="epub",
+    )
+    resumed = [r for r in factory.requests if r.protocol == "delimiter"]
+    app.translate(
+        source,
+        tmp_path / "a.epub",
+        EpubTranslationOptions(
+            config={}, glossary=glossary, resume=ResumePolicy(False, False, None)
+        ),
+        input_format="epub",
+    )
+
+    assert len(resumed) == 1  # the resumed run reused the saved terms
+    assert len([r for r in factory.requests if r.protocol == "delimiter"]) == 2

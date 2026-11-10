@@ -212,8 +212,6 @@ class TranslationOrchestrator:
             custom_prompt=options.spec.custom_prompt,
             immersive=True,
         )
-        extraction_config = config.get("terminology_extraction", {})
-        extraction = extraction_config if isinstance(extraction_config, dict) else {}
         resilience_config = config.get("epub_resilience", {})
         resilience = resilience_config if isinstance(resilience_config, dict) else {}
         split_depth = resilience.get("max_split_depth", 10)
@@ -325,7 +323,7 @@ class TranslationOrchestrator:
             glossary_plan = plan_glossary(
                 glossary_path=glossary.path,
                 requested_mode=glossary.mode,
-                extract=glossary.extract or extraction.get("enabled") is True,
+                extract=glossary.extract,
                 max_terms=glossary.max_terms,
                 extraction_model=glossary.extraction_model,
                 config=config,
@@ -335,9 +333,9 @@ class TranslationOrchestrator:
                 may_reuse=store is not None,
             )
             planned = glossary_plan.extraction
-            if planned is not None and planned.reused:
+            if planned is not None and not glossary_plan.needs_extraction:
                 report_reuse(planned)
-            if planned is not None and not planned.reused:
+            if planned is not None and glossary_plan.needs_extraction:
                 active_model = planned.model
                 extraction_used = planned.model
                 active_requested_effort = None

@@ -591,7 +591,7 @@ def extract_glossary_from_epub(
         full_index: When True, translate ALL top-level index entries instead of
                     selecting the most critical ones. More comprehensive but produces
                     a larger glossary.
-        mode: "auto" (Tier 1, stops without an index) or "deep-scan" (Tier 3, the whole book).
+        mode: "auto" (reads the index and stops without one) or "deep-scan" (the whole book).
 
     Returns:
         A report dict with keys: tier, docs, chars, candidate_count, term_count, skip_reason (optional).
