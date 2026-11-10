@@ -31,7 +31,6 @@ The decision gate was written before the run (SPEC-028 §6 item 1): no fixed dri
 ## Side findings
 
 - A strict instruction does not force full uniformity either: Flash still adapted Convention to 习俗 where the sentence needed it. So the tier mainly changes how far the translator may adapt, not whether it can.
-
 - The earlier register drop on chapters 1 and 2 (5.53 and 5.98 with the same 91 terms) did not recur here: strict ch007 scored 6.15 and 6.69. The chapter, not the glossary size, more likely explains it.
 - Essentially Equal (本质上平等) and Essentially Superior (本质上优越) missed in every version. They are phrases that bend to fit a sentence (在本质上是平等的), so they are poor glossary terms. That is a term-selection problem for Phase 2, not a tier problem.
 - The substring check in `term-consistency.json` cannot see an inflected use of a fixed term. Treat a single fixed miss as a prompt to read the segment, not as proof of drift.
