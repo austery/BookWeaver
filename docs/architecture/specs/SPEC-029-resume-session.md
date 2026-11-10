@@ -2,7 +2,7 @@
 specId: SPEC-029
 title: Resume Session — one module for checkpoint verify, restore and commit
 status: Approved by the owner (2026-11-10) — three-step delivery (§5) and interface (§2.1), including the tach.toml change; §6 item 2 approved for PR B; §6 item 3 kept as is
-implementationStatus: Step 1 (blank-segment fix, §6 item 1) merged in PR 108; PR A and PR B wait for SPEC-028 Phase 2b
+implementationStatus: Step 1 merged (PR 108); PR A merged (PR 110); PR B implemented on branch claude/spec-029-resume-session-module
 priority: P2 - Reliability
 creationDate: 2026-11-10
 lastUpdateDate: 2026-11-10
@@ -87,7 +87,7 @@ From `ai/local_api.py`: `_done_segments` calls `checkpoint_progress` instead of 
 
 ### 2.3 What does not move or change
 
-- `ai/checkpoint_store.py` (file format, lock, legacy v1 import, validation) — unchanged.
+- `ai/checkpoint_store.py` (file format, lock, legacy v1 import, validation) — unchanged, except one optional keyword on `load` (§6a).
 - `ai/term_extraction.py` and the glossary call — unchanged; `translate` still calls `plan_glossary` between `verify` and `restore`.
 - The sanity probe, the invocation audit, `DeferredProvider` — unchanged (owner decision 2026-11-10: not worth refactoring).
 
@@ -155,6 +155,14 @@ SPEC-028 Phase 2b (`--term-panel`, issue 100, session "Session Handoff 阶段 2b
 5. **A forced resume leaves no trace in the records**: they carry no prompt hash, so later plain resumes can mix prompts without a signal unless the model id differs.
 6. **Split halves are not committed**: a successful left half is translated again when the right half fails (subscription runtimes).
 7. **No per-segment source digest**: segment IDs are positional; only the book hash and the hand-bumped segmenter constant guard their meaning.
+
+## 6a. Implementation notes (PR B)
+
+- **One deviation from §2.3:** `CheckpointStore.load` gains an optional `deferred` keyword that skips the named soft fields. `verify` uses it to check every soft field except `system_prompt_hash` before term extraction. Without the keyword the load behaves as before; the file format and validation are unchanged.
+- **Error text:** a soft mismatch now names only the fields known at `verify` (for example `Checkpoint mismatch: effort`). When the prompt also changed, `restore` reports it afterwards; before, one late message listed all fields together. A changed output language always changes the prompt, so its message no longer lists `system_prompt_hash`. This is the one exception to the error-text row in §3.
+- **Other consequences of the early check** (independent review, 2026-11-10; all for a non-forced run with a soft mismatch): a failing term extraction or Term Panel no longer hides the mismatch; the invocation audit of the refused run names the translation model, with no extraction model or panel; no `[glossary]` lines are printed and no glossary cache is written; an invalid glossary request (for example `--term-panel` with `--glossary`) is reported after the mismatch, not before. A non-forced run reads the checkpoint three times instead of twice.
+- **Interface shape versus §2.1** (shape, not final code): the session is built with the `ResumeSession(...)` constructor and entered as a context manager; `commit` returns whether it saved (for the progress line); `saved_segments` reports the saved count; `Verified` carries only `may_reuse`; `usage_snapshot` is required and is called only for metered models. `plan_glossary` still takes `may_reuse` as a plain value, so the guarantee that `verify` runs first is the data dependency at that call, not a type.
+- **Verification evidence (§4.4):** recorded in the PR B description: main and branch in both directions, glossary cache reuse, metered usage, an identity without `max_batch_segments`, historical provenance, forced resume, the trial-model stop, a mixed-model checkpoint, a legacy v1 directory, local API progress under a held lock, and two real books from the owner's library.
 
 ## 7. Alternatives
 

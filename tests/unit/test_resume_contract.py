@@ -363,17 +363,30 @@ def test_each_save_reports_its_size_time_and_segment_count(
     assert last_bytes == len(_checkpoint(tmp_path).read_bytes())
 
 
-def test_a_soft_mismatch_is_refused_only_after_term_extraction(tmp_path: Path) -> None:
-    """Today's late refusal; SPEC-029 PR B moves it before extraction (§2.1, §6 item 2)."""
+def test_a_soft_mismatch_is_refused_before_term_extraction(tmp_path: Path) -> None:
+    """SPEC-029 §2.1 (owner decision 2026-11-10): the same refusal, before any model call."""
     make_indexed_epub(tmp_path / "book.epub")
     glossary = GlossarySpec(extract=True)
     _translate(tmp_path, RecordingFactory(), glossary=glossary)
     shutil.rmtree(tmp_path / ".bookweaver_glossaries")
 
     again = RecordingFactory()
-    with pytest.raises(CheckpointMismatchError, match="effort"):
+    with pytest.raises(CheckpointMismatchError, match="Checkpoint mismatch: effort$"):
         _translate(tmp_path, again, glossary=glossary, model=ModelSpec(effort="medium"))
-    assert [request.protocol for request in again.requests] == ["delimiter"]
+    assert again.requests == [] and again.created == []
+
+
+def test_force_still_accepts_a_soft_mismatch(tmp_path: Path) -> None:
+    make_epub(tmp_path / "book.epub")
+    _translate(tmp_path, RecordingFactory())
+
+    result = _translate(
+        tmp_path,
+        RecordingFactory(),
+        model=ModelSpec(effort="medium"),
+        resume=ResumePolicy(force=True),
+    )
+    assert result.resumed_segments == 2
 
 
 def test_local_api_reports_unknown_progress_for_an_unreadable_checkpoint(tmp_path: Path) -> None:
