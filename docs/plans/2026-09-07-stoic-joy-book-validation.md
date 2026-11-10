@@ -7,6 +7,8 @@ The complete EPUB translation and checkpoint recovery succeeded. **Translation-q
 Output: `output/stoic-joy-20260907/A Guide to the Good Life - bilingual.epub`.
 Detailed local evidence, including bilingual review samples, resides in the same ignored output directory. No book text, credentials, or generated EPUB was committed or pushed.
 
+> **Moved 2026-11-10:** the ignored `output/` and `tmp/` folders left the program folder. They now sit under `~/Documents/BookWeaver/_from-program-folder-2026-11-10/`, with the same relative paths (for example `output/stoic-joy-20260907/`). Every file was copied byte-for-byte (SHA-256 checked) before the originals were removed.
+
 ## Reproducible configuration
 
 - Source: William B. Irvine, *A Guide to the Good Life: The Ancient Art of Stoic Joy*, user-selected Calibre EPUB.

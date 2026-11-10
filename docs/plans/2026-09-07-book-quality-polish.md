@@ -21,6 +21,8 @@ Keep the original publication, original generated output, and checkpoint untouch
 
 Local artifact directory: `output/stoic-joy-polished-20260907/` (ignored, book content is not committed).
 
+> **Moved 2026-11-10:** the ignored `output/` and `tmp/` folders left the program folder. They now sit under `~/Documents/BookWeaver/_from-program-folder-2026-11-10/`, with the same relative paths (for example `output/stoic-joy-20260907/`). Every file was copied byte-for-byte (SHA-256 checked) before the originals were removed.
+
 - `A Guide to the Good Life - bilingual reviewed.epub`: complete revised publication.
 - `revision-ledger.json`: exact source/output/checkpoint hashes, old/new/final text for the 75 revised segments, four editorial corrections, and removed bibliography translation IDs.
 - `sample-checkpoint.json`: preserved raw selected-chapter runtime checkpoint.
