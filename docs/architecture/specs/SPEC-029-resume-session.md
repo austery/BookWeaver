@@ -1,7 +1,7 @@
 ---
 specId: SPEC-029
 title: Resume Session — one module for checkpoint verify, restore and commit
-status: Approved by the owner (2026-11-10) — three-step delivery (§5) and interface (§2.1), including the tach.toml change; §6 items 2 and 3 still open
+status: Approved by the owner (2026-11-10) — three-step delivery (§5) and interface (§2.1), including the tach.toml change; §6 item 2 approved for PR B; §6 item 3 kept as is
 implementationStatus: Step 1 (blank-segment fix, §6 item 1) merged in PR 108; PR A and PR B wait for SPEC-028 Phase 2b
 priority: P2 - Reliability
 creationDate: 2026-11-10
@@ -63,7 +63,7 @@ open_resume_session(
     usage_snapshot: callable | None,        # injected from the provider factory; metered runs only
 ) -> ResumeSession                          # a context manager
 
-session.verify() -> Verified                # R1 + R2; returns may_reuse and the hard-load records
+session.verify() -> Verified                # R1 + R2 + early soft check; returns may_reuse and the hard-load records
 session.restore(verified, prompt_sha256) -> dict[segment id, SegmentRecord]   # R3 + R4
 session.commit(batch, provider) -> None     # R5; provider = the real delegate, not the wrapper
 session.directory -> Path | None            # where warnings.json and term-consistency.json go
@@ -74,6 +74,7 @@ checkpoint_progress(directory) -> int | None    # R7; no lock, no validation; mi
 
 - **`verify` returns the value the glossary step needs.** `plan_glossary` takes `may_reuse` from the `Verified` value, and `restore` takes the `Verified` value as an argument. Term extraction then cannot be planned, and the full load cannot run, without `verify` having run first. This makes R1 and R2 structural instead of positional. `commit` raises if `restore` has not run.
 - **No-resume is the same interface.** Without a directory the session creates no directory, lock or file; `verify` returns `may_reuse=False` and no records; `restore` returns nothing; `commit` does nothing; `directory` is `None`.
+- **Early soft check (owner decision, 2026-11-10).** Unless forced, `verify` also compares every soft identity field except `system_prompt_hash` (language, profile, effort, protocol, batch characters, separator overhead, batch segments) and raises the same `CheckpointMismatchError` before any external work. The prompt hash is still checked in `restore`, because it depends on the glossary. This is the one intended behaviour change in PR B: the same refusal, earlier. PR A pins today's late refusal; PR B updates that one test and states it in the PR.
 - **`BatchBounds`** is one frozen value built once from the options and configuration. Both the identity and `EngineConfig` read it, and `EngineConfig` receives `separator_overhead` explicitly (R6).
 - **`commit`** builds `SegmentRecord` with keyword arguments, reads `backend` and `runtime_version` from the delegate at commit time, takes usage only for metered providers, saves the whole map with the current identity on the same store instance as `verify` and `restore`, updates its records only after a successful save, and lets a save failure stop the run.
 - `checkpoint_progress` is re-exported by `ai/orchestration.py`, because tach lets `ai.local_api` import only `ai.orchestration`.
@@ -148,8 +149,8 @@ SPEC-028 Phase 2b (`--term-panel`, issue 100, session "Session Handoff 阶段 2b
 ## 6. Gaps found during review (the move neither causes nor fixes them)
 
 1. **A blank segment makes the checkpoint unloadable.** A multi-segment `segment_tags` reply may contain an empty body; the parser returns `""` (`ai/adapters/providers/_delimiter.py`; pinned by `test_segment_tags_allows_empty_segment_body`), the engine checks only the count (`ai/core/engine.py`), and the sanity probe only warns. The batch is saved, and every later load raises "Invalid empty checkpoint translation", even with `--force-resume`. Reproduced offline on main (0c702bf): run 1 translated 2 segments, run 2 failed with `CheckpointError`. Proposed fix: treat a blank translation as a failed batch before it reaches the checkpoint, so the existing split-retry handles it, and never write a record the next load refuses. Owner decision: it changes provider and engine behaviour.
-2. **Soft mismatches are refused late.** Effort, profile, language and batch caps are known before term extraction but refused only at the full load, after extraction may have spent quota or money. Proposed: check them in `verify` when not forced. Owner decision.
-3. **A non-trial model change only prints a warning** (Antigravity models, metered vendors; SPEC-021, SPEC-024). Recorded decision; listed so the owner can confirm it still fits "never silently combine".
+2. **Soft mismatches are refused late.** Effort, profile, language and batch caps are known before term extraction but refused only at the full load, after extraction may have spent quota or money. Approved by the owner (2026-11-10): check them in `verify` when not forced, in PR B (§2.1).
+3. **A non-trial model change only prints a warning** (Antigravity models, metered vendors; SPEC-021, SPEC-024). Recorded decision (SPEC-020 §9.2: a same-profile provider change should not need the coarse `--force-resume`). The owner confirmed on 2026-11-10 to keep it: it lets a book finish on another model when quota runs out or a model version changes; each record keeps its model, and the run prints a mixed-model warning.
 4. **`--no-resume` rewrites the glossary cache** that an unfinished checkpoint in the same folder depends on, and takes no lock.
 5. **A forced resume leaves no trace in the records**: they carry no prompt hash, so later plain resumes can mix prompts without a signal unless the model id differs.
 6. **Split halves are not committed**: a successful left half is translated again when the right half fails (subscription runtimes).
@@ -165,5 +166,5 @@ SPEC-028 Phase 2b (`--term-panel`, issue 100, session "Session Handoff 阶段 2b
 
 1. ~~Fix the blank-segment gap first~~ — approved and merged (PR 108, 2026-11-10).
 2. ~~Approve the three-step delivery and the interface~~ — approved by the owner, 2026-11-10.
-3. Check soft mismatches before term extraction (§6 item 2)?
-4. Keep the warning-only rule for non-trial model changes (§6 item 3)?
+3. ~~Check soft mismatches before term extraction~~ — approved for PR B, 2026-11-10.
+4. ~~Keep the warning-only rule for non-trial model changes~~ — kept, 2026-11-10.
