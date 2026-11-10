@@ -346,6 +346,60 @@ class TestBatchCallback:
 
 
 class TestSplitRetryResilience:
+    def test_blank_translation_in_a_batch_is_retried_by_splitting(self) -> None:
+        """A blank body in a multi-segment reply never reaches the checkpoint callback."""
+
+        class BlankInBatchProvider(ITranslationProvider):
+            def __init__(self) -> None:
+                self.calls: list[list[str]] = []
+
+            def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+                self.calls.append(list(segments))
+                if len(segments) > 1:
+                    return ["翻译:A", "  "]
+                return [f"翻译:{segments[0]}"]
+
+        provider = BlankInBatchProvider()
+        committed: list[list[str]] = []
+        source = FakeSource(_make_segments(["A", "B"]))
+        engine = TranslationEngine(
+            provider,
+            _default_config(
+                max_batch_chars=1000,
+                max_split_depth=5,
+                on_checkpoint_batch=lambda _i, batch: committed.append(
+                    [item.translated for item in batch]
+                ),
+            ),
+        )
+
+        result = engine.translate(source, "/tmp/out.epub")
+
+        assert result.translated_segments == 2
+        assert [t.translated for t in source.applied or []] == ["翻译:A", "翻译:B"]
+        assert provider.calls == [["A", "B"], ["A"], ["B"]]
+        assert committed == [["翻译:A", "翻译:B"]]
+
+    def test_blank_translation_that_persists_stops_without_committing(self) -> None:
+        class AlwaysBlankProvider(ITranslationProvider):
+            def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+                return ["" for _ in segments]
+
+        committed: list[object] = []
+        source = FakeSource(_make_segments(["A", "B"]))
+        engine = TranslationEngine(
+            AlwaysBlankProvider(),
+            _default_config(
+                max_batch_chars=1000,
+                max_split_depth=5,
+                on_checkpoint_batch=lambda _i, batch: committed.append(batch),
+            ),
+        )
+
+        with pytest.raises(TranslationError, match="blank translation"):
+            engine.translate(source, "/tmp/out.epub")
+        assert committed == []
+
     def test_split_on_failure_then_succeed(self) -> None:
         """Provider fails on 2-segment batch but succeeds on singles."""
         provider = FailOnLargeBatchProvider(max_segments=1)

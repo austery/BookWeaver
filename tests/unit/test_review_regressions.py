@@ -323,3 +323,82 @@ def test_paid_glossary_path_is_authorized_and_single_attempt(
         assert {(item["max_retries"], item["unified_exceptions"]) for item in constructed} == {
             (0, True)
         }
+
+
+class _BlankSecondBodyProvider(ITranslationProvider):
+    """Returns what the segment_tags parser yields when one body in the reply is blank."""
+
+    def __init__(self, *, blank_singles: bool) -> None:
+        self.blank_singles = blank_singles
+        self.calls = 0
+
+    def translate_batch(self, segments: Sequence[str], *, system_prompt: str) -> list[str]:
+        from ai.adapters.providers._delimiter import PROTOCOL_SEGMENT_TAGS, split_response
+
+        self.calls += 1
+        # The moon sentence comes back blank in a batch reply, and alone too when blank_singles.
+        blank = ["moon" in text and (len(segments) > 1 or self.blank_singles) for text in segments]
+        if len(segments) == 1:
+            # A single segment gets a plain reply, not tagged bodies.
+            reply = "  " if blank[0] else "译文。"
+        else:
+            reply = "".join(
+                f'<segment id="{n}">{"  " if is_blank else "译文。"}</segment>'
+                for n, is_blank in enumerate(blank, start=1)
+            )
+        return split_response(reply, len(segments), protocol=PROTOCOL_SEGMENT_TAGS)
+
+
+class _OneProviderFactory(NoAuditFactory):
+    def __init__(self, provider: ITranslationProvider) -> None:
+        self.provider = provider
+
+    def create(
+        self,
+        model: ResolvedModel,
+        *,
+        protocol: str,
+        config: dict[str, object],
+        allow_paid_api: bool,
+        remaining_chars: int,
+    ) -> ITranslationProvider:
+        return self.provider
+
+
+def test_a_blank_segment_in_a_reply_does_not_poison_the_checkpoint(tmp_path: Path) -> None:
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_epub(source)
+    options = EpubTranslationOptions(config={})
+    first = TranslationOrchestrator(
+        provider_factory=_OneProviderFactory(_BlankSecondBodyProvider(blank_singles=False))
+    ).translate(source, output, options, input_format="epub")
+    assert first.translated_segments == 2
+
+    again = _BlankSecondBodyProvider(blank_singles=False)
+    second = TranslationOrchestrator(provider_factory=_OneProviderFactory(again)).translate(
+        source, output, options, input_format="epub"
+    )
+    assert second.resumed_segments == 2
+    assert again.calls == 0
+
+
+def test_a_segment_that_stays_blank_stops_after_the_saved_batches_and_resumes_later(
+    tmp_path: Path,
+) -> None:
+    from ai.ports.provider import TranslationError
+
+    source, output = tmp_path / "book.epub", tmp_path / "out.epub"
+    make_epub(source)
+    # One segment per batch: the first batch is saved before the blank one stops the run.
+    options = EpubTranslationOptions(config={}, quality=QualityPolicy(max_batch_chars=30))
+    with pytest.raises(TranslationError, match="empty translation"):
+        TranslationOrchestrator(
+            provider_factory=_OneProviderFactory(_BlankSecondBodyProvider(blank_singles=True))
+        ).translate(source, output, options, input_format="epub")
+
+    good = _BlankSecondBodyProvider(blank_singles=False)
+    result = TranslationOrchestrator(provider_factory=_OneProviderFactory(good)).translate(
+        source, output, options, input_format="epub"
+    )
+    assert result.resumed_segments == 1
+    assert good.calls == 1
