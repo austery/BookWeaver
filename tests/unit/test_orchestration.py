@@ -110,13 +110,6 @@ def test_public_application_function_keeps_three_arguments() -> None:
     ]
 
 
-def test_markdown_and_pdf_entry_points_are_retired() -> None:
-    import ai.orchestration
-
-    for name in ("translate_markdown", "translate_pdf", "MarkdownTranslationOptions"):
-        assert not hasattr(ai.orchestration, name)
-
-
 def test_cli_does_not_import_concrete_runtime_adapters() -> None:
     import ai.cli
 

@@ -195,7 +195,7 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 ## Scope and verification status
 
-EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. Markdown, PDF, DOCX and every other input fail with one EPUB-only error (ADR-0003). Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
+EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. The CLI rejects Markdown, PDF, DOCX and every other input with one EPUB-only error (ADR-0003). Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
 
 The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9) and Claude Code through `--preset claude-*` (SPEC-025 §3.10); the comparison method and first evidence are in the [evaluation record](docs/plans/2026-11-09-translation-evaluation-method.md), and no whole-book comparison has run.
 

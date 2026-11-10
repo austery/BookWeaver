@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input-format",
         choices=["auto", "epub"],
         default="auto",
-        help="Input format (default: auto-detect from path)",
+        help="Kept for existing scripts; EPUB is the only input format",
     )
     p.add_argument(
         "--resume",
@@ -274,7 +274,7 @@ def _apply_preset(
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Parse intent and dispatch to a format-specific application boundary."""
+    """Parse intent and dispatch to the EPUB application boundary."""
     tokens = argv if argv is not None else sys.argv[1:]
     if tokens[:1] == ["presets"]:
         presets_main(tokens[1:])

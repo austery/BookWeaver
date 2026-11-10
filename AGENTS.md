@@ -4,7 +4,7 @@
 
 - Canonical command: `uv run bookweaver`, entry point `ai/cli.py`.
 - Application composition: `ai/orchestration.py`; `translate_epub` is the only translation function.
-- Supported format: EPUB-to-EPUB, alternating bilingual text (ADR-0003). Any other input, including Markdown and PDF, fails with one EPUB-only error. Table cells and conservatively recognized dedicated bibliography documents remain source-only.
+- Supported format: EPUB-to-EPUB, alternating bilingual text (ADR-0003). The CLI and the local API reject any other input, including Markdown and PDF, with one EPUB-only error; `translate_epub` itself does not check the file name. Table cells and conservatively recognized dedicated bibliography documents remain source-only.
 - Active EPUB batch default: 60,000 characters and 200 segments; CLI `--max-batch-segments` overrides `epub_resilience.max_batch_segments`. Generic/legacy batchers retain an optional unbounded default.
 - Active EPUB segmenter: `epub-leaf-block-v4-source-only-bibliography`; v3 checkpoint reuse is a hard mismatch. Segment-cap changes alone are soft mismatches; historical missing caps mean unbounded.
 - Default runtime: Antigravity through `ai/adapters/providers/antigravity_provider.py`, a runtime spec on the shared adapter `ai/adapters/providers/subscription_cli_provider.py`; model versions are centralized in `ai/model_profiles.py`. Runtime adapters depend only on `ai/ports` (`ResolvedModel` is in `ai/ports/model.py`); `ai/runtime_factory.py` passes the seed list to Antigravity. `tach.toml` is exact: an unused declared dependency fails.

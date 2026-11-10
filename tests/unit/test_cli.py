@@ -1144,6 +1144,13 @@ class TestRunInputValidation:
         with pytest.raises(ValueError, match="EPUB only"):
             run(input_path=str(pages), output=str(tmp_path / "out.md"))
 
+    @pytest.mark.parametrize("name", ["report.pdf", "notes.md"])
+    def test_markdown_or_pdf_file_is_rejected(self, name: str, tmp_path: Path) -> None:
+        source = tmp_path / name
+        source.write_bytes(b"content")
+        with pytest.raises(ValueError, match="EPUB only"):
+            run(input_path=str(source), output=str(tmp_path / "out.epub"))
+
     def test_retired_input_format_is_rejected(self, tmp_path: Path) -> None:
         in_epub = tmp_path / "book.epub"
         in_epub.write_bytes(b"epub")

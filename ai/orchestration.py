@@ -1490,7 +1490,11 @@ def _run_pipeline(
             msg = f"Input path does not exist: {input_path}"
             raise FileNotFoundError(msg)
 
-        if input_format not in ("auto", "epub") or not input_file.is_file():
+        if (
+            input_format not in ("auto", "epub")
+            or not input_file.is_file()
+            or input_file.suffix.lower() in (".md", ".pdf")
+        ):
             raise ValueError(EPUB_ONLY_MESSAGE)
         fmt = "epub"
         _log_progress("input", format=fmt, input=input_path, output=output, output_lang=output_lang)
