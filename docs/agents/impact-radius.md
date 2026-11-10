@@ -82,7 +82,7 @@ change that adds, modifies or deletes anything under these paths has
 - **Glossary cache identity and format:** `glossary_cache_path` in
   `ai/term_extraction.py` (`.bookweaver_glossaries/<sha256>.json`, keyed on
   source signature, `mode`, `max_terms`, `model_id`, `effort` and
-  `extractor_version: 1`). Its inputs include `resolve_glossary_request`
+  `extractor_version: 1`). Its inputs include
   (`glossary_mode` in `ai/term_extraction.py`, which decides `mode`) and every `model_id`
   in `_CLI_PRESETS` and `_API_MODELS`: a model-ID-only change makes every cache
   miss, and the next run re-extracts. The file format is written by

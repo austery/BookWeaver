@@ -985,3 +985,14 @@ def test_extraction_prompt_asks_for_exactly_one_translation(full_index: bool) ->
 
     assert "只写一个译法" in prompt
     assert '"alternatives"' in prompt
+
+
+def test_an_unknown_extraction_mode_fails_before_any_model_call(tmp_path: Path) -> None:
+    """The old index-or-TOC branch is gone; only auto and deep-scan remain."""
+    calls: list[str] = []
+
+    with pytest.raises(ValueError, match="Unknown term extraction mode 'legacy'"):
+        extract_glossary_from_epub(
+            tmp_path / "missing.epub", tmp_path / "out.json", calls.append, mode="legacy"
+        )
+    assert calls == []

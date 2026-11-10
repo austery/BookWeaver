@@ -591,14 +591,16 @@ def extract_glossary_from_epub(
         full_index: When True, translate ALL top-level index entries instead of
                     selecting the most critical ones. More comprehensive but produces
                     a larger glossary.
-        mode: Extraction mode - "auto" (Tier 1, stops without an index), "deep-scan" (Tier 3), or legacy.
+        mode: "auto" (Tier 1, stops without an index) or "deep-scan" (Tier 3, the whole book).
 
     Returns:
         A report dict with keys: tier, docs, chars, candidate_count, term_count, skip_reason (optional).
 
     Raises:
-        ValueError: When "auto" finds no usable index. No model is called.
+        ValueError: When "auto" finds no usable index, or for another mode. No model is called.
     """
+    if mode not in ("auto", "deep-scan"):
+        raise ValueError(f"Unknown term extraction mode {mode!r}; use auto or deep-scan")
     print(f"[glossary] Extracting from: {epub_path.name}", flush=True)
     display_mode = "full-index" if full_index else mode
     print(f"[glossary] Mode: {display_mode} (max {max_terms} terms)", flush=True)
@@ -619,23 +621,9 @@ def extract_glossary_from_epub(
             prompt = _build_extraction_prompt(
                 index_text, toc_text, max_terms, full_index=full_index
             )
-            raw_output = translate_fn(prompt)
-            glossary = _validate_and_parse_glossary(raw_output)
-
-            # Trim to max_terms if needed
-            terms = glossary.get("critical_terminology", [])
-            if len(terms) > max_terms:
-                glossary["critical_terminology"] = terms[:max_terms]
-
-            terms_count = len(glossary.get("critical_terminology", []))
-            print(f"[glossary] Extracted {terms_count} terms (Tier 1)", flush=True)
-
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(
-                json.dumps(glossary, ensure_ascii=False, indent=2), encoding="utf-8"
+            terms_count = _write_glossary(
+                translate_fn(prompt), max_terms=max_terms, output_path=output_path, tier="Tier 1"
             )
-            print(f"[glossary] Written to: {output_path}", flush=True)
-
             return {
                 "tier": "index",
                 "docs": 0,
@@ -654,91 +642,54 @@ def extract_glossary_from_epub(
         )
 
     # Tier 3: Deep-scan (whole-book extraction)
-    if mode == "deep-scan":
-        print("[glossary] Using Tier 3 (deep-scan whole-book extraction)", flush=True)
-        blocks = _collect_spine_blocks(epub_path)
-        if not blocks:
-            raise ValueError("Cannot extract glossary: EPUB has no readable content blocks.")
+    print("[glossary] Using Tier 3 (deep-scan whole-book extraction)", flush=True)
+    blocks = _collect_spine_blocks(epub_path)
+    if not blocks:
+        raise ValueError("Cannot extract glossary: EPUB has no readable content blocks.")
 
-        # Collect full text
-        full_text_parts = [block.text for block in blocks]
-        full_text = "\n\n".join(full_text_parts)
-        total_chars = len(full_text)
-        doc_count = len(blocks)
+    # Collect full text
+    full_text_parts = [block.text for block in blocks]
+    full_text = "\n\n".join(full_text_parts)
+    total_chars = len(full_text)
+    doc_count = len(blocks)
 
-        print(f"[glossary] Payload: docs={doc_count}, chars={total_chars}", flush=True)
+    print(f"[glossary] Payload: docs={doc_count}, chars={total_chars}", flush=True)
 
-        # Build deep-scan prompt
-        book_title = "Unknown"
+    # Build deep-scan prompt
+    book_title = "Unknown"
 
-        prompt = _DEEP_SCAN_PROMPT_TEMPLATE.format(
-            book_title=book_title,
-            doc_count=doc_count,
-            char_count=total_chars,
-            full_text=full_text,
-            max_terms=max_terms,
-        )
-
-        raw_output = translate_fn(prompt)
-        glossary = _validate_and_parse_glossary(raw_output)
-
-        # Trim to max_terms if needed
-        terms = glossary.get("critical_terminology", [])
-        if len(terms) > max_terms:
-            glossary["critical_terminology"] = terms[:max_terms]
-
-        terms_count = len(glossary.get("critical_terminology", []))
-        print(f"[glossary] Extracted {terms_count} terms (Tier 3)", flush=True)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(glossary, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[glossary] Written to: {output_path}", flush=True)
-
-        return {
-            "tier": "deep-scan",
-            "docs": doc_count,
-            "chars": total_chars,
-            "candidate_count": 0,
-            "term_count": terms_count,
-        }
-
-    # Legacy path (backward compatibility when mode is not specified or old behavior)
-    index_text, toc_text = extract_epub_index_and_toc(epub_path)
-    print(
-        f"[glossary] Index: {len(index_text)} chars, TOC: {len(toc_text)} chars",
-        flush=True,
+    prompt = _DEEP_SCAN_PROMPT_TEMPLATE.format(
+        book_title=book_title,
+        doc_count=doc_count,
+        char_count=total_chars,
+        full_text=full_text,
+        max_terms=max_terms,
     )
 
-    if not index_text and not toc_text:
-        raise ValueError(
-            "Cannot extract glossary: no Index or TOC content found in EPUB. "
-            "The EPUB may not have a standard index or table of contents."
-        )
-
-    prompt = _build_extraction_prompt(index_text, toc_text, max_terms, full_index=full_index)
-    raw_output = translate_fn(prompt)
-
-    glossary = _validate_and_parse_glossary(raw_output)
-
-    # Trim to max_terms if needed
-    terms = glossary.get("critical_terminology", [])
-    if len(terms) > max_terms:
-        glossary["critical_terminology"] = terms[:max_terms]
-
-    terms_count = len(glossary.get("critical_terminology", []))
-    print(f"[glossary] Extracted {terms_count} terms", flush=True)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(glossary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[glossary] Written to: {output_path}", flush=True)
-
+    terms_count = _write_glossary(
+        translate_fn(prompt), max_terms=max_terms, output_path=output_path, tier="Tier 3"
+    )
     return {
-        "tier": "legacy",
-        "docs": 0,
-        "chars": len(index_text) + len(toc_text),
+        "tier": "deep-scan",
+        "docs": doc_count,
+        "chars": total_chars,
         "candidate_count": 0,
         "term_count": terms_count,
     }
+
+
+def _write_glossary(raw_output: str, *, max_terms: int, output_path: Path, tier: str) -> int:
+    """Parse one extraction reply, keep at most max_terms, write it, and return the count."""
+    glossary = _validate_and_parse_glossary(raw_output)
+    terms = glossary.get("critical_terminology", [])
+    if len(terms) > max_terms:
+        glossary["critical_terminology"] = terms[:max_terms]
+    terms_count = len(glossary.get("critical_terminology", []))
+    print(f"[glossary] Extracted {terms_count} terms ({tier})", flush=True)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(glossary, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[glossary] Written to: {output_path}", flush=True)
+    return terms_count
 
 
 def _looks_like_toc_href(href: str) -> bool:
