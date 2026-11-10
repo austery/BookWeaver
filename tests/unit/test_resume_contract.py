@@ -4,6 +4,7 @@ Each test goes through TranslationOrchestrator (or the local API) and must pass 
 before the resume-session module exists, so the move can be checked against it unchanged.
 """
 
+import hashlib
 import json
 import re
 import shutil
@@ -13,15 +14,22 @@ from pathlib import Path
 import pytest
 
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
-from ai.checkpoint_store import CheckpointError, CheckpointStore
+from ai.checkpoint_store import (
+    CheckpointError,
+    CheckpointMismatchError,
+    CheckpointStore,
+    ICheckpointStore,
+)
 from ai.model_profiles import ResolvedModel
 from ai.orchestration import (
     EpubTranslationOptions,
     GlossarySpec,
+    ModelSpec,
     ProviderSpec,
     QualityPolicy,
     ResumePolicy,
     TranslationOrchestrator,
+    TranslationSummary,
 )
 from ai.ports.provider import ITranslationProvider, ProviderUnavailableError
 from tests.unit.test_application_contract import RecordingFactory
@@ -37,17 +45,21 @@ def _translate(
     glossary: GlossarySpec | None = None,
     quality: QualityPolicy | None = None,
     provider: ProviderSpec | None = None,
-) -> object:
+    model: ModelSpec | None = None,
+    checkpoint_factory: object | None = None,
+) -> TranslationSummary:
     options = EpubTranslationOptions(
         config={},
         resume=resume or ResumePolicy(),
         glossary=glossary or GlossarySpec(),
         quality=quality or QualityPolicy(),
         provider=provider or ProviderSpec(),
+        model=model or ModelSpec(),
     )
-    return TranslationOrchestrator(provider_factory=factory).translate(
-        tmp_path / "book.epub", tmp_path / "out.epub", options, input_format="epub"
-    )
+    return TranslationOrchestrator(
+        provider_factory=factory,
+        checkpoint_factory=checkpoint_factory,  # type: ignore[arg-type]
+    ).translate(tmp_path / "book.epub", tmp_path / "out.epub", options, input_format="epub")
 
 
 def _checkpoint(tmp_path: Path) -> Path:
@@ -115,19 +127,37 @@ def test_force_alone_restores_a_finished_book_and_reuses_its_glossary(tmp_path: 
         tmp_path, again, glossary=glossary, resume=ResumePolicy(enabled=False, force=True)
     )
 
-    assert result.resumed_segments == 2  # type: ignore[attr-defined]
+    assert result.resumed_segments == 2
     assert again.requests == [] and again.created == []
 
 
 def test_a_saved_record_keeps_every_provenance_field(tmp_path: Path) -> None:
     make_epub(tmp_path / "book.epub")
-    _translate(tmp_path, AuditedFactory())
+
+    class ReportingFactory(RecordingFactory):
+        """A provider that reports its own backend and version, as real runtimes do."""
+
+        def create(self, model: ResolvedModel, **kwargs: object) -> ITranslationProvider:
+            inner = super().create(model, **kwargs)  # type: ignore[arg-type]
+
+            class Reporting(ITranslationProvider):
+                backend = "gemini_cli"
+                runtime_version = "offline-runtime-1"
+
+                def translate_batch(
+                    self, segments: Sequence[str], *, system_prompt: str
+                ) -> list[str]:
+                    return inner.translate_batch(segments, system_prompt=system_prompt)
+
+            return Reporting()
+
+    _translate(tmp_path, ReportingFactory(), model=ModelSpec(effort="low"))
 
     records = json.loads(_checkpoint(tmp_path).read_text())["segments"]
     record = next(iter(records.values()))
     completed = record.pop("completed_at")
 
-    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+\+00:00", completed)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?\+00:00", completed)
     assert list(record) == [
         "translated",
         "profile",
@@ -143,31 +173,45 @@ def test_a_saved_record_keeps_every_provenance_field(tmp_path: Path) -> None:
         "translated": "花园大门敞开着。",
         "profile": "flash",
         "provider": "cli",
-        "backend": "antigravity",
+        "backend": "gemini_cli",
         "model": "gemini-3.8-flash-low",
         "effort": "low",
         "runtime_version": "offline-runtime-1",
-        "requested_effort": None,
+        "requested_effort": "low",
         "source_verification": None,
     }
 
 
 def test_the_identity_for_default_options_is_unchanged(tmp_path: Path) -> None:
     make_epub(tmp_path / "book.epub")
-    _translate(tmp_path, RecordingFactory())
+    factory = RecordingFactory()
+    _translate(tmp_path, factory)
 
     identity = json.loads(_checkpoint(tmp_path).read_text())["identity"]
-    prompt_hash = identity.pop("system_prompt_hash")
-    signature = identity.pop("input_signature")
+    book = hashlib.sha256((tmp_path / "book.epub").read_bytes()).hexdigest()
+    prompt = hashlib.sha256(factory.requests[0].prompt.encode()).hexdigest()
 
-    assert re.fullmatch(r"[0-9a-f]{64}", prompt_hash)
-    assert signature.startswith("sha256:")
+    assert list(identity) == [
+        "input_signature",
+        "input_format",
+        "segmenter_signature",
+        "output_lang",
+        "profile",
+        "effort",
+        "system_prompt_hash",
+        "protocol",
+        "max_batch_chars",
+        "separator_overhead",
+        "max_batch_segments",
+    ]
     assert identity == {
+        "input_signature": "sha256:" + book,
         "input_format": "epub",
         "segmenter_signature": "epub-leaf-block-v4-source-only-bibliography",
         "output_lang": "zh",
         "profile": "flash",
         "effort": "low",
+        "system_prompt_hash": prompt,
         "protocol": "segment_tags",
         "max_batch_chars": 60000,
         "separator_overhead": 6,
@@ -219,7 +263,10 @@ def test_paid_usage_from_an_interrupted_run_survives_the_next_run(tmp_path: Path
     )
 
     usage = json.loads(_checkpoint(tmp_path).read_text())["paid_usage_by_run"]
-    assert set(usage) == {"run-1", "run-2"}
+    assert usage == {
+        "run-1": {"request_count": 1, "input_tokens": None},
+        "run-2": {"request_count": 1, "input_tokens": None},
+    }
 
 
 @pytest.mark.parametrize("damage", ["unknown segment id", "wrong segment count"])
@@ -241,35 +288,43 @@ def test_a_damaged_checkpoint_stops_before_any_provider_request(
     path.write_text(json.dumps(data))
 
     again = RecordingFactory()
-    with pytest.raises(CheckpointError):
+    expected = (
+        "unknown source segment IDs"
+        if damage == "unknown segment id"
+        else "segment count does not match"
+    )
+    with pytest.raises(CheckpointError, match=expected):
         _translate(tmp_path, again, glossary=glossary)
     assert again.requests == [] and again.created == []
 
 
-def test_a_batch_whose_save_fails_leaves_no_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_batch_whose_save_fails_leaves_no_warning(tmp_path: Path) -> None:
     make_epub(tmp_path / "book.epub")
-    real_save = CheckpointStore.save
-    saves = {"count": 0}
 
-    def fail_second_save(self: CheckpointStore, *args: object, **kwargs: object) -> None:
-        saves["count"] += 1
-        if saves["count"] == 2:
-            raise OSError("synthetic save failure")
-        real_save(self, *args, **kwargs)  # type: ignore[arg-type]
+    class SecondSaveFails(CheckpointStore):
+        saves = 0
 
-    monkeypatch.setattr(CheckpointStore, "save", fail_second_save)
+        def save(self, *args: object, **kwargs: object) -> None:
+            SecondSaveFails.saves += 1
+            if SecondSaveFails.saves == 2:
+                raise OSError("synthetic save failure")
+            super().save(*args, **kwargs)  # type: ignore[arg-type]
+
+    class Stores:
+        def create(self, directory: Path) -> ICheckpointStore:
+            return SecondSaveFails(directory)
+
     with pytest.raises(OSError, match="synthetic save failure"):
         # Both fixture paragraphs are long enough that a 200-character reply trips length_ratio.
         _translate(
             tmp_path,
             RecordingFactory(translation="跑" * 200),
             quality=QualityPolicy(max_batch_chars=30),
+            checkpoint_factory=Stores(),
         )
 
     warnings = json.loads((_checkpoint(tmp_path).parent / "warnings.json").read_text())
-    assert len(warnings["warnings"]) == 1
+    assert [entry["segment_id"] for entry in warnings["warnings"]] == ["chapter.xhtml::0"]
 
 
 def test_no_resume_writes_no_checkpoint_and_leaves_an_existing_one_alone(
@@ -286,7 +341,7 @@ def test_no_resume_writes_no_checkpoint_and_leaves_an_existing_one_alone(
     before = _checkpoint(tmp_path).read_bytes()
     again = RecordingFactory()
     result = _translate(tmp_path, again, resume=ResumePolicy(enabled=False))
-    assert result.resumed_segments == 0  # type: ignore[attr-defined]
+    assert result.resumed_segments == 0
     assert again.requests != []
     assert _checkpoint(tmp_path).read_bytes() == before
 
@@ -295,15 +350,30 @@ def test_each_save_reports_its_size_time_and_segment_count(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     make_epub(tmp_path / "book.epub")
-    _translate(tmp_path, RecordingFactory())
+    _translate(tmp_path, RecordingFactory(), quality=QualityPolicy(max_batch_chars=30))
 
     lines = [
         line for line in capsys.readouterr().out.splitlines() if "[progress:checkpoint]" in line
     ]
-    assert len(lines) == 1
-    assert re.fullmatch(
-        r"\[progress:checkpoint\] bytes=\d+ seconds=\d+(\.\d+)? segments=2", lines[0]
-    )
+    pattern = r"\[progress:checkpoint\] bytes=(\d+) seconds=\d+(?:\.\d+)? segments=(\d+)"
+    parsed = [re.fullmatch(pattern, line) for line in lines]
+    assert all(parsed)
+    assert [int(match.group(2)) for match in parsed if match] == [1, 2]
+    last_bytes = int(parsed[-1].group(1))  # type: ignore[union-attr]
+    assert last_bytes == len(_checkpoint(tmp_path).read_bytes())
+
+
+def test_a_soft_mismatch_is_refused_only_after_term_extraction(tmp_path: Path) -> None:
+    """Today's late refusal; SPEC-029 PR B moves it before extraction (§2.1, §6 item 2)."""
+    make_indexed_epub(tmp_path / "book.epub")
+    glossary = GlossarySpec(extract=True)
+    _translate(tmp_path, RecordingFactory(), glossary=glossary)
+    shutil.rmtree(tmp_path / ".bookweaver_glossaries")
+
+    again = RecordingFactory()
+    with pytest.raises(CheckpointMismatchError, match="effort"):
+        _translate(tmp_path, again, glossary=glossary, model=ModelSpec(effort="medium"))
+    assert [request.protocol for request in again.requests] == ["delimiter"]
 
 
 def test_local_api_reports_unknown_progress_for_an_unreadable_checkpoint(tmp_path: Path) -> None:
