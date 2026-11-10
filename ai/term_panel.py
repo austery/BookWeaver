@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from ai.core.glossary import GlossaryManager
 from ai.core.term_panel import (
     SENTENCE_SELECTION_VERSION,
     RULE_VERSION,
     Candidate,
     Judge,
+    JudgeVote,
     Nomination,
     aggregate,
     build_judge_prompt,
@@ -143,15 +145,23 @@ def resolve_panel(name: str, config: Mapping[str, object]) -> ResolvedPanel:
 
 
 def panel_identity(
-    panel: ResolvedPanel, *, source_signature: str | None, max_terms: int, mode: str
+    panel: ResolvedPanel,
+    *,
+    source_signature: str | None,
+    max_terms: int,
+    nominator_terms: int,
+    mode: str,
 ) -> str:
     identity = json.dumps(
         {
             "source": source_signature,
             "mode": mode,
             "max_terms": max_terms,
-            "nominators": [member.preset.name for member in panel.nominators],
-            "judges": [member.preset.name for member in panel.judges],
+            "nominator_terms": nominator_terms,
+            # Preset and model, so a preset re-pointed to another model misses the cache.
+            "nominators": [[m.preset.name, m.model.model_id] for m in panel.nominators],
+            "judges": [[m.preset.name, m.model.model_id] for m in panel.judges],
+            "extractor_version": 1,
             "judge_prompt_max_chars": panel.judge_prompt_max_chars,
             "sentences": SENTENCE_SELECTION_VERSION,
             "rules": RULE_VERSION,
@@ -168,6 +178,7 @@ def run_panel(
     book_dir: Path,
     source_signature: str | None,
     max_terms: int,
+    nominator_terms: int,
     mode: str,
     config: dict[str, object],
     factory: ProviderFactory,
@@ -179,10 +190,14 @@ def run_panel(
             "A Term Panel reads the book's index; Deep Scan with a panel is not supported yet "
             "(SPEC-028 Phase 5)"
         )
-    if max_terms <= 0:
-        raise PanelError("The term limit must be positive")
+    if max_terms <= 0 or nominator_terms <= 0:
+        raise PanelError("The term limits must be positive")
     identity = panel_identity(
-        panel, source_signature=source_signature, max_terms=max_terms, mode=mode
+        panel,
+        source_signature=source_signature,
+        max_terms=max_terms,
+        nominator_terms=nominator_terms,
+        mode=mode,
     )
     directory = book_dir / ".bookweaver_glossaries" / "panel" / identity
     glossary_path = directory / "glossary.json"
@@ -197,7 +212,7 @@ def run_panel(
             "Cannot run a Term Panel: this EPUB has no usable back-of-book index "
             f"(found {len(located.index_text)} characters of index text). No model was called."
         )
-    log(_plan_text(panel, max_terms))
+    log(_plan_text(panel, nominator_terms, max_terms))
     providers = {
         member.preset.name: factory.create(
             member.model,
@@ -237,7 +252,7 @@ def run_panel(
 
         nominations: list[Nomination] = []
         extraction_prompt = build_index_extraction_prompt(
-            located.index_text, located.toc_text, max_terms
+            located.index_text, located.toc_text, nominator_terms
         )
         for letter, member in zip(_LETTERS, panel.nominators, strict=False):
             raw = call(member, extraction_prompt, "nominate")
@@ -245,11 +260,13 @@ def run_panel(
                 parsed = parse_glossary_reply(raw)
             except ValueError as exc:
                 raise PanelError(f"{member.preset.name} nomination is unusable: {exc}") from exc
+            try:
+                # The shared glossary validator: a list of objects, or a clear error.
+                terms = GlossaryManager.from_dict(parsed, source=member.preset.name).terms
+            except ValueError as exc:
+                raise PanelError(f"{member.preset.name} nomination is unusable: {exc}") from exc
             keep(member, extraction_prompt, "nominate", raw)
-            terms = parsed.get("critical_terminology")
-            nominations.append(
-                Nomination(member.vendor, letter, terms if isinstance(terms, list) else [])
-            )
+            nominations.append(Nomination(member.vendor, letter, terms))
 
         documents = body_documents(epub_path, located.index_href)
         candidates = [
@@ -273,7 +290,7 @@ def run_panel(
             log(f"[terms] {len(candidates)} candidates; each judge makes {len(chunks)} call(s).")
         judges: list[Judge] = []
         for member in panel.judges:
-            votes = {}
+            votes: dict[int, JudgeVote] = {}
             for number, chunk in enumerate(chunks, start=1):
                 prompt = render(chunk)
                 raw = call(member, prompt, f"judge{number}")
@@ -330,9 +347,12 @@ def _describe(member: PanelMember) -> dict[str, str]:
     }
 
 
-def _plan_text(panel: ResolvedPanel, max_terms: int) -> str:
+def _plan_text(panel: ResolvedPanel, nominator_terms: int, max_terms: int) -> str:
     """The Confirm view (SPEC-028 §3.14), printed before any call."""
-    lines = [f"[terms] Panel {panel.name}: up to {max_terms} terms per nominator; no paid calls."]
+    lines = [
+        f"[terms] Panel {panel.name}: up to {nominator_terms} terms per nominator, "
+        f"at most {max_terms} in the glossary; no paid calls."
+    ]
     for role, members in (("nominator", panel.nominators), ("judge", panel.judges)):
         for member in members:
             calls = "1 call" if role == "nominator" else "1 call per chunk"
@@ -345,10 +365,19 @@ def _plan_text(panel: ResolvedPanel, max_terms: int) -> str:
 
 
 def _write_atomic(path: Path, text: str) -> None:
+    """Write through a synced temporary file, so a crash never leaves half a file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, delete=False, suffix=".tmp"
-    ) as stream:
-        stream.write(text)
-        temporary = Path(stream.name)
-    os.replace(temporary, path)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=path.parent, delete=False, suffix=".tmp"
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

@@ -7,6 +7,7 @@ and output them as a structured JSON glossary (Strategy A — minimal interventi
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -483,6 +484,7 @@ def parse_glossary_reply(raw_output: str) -> dict[str, object]:
     return _validate_and_parse_glossary(raw_output)
 
 
+_EPUB3_TOC_NAV_RE = re.compile(r"<nav\b[^>]*\bepub:type=[\"'][^\"']*\btoc\b", re.IGNORECASE)
 _TITLE_PAGE_HINT_RE = re.compile(r"(?<![a-z0-9])(?:title|cover)", re.IGNORECASE)
 
 
@@ -510,6 +512,8 @@ def body_documents(epub_path: Path, index_href: str | None) -> list[str]:
                 raw = zf.read(resolve_opf_href(model.opf_path, item.href)).decode("utf-8")
             except (KeyError, UnicodeDecodeError):
                 continue
+            if _EPUB3_TOC_NAV_RE.search(raw):
+                continue  # an EPUB 3 navigation document in the spine
             text = _xhtml_to_text(raw)
             if text.strip():
                 texts.append(text)
@@ -525,7 +529,7 @@ def book_title(epub_path: Path) -> str:
         except (KeyError, UnicodeDecodeError):
             return epub_path.stem
     found = re.search(r"<dc:title[^>]*>(.*?)</dc:title>", opf, re.DOTALL)
-    title = " ".join(found.group(1).split()) if found else ""
+    title = html.unescape(" ".join(found.group(1).split())) if found else ""
     return title or epub_path.stem
 
 

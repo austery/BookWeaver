@@ -6,6 +6,7 @@ import json
 import re
 import zipfile
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,9 @@ class FakeMembers:
         self.checked: list[str] = []
         self.logged_out: set[str] = set()
         self.broken_judge: str | None = None
+        self.bad_nomination: str | None = None
+        self.bad_reply = '{"critical_terminology": {}}'
+        self.prompts: list[str] = []
 
     def create(
         self,
@@ -115,6 +119,9 @@ class FakeMembers:
                 (prompt,) = segments
                 judging = prompt.startswith("You are reviewing a translation glossary")
                 members.calls.append((family, "judge" if judging else "nominate"))
+                members.prompts.append(prompt)
+                if not judging and members.bad_nomination == family:
+                    return [members.bad_reply]
                 if not judging:
                     terms = [
                         {"term": term, "suggested_translation": text, "priority": "high"}
@@ -141,7 +148,9 @@ class FakeMembers:
         return Member()
 
 
-def _run(tmp_path: Path, members: FakeMembers, **options: object) -> Path:
+def _run(
+    tmp_path: Path, members: FakeMembers, *, mode: str = "auto", allow_paid_api: bool = False
+) -> Path:
     book = tmp_path / "book.epub"
     if not book.exists():
         _book(book)
@@ -149,9 +158,10 @@ def _run(tmp_path: Path, members: FakeMembers, **options: object) -> Path:
         book,
         "three-vendor",
         config=_PANEL,
-        provider_factory=members,  # type: ignore[arg-type]
+        provider_factory=members,
         max_terms=10,
-        **options,  # type: ignore[arg-type]
+        mode=mode,
+        allow_paid_api=allow_paid_api,
     )
 
 
@@ -186,25 +196,10 @@ def test_a_three_vendor_panel_writes_a_tiered_glossary_and_a_report(tmp_path: Pa
 
 
 def test_judges_see_letters_and_body_sentences_never_the_index_or_vendors(tmp_path: Path) -> None:
-    prompts: list[str] = []
     members = FakeMembers()
-    create = members.create
-
-    def recording(model: ResolvedModel, **kwargs: object) -> ITranslationProvider:
-        provider = create(model, **kwargs)  # type: ignore[arg-type]
-        original = provider.translate_batch
-
-        def spy(segments: Sequence[str], *, system_prompt: str) -> list[str]:
-            prompts.append(segments[0])
-            return original(segments, system_prompt=system_prompt)
-
-        provider.translate_batch = spy  # type: ignore[method-assign]
-        return provider
-
-    members.create = recording  # type: ignore[method-assign]
     _run(tmp_path, members)
 
-    judge_prompt = next(p for p in prompts if p.startswith("You are reviewing"))
+    judge_prompt = next(p for p in members.prompts if p.startswith("You are reviewing"))
     candidates = json.loads(
         judge_prompt.split("CANDIDATES:\n", 1)[1].split("\n\nTABLE OF CONTENTS:", 1)[0]
     )
@@ -284,7 +279,7 @@ def test_a_misconfigured_panel_fails_before_any_member_exists(
             book,
             "bad",
             config={"terminology_panels": {"bad": panel}},
-            provider_factory=members,  # type: ignore[arg-type]
+            provider_factory=members,
         )
     assert members.calls == [] and members.checked == []
 
@@ -298,16 +293,16 @@ def test_an_unknown_panel_names_the_configured_ones_and_shows_an_example(tmp_pat
 
 
 @pytest.mark.parametrize(
-    "options,message",
-    [({"mode": "deep-scan"}, "Deep Scan"), ({"allow_paid_api": True}, "Paid Term Panel")],
+    "mode,paid,message",
+    [("deep-scan", False, "Deep Scan"), ("auto", True, "Paid Term Panel")],
 )
 def test_deep_scan_and_paid_members_are_refused_before_any_call(
-    tmp_path: Path, options: dict[str, object], message: str
+    tmp_path: Path, mode: str, paid: bool, message: str
 ) -> None:
     members = FakeMembers()
 
     with pytest.raises(PanelError, match=message):
-        _run(tmp_path, members, **options)
+        _run(tmp_path, members, mode=mode, allow_paid_api=paid)
     assert members.calls == []
 
 
@@ -341,3 +336,96 @@ def test_the_terms_command_reports_a_panel_error_without_a_traceback(
 
     assert stopped.value.code == 2
     assert "Paid Term Panel members" in capsys.readouterr().err
+
+
+def test_a_nomination_that_is_not_a_term_list_stops_and_is_asked_for_again(tmp_path: Path) -> None:
+    members = FakeMembers()
+    members.bad_nomination = "gpt"
+
+    with pytest.raises(PanelError, match="codex-gpt-6.1-sol-low nomination is unusable"):
+        _run(tmp_path, members)
+
+    repaired = FakeMembers()
+    _run(tmp_path, repaired)
+    assert ("gpt", "nominate") in repaired.calls
+
+
+def test_the_term_limit_caps_the_glossary_not_what_nominators_are_asked_for(
+    tmp_path: Path,
+) -> None:
+    members = FakeMembers()
+    config = {**_PANEL, "terminology_extraction": {"max_terms": 40}}
+    book = tmp_path / "book.epub"
+    _book(book)
+
+    path = run_term_panel(
+        book,
+        "three-vendor",
+        config=config,
+        provider_factory=members,
+        max_terms=1,
+    )
+
+    nominate_prompts = [p for p in members.prompts if not p.startswith("You are reviewing")]
+    assert all("最多40条术语" in p for p in nominate_prompts)
+    assert len(json.loads(path.read_text(encoding="utf-8"))["critical_terminology"]) == 1
+
+
+def test_an_epub3_navigation_document_in_the_spine_gives_no_sentences(tmp_path: Path) -> None:
+    book = tmp_path / "book.epub"
+    _book(book)
+    with zipfile.ZipFile(book) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    files["navigation.xhtml"] = (
+        b'<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'
+        b'<body><nav epub:type="toc"><ol><li>The garden in the contents.</li></ol></nav></body></html>'
+    )
+    files["content.opf"] = (
+        files["content.opf"]
+        .replace(
+            b"</manifest>",
+            b'<item id="nav" href="navigation.xhtml" properties="nav" media-type="application/xhtml+xml"/></manifest>',
+        )
+        .replace(b"<spine>", b'<spine><itemref idref="nav"/>')
+    )
+    with zipfile.ZipFile(book, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    members = FakeMembers()
+
+    _run(tmp_path, members)
+
+    judge_prompt = next(p for p in members.prompts if p.startswith("You are reviewing"))
+    candidates = judge_prompt.split("CANDIDATES:\n", 1)[1].split("\n\nTABLE OF CONTENTS:", 1)[0]
+    assert "in the contents" not in candidates
+
+
+def test_a_nomination_item_that_is_not_an_object_stops_and_is_not_saved(tmp_path: Path) -> None:
+    members = FakeMembers()
+    members.bad_nomination = "gemini"
+    members.bad_reply = '{"critical_terminology": ["garden"]}'
+
+    with pytest.raises(PanelError, match="agy-flash-low nomination is unusable"):
+        _run(tmp_path, members)
+    assert not list(tmp_path.rglob("agy-flash-low-nominate-*.txt"))
+
+
+def test_a_preset_re_pointed_to_another_model_misses_the_cached_glossary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _run(tmp_path, FakeMembers())
+    import ai.term_panel as runner
+
+    original = runner.resolve_preset
+
+    def moved(name: str) -> ResolvedModel:
+        model = original(name)
+        if name == "agy-flash-low":
+            return replace(model, model_id="gemini-3.9-flash-low")
+        return model
+
+    monkeypatch.setattr(runner, "resolve_preset", moved)
+    members = FakeMembers()
+
+    assert _run(tmp_path, members) != first
+    assert ("gemini", "nominate") in members.calls

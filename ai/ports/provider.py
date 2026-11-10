@@ -57,7 +57,7 @@ class ITranslationProvider(ABC):
     backend: str | None = None
 
     def check_ready(self) -> None:
-        """Confirm the runtime is reachable and signed in, without a model call.
+        """Confirm the runtime is reachable, and signed in where it can tell, without a model call.
 
         Raises a ``ProviderUnavailableError`` subtype when it is not. Transports with nothing to
         check do nothing. A Term Panel calls this for every member before its first model call.

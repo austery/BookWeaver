@@ -141,7 +141,7 @@ def select_sentences(term: str, documents: Sequence[str]) -> tuple[str, ...]:
     If that finds nothing, every word of four or more letters must occur (as a stem) in one
     sentence. Different documents first, then book order. Long sentences are clipped.
     """
-    words = [word for word in re.split(r"[\s/]+", re.sub(r"\(.*?\)", "", term)) if word]
+    words = [word for word in re.split(r"[\s/-]+", re.sub(r"\(.*?\)", "", term)) if word]
     if not words:
         return ()
     phrase = re.compile(
@@ -151,40 +151,43 @@ def select_sentences(term: str, documents: Sequence[str]) -> tuple[str, ...]:
     stems = [word.lower()[: max(4, len(word) - 3)] for word in words if len(word) >= 4]
     split = [[s for s in _SENTENCE_END.split(" ".join(text.split())) if s] for text in documents]
 
-    def matches(test: re.Pattern[str] | None) -> list[tuple[int, str]]:
-        found: list[tuple[int, str]] = []
+    def matches(by_phrase: bool) -> list[tuple[int, str, int]]:
+        """(document, sentence, position of the match)."""
+        found: list[tuple[int, str, int]] = []
         for number, sentences in enumerate(split):
             for sentence in sentences:
-                if test is not None and test.search(sentence):
-                    found.append((number, sentence))
-                elif test is None and stems and all(s in sentence.lower() for s in stems):
-                    found.append((number, sentence))
+                if by_phrase:
+                    hit = phrase.search(sentence)
+                    if hit:
+                        found.append((number, sentence, hit.start()))
+                elif stems and all(stem in sentence.lower() for stem in stems):
+                    found.append((number, sentence, sentence.lower().index(stems[0])))
         return found
 
-    hits = matches(phrase) or matches(None)
-    chosen: list[str] = []
+    hits = matches(True) or matches(False)
+    chosen: list[tuple[str, int]] = []
     seen_documents: set[int] = set()
-    for number, sentence in hits:
+    for number, sentence, position in hits:
         if number not in seen_documents:
-            chosen.append(sentence)
+            chosen.append((sentence, position))
             seen_documents.add(number)
         if len(chosen) == _SENTENCES_PER_TERM:
             break
-    for _, sentence in hits:
+    for _, sentence, position in hits:
         if len(chosen) == _SENTENCES_PER_TERM:
             break
-        if sentence not in chosen:
-            chosen.append(sentence)
-    return tuple(_clip(sentence, words[0]) for sentence in chosen)
+        if (sentence, position) not in chosen:
+            chosen.append((sentence, position))
+    return tuple(_clip(sentence, position) for sentence, position in chosen)
 
 
-def _clip(sentence: str, anchor: str) -> str:
+def _clip(sentence: str, position: int) -> str:
+    """At most 400 characters around the match."""
     if len(sentence) <= _SENTENCE_LIMIT:
         return sentence
-    found = re.search(re.escape(anchor[:5]), sentence, re.IGNORECASE)
-    centre = found.start() if found else 0
-    start = max(0, centre - 180)
-    return ("…" if start else "") + sentence[start : start + _SENTENCE_LIMIT] + "…"
+    start = max(0, min(position - 180, len(sentence) - _SENTENCE_LIMIT))
+    end = start + _SENTENCE_LIMIT
+    return ("…" if start else "") + sentence[start:end] + ("…" if end < len(sentence) else "")
 
 
 JUDGE_INSTRUCTIONS = """\
@@ -342,6 +345,8 @@ def aggregate(
     bias = _self_preference(candidates, judges)
     tie_order = _tie_break_order(judges, bias)
     tie_break = tie_order[0] if tie_order else None
+    # One nominator and no judge is today's single extraction: every term strict, no tier.
+    untiered = not judges and len(set(nominator_vendors)) == 1
     vendor_counts: dict[str, int] = {}
 
     entries: list[dict[str, object]] = []
@@ -422,6 +427,8 @@ def aggregate(
             "tier": "fixed" if fixed else "preferred",
             "reason": _reason(vendors, keepers, len(judges)),
         }
+        if untiered:
+            del entry["tier"]
         if alternatives:
             entry["alternatives"] = alternatives
         negative = _negative(proposals, {chosen, *alternatives})
@@ -433,7 +440,7 @@ def aggregate(
             {
                 "translation": chosen,
                 "sources": dict(ranked),
-                "tier": entry["tier"],
+                "tier": entry.get("tier", "fixed"),
                 "alternatives": alternatives,
             }
         )
@@ -442,7 +449,7 @@ def aggregate(
     ordered = sorted(
         entries,
         key=lambda item: (
-            item["tier"] != "fixed",
+            item.get("tier", "fixed") != "fixed",
             -vendor_counts[str(item["term"])],
             _PRIORITY_RANK.get(str(item["priority"]), 2),
             term_key(str(item["term"])),
@@ -456,14 +463,20 @@ def aggregate(
             "candidates": len(candidates),
             "merged": len(merged),
             "dropped": sum(1 for d in decisions if not d["kept"]),
-            "fixed": sum(1 for e in capped if e["tier"] == "fixed"),
-            "preferred": sum(1 for e in capped if e["tier"] == "preferred"),
+            "fixed": sum(1 for e in capped if e.get("tier", "fixed") == "fixed"),
+            "preferred": sum(1 for e in capped if e.get("tier") == "preferred"),
             "cut_by_limit": len(cut),
         },
         "judges": [
             {
                 "vendor": judge.vendor,
                 "self_preference": bias.get(judge.vendor),
+                "own_only_sample": sum(
+                    1 for c in candidates if c.vendors == {judge.vendor} and c.id in judge.votes
+                ),
+                "own_list_keep_rate": _keep_rate(
+                    judge, [c for c in candidates if judge.vendor in c.vendors]
+                ),
                 "abstained": sorted(set(by_id) - set(judge.votes)),
             }
             for judge in judges
@@ -473,6 +486,13 @@ def aggregate(
         "decisions": decisions,
     }
     return PanelResult({"critical_terminology": capped}, report, tie_break, merged)
+
+
+def _keep_rate(judge: Judge, candidates: Sequence[Candidate]) -> float | None:
+    voted = [c for c in candidates if c.id in judge.votes]
+    if not voted:
+        return None
+    return round(sum(judge.votes[c.id].keep for c in voted) / len(voted), 4)
 
 
 def _proposal_of(proposals: Sequence[Proposal], vendor: str) -> Proposal:

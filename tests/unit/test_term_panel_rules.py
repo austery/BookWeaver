@@ -393,3 +393,45 @@ def test_the_panel_glossary_loads_as_a_tiered_glossary() -> None:
 
     assert "Unity → 统一" in block
     assert "【建议术语】" in block and "Uniformity → 一律化（也可：整齐划一）" in block
+
+
+def test_a_hyphenated_term_matches_its_spaced_form() -> None:
+    assert select_sentences("God-man", ["The god man is a concept."]) == (
+        "The god man is a concept.",
+    )
+
+
+def test_clipping_keeps_the_actual_match_not_an_earlier_word() -> None:
+    sentence = "General observations come first. " * 8 + "x " * 150 + "and the general will rules."
+    sentence = sentence.replace(". ", ", ")
+
+    (clipped,) = select_sentences("General will", [sentence])
+
+    assert "general will" in clipped and len(clipped) <= 402
+
+
+def test_one_nominator_without_judges_keeps_every_term_strict_without_a_tier() -> None:
+    candidates = [_candidate(1, "Estrangement", _proposal("google", "疏离"))]
+
+    glossary = aggregate(candidates, ["google"], [], 100).glossary
+
+    entries = glossary["critical_terminology"]
+    assert isinstance(entries, list) and len(entries) == 1
+    assert "tier" not in entries[0]
+    assert "必须严格遵守" in GlossaryManager.from_dict(glossary).format_block()
+
+
+def test_the_report_gives_each_judge_its_sample_and_own_list_keep_rate() -> None:
+    candidates = [
+        _candidate(1, "Power", _proposal("openai", "权力")),
+        _candidate(2, "Unity", _proposal("google", "统一"), _proposal("openai", "统一")),
+    ]
+    judges = [Judge("openai", {1: _vote("权力", keep=False), 2: _vote("统一")})]
+
+    reports = aggregate(candidates, ["google", "openai"], judges, 100).report["judges"]
+    assert isinstance(reports, list) and len(reports) == 1
+    report = reports[0]
+
+    assert report["own_only_sample"] == 1
+    assert report["own_list_keep_rate"] == 0.5
+    assert report["self_preference"] is None  # fewer than ten own-only candidates

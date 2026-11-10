@@ -228,7 +228,8 @@ def terms_main(tokens: list[str]) -> None:
             max_terms=args.glossary_max_terms,
             allow_paid_api=args.allow_paid_api,
         )
-    except orchestration.PanelError as exc:
+    except (ValueError, orchestration.TranslationError) as exc:
+        # Configuration, panel and member errors are the user's to fix, not tracebacks.
         parser.exit(2, f"bookweaver terms: {exc}\n")
     print(path)
 
