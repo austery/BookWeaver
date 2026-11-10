@@ -117,7 +117,7 @@ The five lists merged into 107 candidates, labeled A to E. Each candidate carrie
 
 - Opus showed self-preference, as Gemini did in the first round. Sol showed none in either round.
 - The judges agreed on 89 of 107 translations; 26 candidates differed in translation or keep.
-- Both judges chose 整齐划一 for Uniformity. Sol chose it in all three of its runs, with or without sentences, so the change from the first round's 一律化 came from the panel, not the sentences.
+- Both judges chose 整齐划一 for Uniformity. Sol chose it in all three of its runs, with or without sentences; the first round's 一律化 came from a Gemini and Luna majority. Opus never ran without sentences, so the sentences' share in Opus's vote is unknown.
 - The two judges disagreed on which terms have several accepted translations (Sol 32, Opus 17), so that label is not yet reliable.
 
 ### Sentences against rerun noise
@@ -138,8 +138,8 @@ Gemini 3.8 Flash translated chapters 1 and 2 twice with the 91 terms both judges
 | Tiered | 38 of 38 | 49 of 52 | 5.98 |
 
 - Only 9 of the 32 suggested terms occur in these chapters. The two changes used the listed alternative (世界城邦, 私有制) and read correctly.
-- The register difference is within run-to-run variation (Gemini scored 6.13 and 6.32 on overlapping text before).
-- Result: tiers did no harm here; a benefit needs chapters with more suggested terms.
+- Both versions scored below both earlier Flash runs on these chapters (6.13 each, with 50 and 78 terms). The cause is unknown: run-to-run variation has not been measured, and 91 terms is the largest glossary so far. The 6.32 in the first round was chapter 1 alone.
+- Result: tiers did no harm to term use here; a benefit needs chapters with more suggested terms, and the register drop needs its own measurement.
 
 Files: `term-review-v2/`, `term-review-v2-nocontext/`, `tier-test/`, `claude-sonnet-5-5/` and `claude-opus-5-5-terms/` in the trial folder.
 

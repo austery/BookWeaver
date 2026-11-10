@@ -23,8 +23,8 @@ tags:
 Today one model extracts the terms, and every term enters the translation prompt as a strict rule ("必须严格遵守", `ai/core/glossary.py`). One extraction then fixes the terms for the whole book.
 
 - One draw decides the book. Two Flash extractions of the same index shared 39 of 50 terms (issue 83).
-- Each vendor has its own bias. Five models extracted 50 terms each from the same index; only 10 terms were in all five lists.
-- A wrong or weak rendering is enforced everywhere. A majority vote enforced 一律化 for Uniformity, and the passage read worse.
+- Each vendor has its own bias. Five models extracted about 50 terms each from the same index; only 10 terms were in all five lists.
+- A weak translation is enforced everywhere. A majority vote enforced 一律化 for Uniformity, and the passage read worse.
 - The owner does not judge English terms. A design that sends disputes to a person does not work for this owner.
 
 Goal: several models from different vendors propose and judge the terms. A program combines the votes into a glossary with two tiers. The translator (default Gemini Flash) receives only that glossary.
@@ -34,10 +34,12 @@ Goal: several models from different vendors propose and judge the terms. A progr
 All runs used the trimmed EPUB of chapters 1 and 2 with the full book's index and table of contents, low effort, one run each, subscription CLIs only. Details and raw files: `docs/plans/2026-11-09-translation-evaluation-method.md`.
 
 - **Vendors differ; models of one vendor do not.** Sonnet 5.5 and Opus 5.5 shared 37 of 50 terms. Opus shared 22 to 33 with each GPT or Gemini list. The five lists gave 107 candidates.
-- **Judges have measurable bias.** Keep rate on own proposals against others' proposals: Gemini Flash 100% vs 82%, Opus 98% vs 79%, Luna kept everything, Sol 92% vs 88% and 86% vs 91% in two rounds.
-- **Panel composition decides close cases.** Sol chose 整齐划一 for Uniformity in all three of its runs. The earlier 一律化 came from a Gemini and Luna majority. With Opus as the second judge, the result became 整齐划一.
-- **Book sentences help judges a little.** With up to three body sentences per term, Sol changed 14 of 107 renderings; between two runs without sentences it changed 7 of 95. Some changes were clear gains (private ownership 私人所有权 → 私人所有制, from a passage about economic systems).
-- **A preferred tier did no harm in chapters 1 and 2.** Flash translated the chapters twice with the same 91 terms: all strict, or 59 strict plus 32 as suggestions. Strict terms were used 38 of 38 times in both. Suggested terms were used 51 of 52 and 49 of 52 times; the two changes used the listed alternative. Only 9 suggested terms occur in these chapters, so the benefit is unproven.
+- **Judges show bias, and the measure depends on the unit.** Keep rate on a judge's own list against the other lists: Gemini Flash 100% vs 82%, Opus 98% vs 79%, Luna kept everything, Sol 86% vs 91% and 92% vs 88% in two rounds. Counted per vendor instead (candidates only the judge's vendor nominated), Opus kept 83% vs 88% and Sol 80% vs 94%: neither favored its own vendor. Per-vendor samples are small (12 and 35 candidates).
+- **Panel composition decides close cases.** Sol chose 整齐划一 for Uniformity in all three of its runs. The first round's 一律化 came from a Gemini and Luna majority. With Opus as the second judge, the result became 整齐划一. Opus never ran without sentences, so the sentences' share in Opus's vote is unknown.
+- **Book sentences help judges a little.** With up to three body sentences per term, Sol changed 14 of 107 translations; between two runs without sentences it changed 7 of 95. Some changes were clear gains (private ownership 私人所有权 → 私人所有制, from a passage about economic systems).
+- **A preferred tier did no harm in chapters 1 and 2, and showed no benefit.** Flash translated the chapters twice with the same 91 terms: all strict, or 59 strict plus 32 as suggestions. Strict terms were used 38 of 38 times in both. Suggested terms were used 51 of 52 and 49 of 52 times; the two changes used the listed alternative. Only 9 suggested terms occur in these chapters.
+- **Register dropped, cause unknown.** Both arms scored lower on the literary-word measure (5.53 and 5.98 per 1,000 characters) than both earlier Flash runs on the same chapters (6.13 each, with 50 and 78 terms). Run-to-run variation has not been measured, and the 91-term glossary is the largest so far. A large glossary may cost the style the translator was chosen for.
+- **The vote rules replay.** Rules §3.4 applied offline to the second-round data (vendors: Google nominator; OpenAI and Anthropic as nominators and judges) gave 59 `fixed`, 34 `preferred` and 14 dropped. The dropped terms were single-vendor generic words (Power, Freedom), entries that judges called duplicates, and index-only terms. Every two-judge disagreement went to the tie-break, so the tie-break decides much of a two-judge panel.
 
 ## 3. Decisions
 
@@ -46,43 +48,57 @@ All runs used the trimmed EPUB of chapters 1 and 2 with the full book's index an
 | Role | Who | Output |
 |---|---|---|
 | Nominator | One or more presets | Candidate terms with one proposed translation each, from the existing extraction prompt |
-| Judge | Zero or more presets | For each candidate: keep, translation, enforce (`fixed` or `preferred`), confidence, note |
+| Judge | Zero or more presets | For each candidate: keep, translation, enforce (`fixed` or `preferred`), `duplicate_of`, confidence, note |
 | Aggregator | Program, no model | Glossary with tiers, and a panel report |
 | Translator | The run's preset | Translation with the glossary |
 
-- A role is a list of named presets from `ai/model_profiles.py` (SPEC-025 §3.8). A preset may serve in both roles.
+- A role is a list of named presets from `ai/model_profiles.py` (SPEC-025 §3.8). A preset may serve in both roles. List order is significant: it is the last tie-break.
 - With no panel configured, extraction and the prompt stay exactly as today. Existing books and checkpoints are unaffected.
-- Nomination reads the index and table of contents (SPEC-015 Tier 1). The extraction source ladder in SPEC-015 is unchanged; this spec decides who extracts and how results combine.
+- Nomination reads the index and table of contents (SPEC-015 Tier 1). SPEC-015's source ladder is unchanged; this spec decides who extracts and how results combine. One departure from the SPEC-015 resolution contract: there, `--glossary` wins over extraction flags with a warning; a panel with `--glossary` fails instead (§3.10), because a panel spends calls.
 
 ### 3.2 Vendor, not model count
 
 - Each preset carries a vendor: `google`, `openai` or `anthropic`. The registry gains this field.
 - One vendor casts one vote per role. Two presets from one vendor in the same role are rejected before any call, because their judgments correlate (Sonnet and Opus: 37 of 50 shared terms).
-- The panel report always names the vendors that took part.
+- "Own" in every rule below means the judge's vendor, not the judge's preset. A term only Sonnet nominated is Opus's own term.
 
-### 3.3 Candidates
+### 3.3 Candidates and sentences
 
-- Candidates are the union of all nominations, keyed by the normalized English term: lower case, hyphens as spaces, punctuation removed. Never an intersection: a term only one vendor found can still be central.
-- Each candidate lists every proposal with its nominating vendor. Judges see vendors as anonymous letters A, B, C; the letter order is fixed per run and recorded in the report.
-- Each candidate carries up to three body sentences that contain the term. The index, navigation and title documents are excluded. The selection is deterministic: different documents first, then book order; a sentence over 400 characters is clipped around the match. A candidate with no match carries an empty list, and the judge prompt says what that means.
+- Candidates are the union of all nominations. Never an intersection: a term only one vendor found can still be central.
+- Key: the English term in lower case, hyphens as spaces, punctuation removed, and a leading "the", "a" or "an" removed. Entries that still differ but mean the same (Ortega y Gasset and Ortega y Gasset, Jose) are left to judges through `duplicate_of`.
+- Each candidate lists every proposal with its nominating vendor. Judges see vendors as anonymous letters; the letter order is fixed per run and recorded in the report.
+- Each candidate carries up to three body sentences that contain the term:
+  - Excluded documents: the index document as found by the existing index detection in `ai/glossary_extractor.py`, the navigation document, and title pages.
+  - Match: the whole phrase, case-insensitive, words joined by spaces or hyphens, optional plural ending. If that finds nothing, every content word of four or more letters (as a stem) must occur in one sentence.
+  - Order: different documents first, then book order. A sentence over 400 characters is clipped around the match.
+  - A candidate with no match carries an empty list, and the judge prompt says what that means.
+  - In the experiment, the phrase match found 91 of 107 terms and the stem fallback raised it to 104. The selection rules are versioned in the cache identity.
 
 ### 3.4 Vote rules
 
 A nomination is not a vote. Only judges vote.
 
-1. **Own-term rule.** A judge's `keep: true` does not count for a candidate that only the judge's own vendor nominated. Its `keep: false` and its translation still count. When another vendor also nominated the term, the vote counts.
-2. **Keep.** With no judge, every candidate stays. Otherwise a candidate stays when its counted keep votes outnumber its drop votes. A candidate with no counted votes stays only if two or more vendors nominated it.
-3. **Translation.** Count every judge that kept the candidate, and add each nominating vendor's proposal as one source when that vendor is not also a judge. The most common translation wins. On a tie, take the translation of the judge with the smallest measured bias in this run (§3.6). Never a fixed vendor.
-4. **Tier.**
-   - `fixed` only when all of these hold: at least two vendors gave the chosen translation, no judge that kept the term gave another translation, and every judge that kept it said `fixed`.
-   - Otherwise `preferred`, with up to two alternatives taken from the other translations, most common first.
-5. **Panel sizes.**
+1. **Duplicates.** A judge may set `duplicate_of` to another candidate's id. When at least half of the judges name the same target, the candidate merges into it: its proposals join the target, and it gets no entry of its own. The report lists merges.
+2. **Own-term rule.** A judge's `keep: true` does not count for a candidate that only the judge's own vendor nominated. Its `keep: false` and its translation still count. When another vendor also nominated the term, the vote counts.
+3. **Keep.** A candidate is dropped only when its counted drop votes outnumber its counted keep votes. A tie keeps it. With no judge, every candidate stays.
+4. **Translation.** Sources are every judge that kept the candidate, plus each nominating vendor that is not a judge, with that vendor's proposal. The most common translation wins. Ties:
+   - With judges: the translation of the tie-break judge (below).
+   - With no judge: the proposal of the first nominator in the configured order.
+   - If no judge kept the candidate but it stayed by rule 3, all judges' translations count as sources.
+5. **Tie-break judge.** For each judge: self-preference = keep rate on candidates only its vendor nominated, minus keep rate on all others; a negative value counts as zero. The tie-break judge has the smallest self-preference. A judge with fewer than 10 own-vendor candidates is unmeasured and ranks after measured judges. Remaining ties follow the configured order. No vendor is named in advance.
+6. **Tier.**
+   - `fixed` only when all of these hold: at least two sources gave the chosen translation; no judge that kept the term gave another translation; and every judge that kept it said `fixed`.
+   - Otherwise `preferred`, with up to two alternatives from the other translations, most common first.
+7. **Size cap.** `--glossary-max-terms` (SPEC-015) caps the final glossary, not each nominator. Order for the cap: `fixed` before `preferred`, then more nominating vendors first, then `priority`, then the key.
+
+Panel sizes:
 
 | Nominators | Judges | Result |
 |---|---|---|
-| 1 | 0 | Today's behavior: one extraction, every term strict |
+| 1 | 0 | Today's behavior: one extraction, every term strict, no tier field |
 | 1 | 1, another vendor | A review: the judge can drop terms and correct translations; a term is `fixed` only when the judge agrees with the nominator |
-| 2 or more | 0 | Union of nominations; terms that two vendors translated alike are `fixed`, the rest `preferred` |
+| 2 or more | 0 | Union of nominations; a term two vendors translated alike is `fixed`, the rest `preferred` |
+| 2 or more | 1 | The judge's drop vote decides alone. Terms only the judge's vendor nominated stay, because the judge's keep does not count and a lone drop is not a tie |
 | 2 or more | 2 or more | Full vote as above |
 
 No rule sends a term to a person. The owner may still edit the glossary file before translation, as today.
@@ -90,45 +106,62 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 ### 3.5 Tiered glossary and prompt
 
 - A term gains an optional `tier` field: `fixed` or `preferred`. `alternatives` already exists in the extraction schema and now reaches the prompt for `preferred` terms only.
-- `tier` controls strictness. `priority` (`critical`, `high`, `medium`) keeps its current meaning: filtering with `--glossary-min-priority` and ordering. The two are separate axes.
+- `tier` controls strictness. `priority` (`critical`, `high`, `medium`) keeps its current meaning: filtering with `--glossary-min-priority`, ordering, and the size cap. The two are separate axes.
 - The prompt has two blocks:
   - `fixed` terms keep today's heading and wording.
   - `preferred` terms get a new block: use this translation normally; when a sentence needs it, use a more fitting one without changing the meaning. Alternatives follow each term.
-- A glossary in which no term has `tier` renders byte-identically to today. The prompt hash of every existing book stays valid. A test pins this.
+- A glossary in which no term has `tier` renders byte-identically to today. The prompt hash of every existing book stays valid. The golden-bytes test in `tests/unit/test_prompt_preparation.py` pins this.
 - `term-consistency.json` grades the tiers separately. Only `fixed` drift is reported as a problem.
 
-### 3.6 Judge bias
+### 3.6 Judge bias report
 
-- For each judge, the report gives the keep rate on candidates only its vendor nominated, and on all others.
-- The aggregator uses this only for the tie-break in §3.4. It never drops a judge automatically. The owner reads the report.
+- For each judge, the report gives the per-vendor self-preference of §3.4 rule 5, its sample size, and the keep rate on its own preset's list.
+- The aggregator uses it only for the tie-break. It never drops a judge automatically. The owner reads the report.
 
-### 3.7 Cache and reuse
+### 3.7 Cache, reuse and saved replies
 
-- The panel glossary is cached per book. The identity holds: source signature, mode, term limit, nominator presets, judge presets, sentence-selection version and rule version.
-- Runs that compare translation models on one book reuse one panel glossary. This closes issue 86 for panel runs.
+- Location: `<book folder>/.bookweaver_glossaries/panel/<sha256>.json`. For the CLI the book folder is the output file's folder. For a local API upload it is the library folder `~/Documents/BookWeaver/<book name>/`, which the per-preset output folders share. This closes issue 86 for panel runs.
+- Identity: source signature, mode, term limit, nominator presets in order, judge presets in order, sentence-selection version, rule version.
+- Each member's raw reply is saved next to the cache under the same identity plus the member and chunk. A rerun after a failure reuses saved replies and calls only the missing members.
 - The cached glossary feeds the prompt hash, as today. A changed panel gives a new identity and a new glossary; it never rewrites a saved one.
 
 ### 3.8 Paid members
 
 - A panel may include metered presets (SPEC-024), as nominator or as judge.
-- Consent is per run and lists every paid member by name. Today `--allow-paid-api` requires a metered translator and the factory refuses it for a CLI model. Consent must become per role, so that a CLI translator can run with a paid judge. This touches the paid-call gate and needs the deep review.
-- No automatic fallback in either direction. A paid member is never added or substituted by the program.
+- Consent is per run and lists every paid member by name. Today `--allow-paid-api` requires a metered translator, and the factory refuses it for a CLI model. Consent must become per role, so that a CLI translator can run with a paid judge. This touches the paid-call gate and needs the deep review.
+- No automatic fallback in either direction. The program never adds or substitutes a paid member.
 
 ### 3.9 Failure and scale
 
 - Each nominator makes one call, as today.
-- Judges receive candidates in chunks of at most 60, with sentences. Every chunk carries the same instructions, table of contents and index.
-- A judge reply that is not a JSON array, or that has a wrong shape, fails that judge's chunk. A missing candidate id counts as an abstention for that candidate and is reported.
-- Any member failure, including quota and authentication, stops the run before translation. The report names the member and the error. The panel is never shrunk silently; the owner reruns with fewer members.
+- A judge gets all candidates in one call when the prompt fits the runtime's limit. Otherwise candidates go out in chunks; one chunk always holds all candidates that share a head word, so that `duplicate_of` can see them together. The experiment used one call of 107 candidates (about 107,000 characters); chunking is untested.
+- A reply that is not a JSON array, or has a wrong shape, fails that judge's chunk. A missing candidate id counts as an abstention for that candidate and is reported.
+- Any member failure, including quota and authentication, stops the run before translation. The report names the member and the error. The panel is never shrunk silently; the owner reruns, and saved replies are reused (§3.7).
 - The run prints the planned number of calls per member before the first call.
 
 ### 3.10 Interface
 
 - CLI: `--term-nominators PRESET[,PRESET...]` and `--term-judges PRESET[,PRESET...]`.
-- Configuration: `terminology_panel.nominators` and `terminology_panel.judges`, validated by `ai/config_schema.json`.
+- Configuration: `terminology_panel.nominators` and `terminology_panel.judges`, validated by `ai/config_schema.json`. Absent by default; the owner's existing configuration files stay valid unchanged.
 - Local API upload: the same two lists, chosen from `GET /presets` (Phase 4).
-- These conflict and fail before any call: a panel with `--glossary`; a panel with `--extraction-model`; a panel with `--glossary-mode deep-scan` (§4); two presets of one vendor in one role; judges whose only vendor is the sole nominator's vendor (the own-term rule would void every vote); an unknown or disabled preset.
-- Outputs next to the glossary cache: the glossary and `term-panel-report.json` (candidates, proposals, votes, tiers, bias, failures, call counts).
+- These fail before any call: a panel with `--glossary`; a panel with `--extraction-model`; a panel with `--glossary-mode deep-scan` (§4); two presets of one vendor in one role; a single nominator whose vendor is the only judge vendor (every keep vote would be void); an unknown or disabled preset.
+- Outputs in the cache folder: the glossary and `term-panel-report.json` (candidates, proposals, sentences, votes, merges, tiers, bias, failures, call counts).
+
+### 3.11 Persistent structure changed
+
+These are Structure paths in `docs/agents/impact-radius.md`. This list is the design for approval:
+
+| Structure | Change |
+|---|---|
+| Glossary file format (`ai/glossary_extractor.py`, `ai/core/glossary.py`) | Optional `tier` per term; `alternatives` read by the prompt for `preferred` terms. Files without `tier` stay valid and render as today |
+| Glossary block (`GlossaryManager.format_block`) | Second block for `preferred` terms; unchanged output when no term has `tier` |
+| Glossary cache (`glossary_cache_path`) | New panel location and identity (§3.7); the existing single-extraction identity and files are unchanged |
+| New files | `term-panel-report.json` and saved member replies under `.bookweaver_glossaries/panel/` |
+| Runtime configuration schema | Optional `terminology_panel` with `nominators` and `judges` |
+| Model registry (`ai/model_profiles.py`) | `vendor` on every preset; no `model_id` changes |
+| Term report (`term-consistency.json`) | Per-tier grading; reports without tiers keep their current shape |
+
+No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only for books that use it.
 
 ## 4. Out of scope
 
@@ -141,17 +174,21 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 ## 5. Open items
 
 - [ ] Owner: confirm one vote per vendor (§3.2), rather than one per preset.
-- [ ] Measure Sol's bias over more books before treating any judge as unbiased.
-- [ ] Phase 1 acceptance needs a chapter with several `preferred` terms (for example where Cosmic morale or Socratic civility occur). Chapters 1 and 2 hold only nine.
-- [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference, which the own-term rule offsets.
-- [ ] Prompt size: the 107-candidate judge prompt was 107,000 characters in one call. Confirm the 60-term chunk on each runtime.
+- [ ] Owner: confirm the tie-break (§3.4 rule 5). With two judges it decides every disagreement; in the replay it chose Opus.
+- [ ] Measure run-to-run register variation of Flash on chapters 1 and 2, and whether glossary size lowers it (§2).
+- [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
+- [ ] Confirm the prompt limit per runtime before relying on one-call judging.
+- [ ] `duplicate_of` is new; no judge has produced it yet.
 
 ## 6. Phases
 
-1. **Tiered glossary.** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report. Live acceptance: one chapter with several `preferred` terms, translated strict and tiered; the owner reads both. Closes issue 82 if adopted.
-2. **Panel on the index path, subscription presets only.** Vendor field, candidates with sentences, judges in chunks, aggregator, report, cache, CLI and configuration. Offline tests with fake executables: vote rules for each panel size, own-term rule, tie-break, failure stop, conflicts, cache identity. Live acceptance: *Political Thinking* with one Google, one OpenAI and one Anthropic member in each role, then chapters 1 and 2 translated with the result.
+1. **Tiered glossary.** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report.
+   - Live acceptance: one chapter with several `preferred` terms (where Cosmic morale or Socratic civility occur; chapters 1 and 2 hold only nine), translated strict and tiered with the same glossary. Also measure register for both.
+   - Gate, fixed before the run: adopt tiers when `fixed` drift is zero in the tiered version, register does not fall, and the owner does not prefer the strict version. Otherwise keep one strict block and record why. Closes issue 82 either way.
+2. **Panel on the index path, subscription presets only.** Vendor field, candidates with sentences, judges, aggregator, report, cache, saved replies, CLI and configuration. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, cache identity.
+   - Live acceptance: *Political Thinking* with one Google, one OpenAI and one Anthropic member in each role, then chapters 1 and 2 translated with the result; compare with the replay in §2.
 3. **Paid members.** Per-role consent, through the deep review. Offline tests only, unless the owner authorizes a paid call.
-4. **Local API.** Panel lists on upload; shared glossary per book.
+4. **Local API.** Panel lists on upload; shared panel glossary per book.
 
 ## 7. Verification
 
@@ -162,7 +199,7 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 ## 8. Related
 
 - SPEC-010 introduced the strict term block. §3.5 keeps it for `fixed` terms and adds the `preferred` block.
-- SPEC-015 defines where candidates come from. Unchanged.
+- SPEC-015 defines where candidates come from and the `--glossary-max-terms` cap. §3.1 records the one departure.
 - SPEC-024 defines paid consent. §3.8 extends it to panel roles.
 - SPEC-025 §3.7 covers judging translations; this spec covers judging terms.
 - Issues 71, 82, 83 and 86.
