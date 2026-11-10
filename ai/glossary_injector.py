@@ -16,9 +16,11 @@ class GlossaryInjector:
             {
               "term": str,
               "suggested_translation": str,
+              "alternatives": [str],              # optional; shown for preferred terms
               "negative_constraint": str | None,  # optional
               "reason": str | None,               # optional
-              "priority": "critical" | "high" | "medium"
+              "priority": "critical" | "high" | "medium",
+              "tier": "fixed" | "preferred"       # optional; absent means fixed (SPEC-028)
             }
           ]
         }

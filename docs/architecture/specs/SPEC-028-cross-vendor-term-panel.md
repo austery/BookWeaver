@@ -2,7 +2,7 @@
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
 status: Draft for owner review (2026-11-09)
-implementationStatus: Not started
+implementationStatus: Phase 1 implemented offline (2026-11-09); its live acceptance has not run; Phases 2-4 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
 lastUpdateDate: 2026-11-09
@@ -110,7 +110,7 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 - The prompt has two blocks:
   - `fixed` terms keep today's heading and wording.
   - `preferred` terms get a new block: use this translation normally; when a sentence needs it, use a more fitting one without changing the meaning. Alternatives follow each term.
-- A glossary in which no term has `tier` renders byte-identically to today. The prompt hash of every existing book stays valid. The golden-bytes test in `tests/unit/test_prompt_preparation.py` pins this.
+- A glossary in which no term has `tier` renders byte-identically to today. The prompt hash of every existing book stays valid. A prompt-hash test in `tests/unit/test_prompt_preparation.py` pins this through prompt preparation, with a hash taken from the code before tiers.
 - `term-consistency.json` grades the tiers separately. Only `fixed` drift is reported as a problem.
 
 ### 3.6 Judge bias report

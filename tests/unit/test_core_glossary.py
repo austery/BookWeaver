@@ -176,3 +176,153 @@ def test_measure_term_usage_skips_a_term_with_no_translation() -> None:
     terms: list[dict[str, object]] = [{"term": "Estrangement", "suggested_translation": " "}]
 
     assert measure_term_usage(terms, [("estrangement", "任何译文")]) == []
+
+
+_TIERLESS = {
+    "critical_terminology": [
+        {
+            "term": "Estrangement",
+            "suggested_translation": "疏离",
+            "alternatives": ["隔阂"],
+            "negative_constraint": "NOT 异化",
+            "priority": "critical",
+        },
+        {
+            "term": "Uniformity",
+            "suggested_translation": "整齐划一",
+            "alternatives": ["一律化"],
+            "priority": "medium",
+        },
+        {"term": "Thrasymachus", "suggested_translation": "色拉叙马霍斯", "priority": "high"},
+    ]
+}
+
+
+def test_a_glossary_without_tiers_renders_the_same_bytes_as_before_tiers() -> None:
+    """Saved books resume only if their glossary block is byte-identical (SPEC-028 §3.5)."""
+    block = GlossaryManager.from_dict(_TIERLESS).format_block()
+
+    assert block == (
+        "【关键术语约束】以下术语必须严格遵守标准译法：\n"
+        "  • Estrangement → 疏离（NOT 异化）\n"
+        "  • Thrasymachus → 色拉叙马霍斯\n"
+        "  • Uniformity → 整齐划一"
+    )
+
+
+def _tiered() -> dict[str, object]:
+    terms = [dict(entry) for entry in _TIERLESS["critical_terminology"]]
+    terms[1]["tier"] = "preferred"
+    terms[2]["tier"] = "fixed"
+    terms.append(
+        {
+            "term": "Cosmic morale",
+            "suggested_translation": "宇宙士气",
+            "alternatives": ["面对宇宙的精神底气", "宇宙信念"],
+            "negative_constraint": "NOT 宇宙道德",
+            "tier": "preferred",
+            "priority": "high",
+        }
+    )
+    return {"critical_terminology": terms}
+
+
+def test_preferred_terms_get_their_own_block_with_alternatives() -> None:
+    block = GlossaryManager.from_dict(_tiered()).format_block()
+
+    strict, suggested = block.split("\n\n")
+    assert strict == (
+        "【关键术语约束】以下术语必须严格遵守标准译法：\n"
+        "  • Estrangement → 疏离（NOT 异化）\n"
+        "  • Thrasymachus → 色拉叙马霍斯"
+    )
+    assert suggested == (
+        "【建议术语】以下译法一般情况下采用；如果某句的语境需要，"
+        "可以改用更贴切、更通顺的译法，但不得改变原意：\n"
+        "  • Cosmic morale → 宇宙士气（也可：面对宇宙的精神底气、宇宙信念）（NOT 宇宙道德）\n"
+        "  • Uniformity → 整齐划一（也可：一律化）"
+    )
+
+
+def test_only_preferred_terms_render_only_the_suggestion_block() -> None:
+    data = {
+        "critical_terminology": [
+            {"term": "Uniformity", "suggested_translation": "整齐划一", "tier": "preferred"}
+        ]
+    }
+
+    block = GlossaryManager.from_dict(data).format_block()
+
+    assert block.startswith("【建议术语】")
+    assert "必须严格遵守" not in block
+    assert block.endswith("  • Uniformity → 整齐划一")
+
+
+def test_min_priority_filters_both_tiers() -> None:
+    block = GlossaryManager.from_dict(_tiered()).format_block(min_priority="critical")
+
+    assert "Estrangement" in block
+    assert "Uniformity" not in block and "Cosmic morale" not in block
+    assert "【建议术语】" not in block
+
+
+def test_an_unknown_tier_fails_loudly_with_its_index() -> None:
+    data = {
+        "critical_terminology": [
+            {"term": "A", "suggested_translation": "甲"},
+            {"term": "B", "suggested_translation": "乙", "tier": "soft"},
+        ]
+    }
+
+    with pytest.raises(ValueError, match=r"critical_terminology\[1\].*tier"):
+        GlossaryManager.from_dict(data)
+
+
+def test_term_usage_carries_the_tier() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "Uniformity", "suggested_translation": "整齐划一", "tier": "preferred"},
+        {"term": "Unity", "suggested_translation": "统一"},
+    ]
+
+    usage = {item.term: item for item in measure_term_usage(terms, [("unity", "统一")])}
+
+    assert usage["Uniformity"].tier == "preferred"
+    assert usage["Unity"].tier is None
+
+
+def test_a_fixed_term_using_only_its_alternative_is_drift() -> None:
+    terms: list[dict[str, object]] = [
+        {
+            "term": "garden",
+            "suggested_translation": "花园",
+            "alternatives": ["园子"],
+            "tier": "fixed",
+        }
+    ]
+
+    usage = measure_term_usage(terms, [("garden", "园子"), ("a garden", "园子")])
+
+    assert usage[0].missing == 2
+    assert not usage[0].consistent
+
+
+def test_in_a_tiered_glossary_a_term_without_a_tier_is_fixed_for_drift() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "garden", "suggested_translation": "花园", "alternatives": ["园子"]},
+        {"term": "unity", "suggested_translation": "统一", "tier": "preferred"},
+    ]
+
+    usage = {item.term: item for item in measure_term_usage(terms, [("garden", "园子")])}
+
+    assert usage["garden"].missing == 1
+    assert not usage["garden"].consistent
+
+
+def test_in_an_untiered_glossary_alternatives_stay_acceptable() -> None:
+    terms: list[dict[str, object]] = [
+        {"term": "garden", "suggested_translation": "花园", "alternatives": ["园子"]}
+    ]
+
+    usage = measure_term_usage(terms, [("garden", "园子")])
+
+    assert (usage[0].missing, usage[0].option_counts) == (0, {"花园": 0, "园子": 1})

@@ -41,6 +41,48 @@ def test_default_prompt_matches_golden_bytes(immersive: bool, expected: str) -> 
     assert hashlib.sha256(prompt.text.encode()).hexdigest() == expected
 
 
+def test_a_tierless_glossary_keeps_the_prompt_hash_from_before_tiers(tmp_path: Path) -> None:
+    """SPEC-028 §3.5: saved books resume only if this hash is unchanged.
+
+    The hash was taken from b179b4a, the commit before term tiers existed.
+    """
+    glossary = tmp_path / "glossary.json"
+    glossary.write_text(
+        json.dumps(
+            {
+                "critical_terminology": [
+                    {
+                        "term": "Estrangement",
+                        "suggested_translation": "疏离",
+                        "alternatives": ["隔阂"],
+                        "negative_constraint": "NOT 异化",
+                        "priority": "critical",
+                    },
+                    {
+                        "term": "Uniformity",
+                        "suggested_translation": "整齐划一",
+                        "alternatives": ["一律化"],
+                        "priority": "medium",
+                    },
+                    {
+                        "term": "Thrasymachus",
+                        "suggested_translation": "色拉叙马霍斯",
+                        "priority": "high",
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = PromptPreparation.from_config(
+        {}, output_lang="zh", custom_prompt=None, immersive=True
+    ).render(glossary)
+
+    assert prompt.sha256 == "7925a7953da3cfabfe43b4b89805b86f27071ddc8e48eea3bdf42a3f7dac5c87"
+
+
 def test_epub_prompt_states_only_the_segment_tag_output_contract() -> None:
     prompt = PromptPreparation.from_config(
         {}, output_lang="zh", custom_prompt=None, immersive=True
