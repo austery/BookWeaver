@@ -173,8 +173,8 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 
 ## 5. Open items
 
-- [ ] Owner: confirm one vote per vendor (§3.2), rather than one per preset.
-- [ ] Owner: confirm the tie-break (§3.4 rule 5). With two judges it decides every disagreement; in the replay it chose Opus.
+- [x] Owner confirmed on 2026-11-09: one vote per vendor (§3.2), not one per preset.
+- [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement; in the replay it chose Opus.
 - [ ] Measure run-to-run register variation of Flash on chapters 1 and 2, and whether glossary size lowers it (§2).
 - [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
 - [ ] Confirm the prompt limit per runtime before relying on one-call judging.
