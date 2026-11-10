@@ -128,6 +128,8 @@ Goal: decide whether a translated book is good, by two independent means.
 - **Human judgment**: the owner reads sampled passages side by side and records a verdict.
 - **AI judge**: a model scores translations against the source.
 
+Judging the terms before translation is a separate design: [SPEC-028](SPEC-028-cross-vendor-term-panel.md).
+
 Principles (the detailed design belongs in a separate evaluation spec):
 
 - Evaluation is a separate step over finished checkpoints, not a mode inside a translation run. The translation path stays unchanged.
@@ -210,7 +212,7 @@ Evidence comes from running Claude Code 2.1.311 against a local fake endpoint (`
 
 - Detailed evaluation design (corpus, sample size, judge prompt, agreement threshold): a separate spec after Phase 3.
 - Any automatic fallback between runtimes, subscription or metered. A run uses one runtime; switching is an explicit user action, and resume warns on mixed models as today, except for the Codex and Claude Code cases in §3.9 and §3.10.
-- Async batch APIs (previously planned as SPEC-025; renumber to SPEC-027).
+- Async batch APIs (previously planned as SPEC-025; renumber to SPEC-027). SPEC-028 is the term panel.
 - Named presets on the CLI and the local API: SPEC-026, built on the §3.8 registry after Phase 1.
 
 ## 5. Open items before implementation

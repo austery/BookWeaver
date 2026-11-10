@@ -34,7 +34,8 @@ Open parts:
 - Term tiers (`fixed`, `contextual`, `preferred`): issue 82.
 - Fixed candidates from the book's structure: issue 83.
 - One glossary shared across compared models: issue 86.
-- Claude Code as a judge runtime: SPEC-025 Phase 3, second half. Done on 2026-11-09 (PR 88): `claude-sonnet-5-5-low` passed a live probe; see `2026-11-09-claude-code-compatibility-probe.md`. No judge run has used it yet.
+- Term panel design (nominators, judges, vote rules, tiers): SPEC-028.
+- Claude Code as a judge runtime: SPEC-025 Phase 3, second half. Done on 2026-11-09 (PR 88): `claude-sonnet-5-5-low` passed a live probe; see `2026-11-09-claude-code-compatibility-probe.md`. `claude-opus-5-5-low` judged terms in the second round below.
 
 ## Measures used
 
@@ -94,6 +95,53 @@ Gemini 3.8 Flash translated chapters 1 and 2 again with the 78-term merged gloss
 - 18 merged terms occur in these chapters, 57 times. Segments using the merged rendering rose from 54 to 56.
 - The weak rendering 一律化 was now enforced in both of its segments, and the passage read worse.
 - The harmony mistranslation did not recur, but that term is not in the glossary, so the change is run-to-run variation.
+
+## Second round: five lists, book sentences, tiers
+
+Same trimmed EPUB, low effort, one run each, subscription CLIs only. This round led to SPEC-028 (`docs/architecture/specs/SPEC-028-cross-vendor-term-panel.md`).
+
+### Claude Code models
+
+- `claude-sonnet-5-5-low` extracted 49 terms and translated chapters 1 and 2 in 7 minutes. Literary register 4.35 per 1,000 characters, close to the GPT models. The owner judged it no better than the others and below Gemini. It wrote straight ASCII quotes in 25 segments; no other model did.
+- `claude-opus-5-5-low` ran live for the first time: the automatic probe passed on Claude Code 2.1.311, then it extracted 50 terms in 33 seconds. Extraction only, no translation.
+- Sonnet and Opus shared 37 of 50 terms. Opus shared 33 with Gemini, 29 with Luna and 22 with Sol. Only 10 terms were in all five lists.
+
+### Cross-review with book sentences
+
+The five lists merged into 107 candidates, labeled A to E. Each candidate carried up to three sentences from the book's body (index excluded); 104 had a match. Judges also gave `variants` (none, established, contextual) and `enforce` (fixed, preferred).
+
+| Judge | Kept | Own proposals kept | Others' proposals kept |
+|---|---|---|---|
+| `gpt-6.1-sol` | 96 | 46 of 50 (92%) | 50 of 57 (88%) |
+| `claude-opus-5-5` | 94 | 49 of 50 (98%) | 45 of 57 (79%) |
+
+- Opus showed self-preference, as Gemini did in the first round. Sol showed none in either round.
+- The judges agreed on 89 of 107 translations; 26 candidates differed in translation or keep.
+- Both judges chose 整齐划一 for Uniformity. Sol chose it in all three of its runs, with or without sentences; the first round's 一律化 came from a Gemini and Luna majority. Opus never ran without sentences, so the sentences' share in Opus's vote is unknown.
+- The two judges disagreed on which terms have several accepted translations (Sol 32, Opus 17), so that label is not yet reliable.
+
+### Sentences against rerun noise
+
+Sol judged the same 107 candidates again without sentences, with otherwise identical instructions.
+
+- With against without sentences: 14 of 107 translations differed.
+- First round against this run, both without sentences: 7 of 95 differed.
+- Some sentence-driven changes are clear gains: private ownership 私人所有权 → 私人所有制 (the passage is about economic systems), moral necessity 道德必然性 → 道德上的必要性. Sol kept 96 terms with sentences and 90 without.
+
+### Strict against tiered glossary
+
+Gemini 3.8 Flash translated chapters 1 and 2 twice with the 91 terms both judges kept. Strict: all 91 under the current wording. Tiered: 59 terms on which both judges agreed and both said `fixed` stayed strict; the other 32 went through `-p` as suggestions with the other judge's translation as an alternative. The block position differs between the arms, because no code changed.
+
+| Version | Strict terms used | Suggested terms used | Literary per 1,000 |
+|---|---|---|---|
+| Strict | 38 of 38 | 51 of 52 | 5.53 |
+| Tiered | 38 of 38 | 49 of 52 | 5.98 |
+
+- Only 9 of the 32 suggested terms occur in these chapters. The two changes used the listed alternative (世界城邦, 私有制) and read correctly.
+- Both versions scored below both earlier Flash runs on these chapters (6.13 each, with 50 and 78 terms). The cause is unknown: run-to-run variation has not been measured, and 91 terms is the largest glossary so far. The 6.32 in the first round was chapter 1 alone.
+- Result: tiers did no harm to term use here; a benefit needs chapters with more suggested terms, and the register drop needs its own measurement.
+
+Files: `term-review-v2/`, `term-review-v2-nocontext/`, `tier-test/`, `claude-sonnet-5-5/` and `claude-opus-5-5-terms/` in the trial folder.
 
 ## Limits
 

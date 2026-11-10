@@ -51,3 +51,19 @@ _Avoid_: glossary generation, dictionary
 **Deep Scan**:
 Term Extraction that sends the whole book to a model. It runs only when a person asks for it.
 _Avoid_: Tier 3, full scan
+
+**Term Panel**:
+Presets from different vendors that propose and judge the terms for one book; a program, not a model, combines their votes (SPEC-028).
+_Avoid_: committee, ensemble
+
+**Nominator**:
+A Term Panel member that proposes candidate terms with one translation each.
+_Avoid_: extractor (when several take part)
+
+**Judge**:
+A Term Panel member that decides, for each candidate, whether to keep it and which translation to use. A translation judge (SPEC-025 §3.7) is a different role.
+_Avoid_: reviewer, grader
+
+**Term Tier**:
+How strictly the translator must use a term: a Fixed Term must always use its translation; a Preferred Term is a suggestion the translator may adapt to the sentence. Separate from `priority`, which filters and orders terms.
+_Avoid_: hard/soft constraint, strictness level
