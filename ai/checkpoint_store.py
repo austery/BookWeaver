@@ -83,6 +83,7 @@ class ICheckpointStore(Protocol):
         segment_ids: set[str],
         force: bool = False,
         hard_only: bool = False,
+        deferred: frozenset[str] = frozenset(),
         legacy_input_signature: str | None = None,
     ) -> dict[str, SegmentRecord]: ...
 
@@ -176,8 +177,15 @@ class CheckpointStore:
         segment_ids: set[str],
         force: bool = False,
         hard_only: bool = False,
+        deferred: frozenset[str] = frozenset(),
         legacy_input_signature: str | None = None,
     ) -> dict[str, SegmentRecord]:
+        """Validate and return the saved records.
+
+        Hard fields always refuse. Soft fields refuse unless ``force``; ``hard_only`` skips
+        them all, and ``deferred`` skips only the named soft fields, for a value that is not
+        known yet (the prompt hash before the glossary is chosen).
+        """
         self._require_lock()
         path = self.directory / "checkpoint.json"
         if not path.exists():
@@ -213,7 +221,11 @@ class CheckpointStore:
             elif not isinstance(value, str) or not value:
                 raise CheckpointError(f"Invalid checkpoint field: {key}")
         hard = ("input_signature", "input_format", "segmenter_signature")
-        mismatches = [key for key in expected if stored[key] != expected[key]]
+        mismatches = [
+            key
+            for key in expected
+            if stored[key] != expected[key] and (key in hard or key not in deferred)
+        ]
         if any(key in hard for key in mismatches) or (mismatches and not force and not hard_only):
             raise CheckpointMismatchError("Checkpoint mismatch: " + ", ".join(mismatches))
         records: dict[str, SegmentRecord] = {}

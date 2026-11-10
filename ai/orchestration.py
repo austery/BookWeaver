@@ -5,8 +5,7 @@ together.  It lives outside the hexagonal boundary modules and is
 allowed to import from all layers.
 
 Usage:
-    python -m ai.cli input.epub --output translated.epub [options]
-    python -m ai.cli ./pages_dir/ --output translated.md [options]
+    uv run bookweaver book.epub --output translated.epub [options]
 """
 
 from __future__ import annotations
@@ -17,18 +16,11 @@ import tempfile
 import json
 import re
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from contextlib import ExitStack
-from datetime import datetime, timezone
 from types import TracebackType
-from ai.checkpoint_store import (
-    CheckpointIdentity,
-    CheckpointMismatchError,
-    FileSystemCheckpointStoreFactory,
-    ICheckpointStoreFactory,
-    SegmentRecord,
-)
+from ai.checkpoint_store import FileSystemCheckpointStoreFactory, ICheckpointStoreFactory
 
 # Preset, enabled_presets and find_preset are the named-preset surface for entry points (SPEC-026).
 from ai.model_profiles import (
@@ -39,10 +31,16 @@ from ai.model_profiles import (
     find_preset as find_preset,
     disabled_runtimes,
     is_metered,
-    model_runtime,
     refuse_disabled_runtime,
     resolve_preset,
     resolve_profile,
+)
+from ai.resume import (
+    BatchBounds,
+    BookFingerprint,
+    ResumeSession,
+    checkpoint_directory,
+    checkpoint_progress as checkpoint_progress,
 )
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
@@ -141,35 +139,6 @@ class TranslationSummary:
     glossary_used: Path | None
 
 
-def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel) -> str:
-    """Provenance backend reported by the provider, else the selected runtime."""
-    reported = provider.backend if provider is not None else None
-    if reported:
-        return reported
-    return model_runtime(model) if model.provider == "cli" else "any_llm"
-
-
-def _refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
-    """Stop a resume that crosses a Codex or Claude Code model.
-
-    The identity keys on tier and effort, which those models share with each other and with the
-    default preset. Without the stop, a model test restores another model's segments, makes no
-    translation call to the chosen model, and can still spend its quota on term extraction.
-    Changes within Antigravity and between metered vendors keep their mixed-model warning
-    (SPEC-024), and a retired or legacy model is not a test choice.
-    """
-    enabled = enabled_presets()
-    others = {record.model for record in records.values()} - {model.model_id}
-    others &= {preset.model_id for preset in enabled}
-    trial = {preset.model_id for preset in enabled if preset.runtime in TRIAL_CLI_RUNTIMES}
-    if others and (model.runtime in TRIAL_CLI_RUNTIMES or others & trial):
-        raise CheckpointMismatchError(
-            f"Checkpoint mismatch: model; it holds {sorted(others)}, not {model.model_id}. "
-            "Use another output folder to compare models, or --force-resume to continue "
-            "this book on the new model"
-        )
-
-
 class TranslationOrchestrator:
     """Own one invocation's provider construction and checkpoint lifetime."""
 
@@ -246,24 +215,10 @@ class TranslationOrchestrator:
             batch_segments = resilience.get("max_batch_segments", 200)
         if batch_segments is not None and (type(batch_segments) is not int or batch_segments <= 0):
             raise ValueError("max_batch_segments must be a positive integer")
+        bounds = BatchBounds(batch_chars, batch_segments, SEPARATOR_OVERHEAD)
         content_signature = _compute_content_signature(input_file)
-        legacy_signature = _compute_input_signature(input_file)
-        identity = (
-            CheckpointIdentity(
-                content_signature,
-                input_format,
-                _ACTIVE_EPUB_SEGMENTER_SIGNATURE,
-                options.spec.output_lang,
-                model.profile,
-                model.effort,
-                "pending-prompt",
-                "segment_tags",
-                batch_chars,
-                SEPARATOR_OVERHEAD,
-                max_batch_segments=batch_segments,
-            )
-            if content_signature is not None
-            else None
+        book = BookFingerprint(
+            content_signature, _compute_input_signature(input_file), frozenset(segment_ids)
         )
         with ExitStack() as stack:
             active_provider: ITranslationProvider | None = None
@@ -307,28 +262,28 @@ class TranslationOrchestrator:
                     exc.add_note(f"Invocation audit also failed: {type(audit_error).__name__}")
 
             stack.push(finalize_audit)
-            store = None
-            checkpoint_directory: Path | None = None
-            if resume.enabled or resume.force:
-                directory = _resolve_checkpoint_dir(
-                    checkpoint_dir=str(resume.checkpoint_dir) if resume.checkpoint_dir else None,
-                    input_file=input_file,
-                    output_file=output_file,
-                    input_format="epub",
-                )
-                store = stack.enter_context(self._checkpoint_factory.create(directory))
-                checkpoint_directory = directory
-                if identity is not None:
-                    # Validate the complete document and known hard fields before any external work.
-                    saved = store.load(
-                        identity,
-                        segment_ids=segment_ids,
-                        force=resume.force,
-                        hard_only=True,
-                        legacy_input_signature=legacy_signature,
+            session = stack.enter_context(
+                ResumeSession(
+                    store_factory=self._checkpoint_factory,
+                    directory=checkpoint_directory(
+                        explicit=resume.checkpoint_dir,
+                        input_file=input_file,
+                        output_file=output_file,
                     )
-                    if not resume.force:
-                        _refuse_trial_model_change(saved, model)
+                    if resume.enabled or resume.force
+                    else None,
+                    book=book,
+                    model=model,
+                    requested_effort=options.model.effort,
+                    output_lang=options.spec.output_lang,
+                    bounds=bounds,
+                    segmenter_signature=_ACTIVE_EPUB_SEGMENTER_SIGNATURE,
+                    force=resume.force,
+                    usage_snapshot=lambda: factory.usage_snapshot(),
+                )
+            )
+            # Before any external work: the glossary step cannot be planned without it.
+            verified = session.verify()
             glossary_plan = plan_glossary(
                 glossary_path=glossary.path,
                 requested_mode=glossary.mode,
@@ -339,7 +294,7 @@ class TranslationOrchestrator:
                 translation_model=model,
                 book_dir=output_file.parent,
                 source_signature=content_signature,
-                may_reuse=store is not None,
+                may_reuse=verified.may_reuse,
                 term_panel=glossary.term_panel,
                 panel_dir=input_file.parent,
             )
@@ -370,23 +325,7 @@ class TranslationOrchestrator:
                 glossary_path, min_priority=glossary.min_priority
             )
             prompt = effective_prompt.text
-            if identity is not None:
-                identity = replace(identity, system_prompt_hash=effective_prompt.sha256)
-            records = (
-                store.load(
-                    identity,
-                    segment_ids=segment_ids,
-                    force=resume.force,
-                    legacy_input_signature=legacy_signature,
-                )
-                if store is not None and identity is not None
-                else {}
-            )
-            previous_models = {record.model for record in records.values()}
-            if previous_models - {model.model_id}:
-                print(
-                    f"[resume] Mixed-model continuation: {sorted(previous_models)} -> {model.model_id}; {len(records)} restored segments. Voice or terminology may change."
-                )
+            records = session.restore(verified, effective_prompt.sha256)
             remaining_chars = sum(
                 len(segment.text) for segment in segments if segment.id not in records
             )
@@ -427,8 +366,8 @@ class TranslationOrchestrator:
 
             warning_log = (
                 _SanityWarningLog(
-                    checkpoint_directory / "warnings.json"
-                    if checkpoint_directory is not None
+                    session.directory / "warnings.json"
+                    if session.directory is not None
                     else output_file.with_name(output_file.name + ".warnings.json"),
                     restored=_sanity_check_segments(
                         [
@@ -458,31 +397,12 @@ class TranslationOrchestrator:
                     )
                     _log_sanity_warnings(batch_warnings)
                     _emit_batch_sample(batch, probe, index, total_batches)
-                if store is not None and identity is not None:
-                    completed = datetime.now(timezone.utc).isoformat()
-                    updated = dict(records)
-                    for item in batch:
-                        updated[item.id] = SegmentRecord(
-                            item.translated,
-                            model.profile,
-                            model.provider,
-                            _segment_backend(deferred_provider.delegate, model),
-                            model.model_id,
-                            model.effort,
-                            completed,
-                            deferred_provider.delegate.runtime_version
-                            if deferred_provider.delegate is not None
-                            else None,
-                            options.model.effort,
-                        )
-                    usage = factory.usage_snapshot() if is_metered(model.provider) else None
-                    store.save(identity, updated, usage=usage)
-                    records.update(updated)
+                if session.commit(batch, deferred_provider.delegate):
                     _log_progress(
                         "checkpoint",
-                        bytes=store.last_save_bytes,
-                        seconds=round(store.last_save_seconds, 4),
-                        segments=len(records),
+                        bytes=session.last_save_bytes,
+                        seconds=round(session.last_save_seconds, 4),
+                        segments=session.saved_segments,
                     )
                 if warning_log is not None:
                     # After the checkpoint save, so a warning never outlives lost work.
@@ -492,8 +412,9 @@ class TranslationOrchestrator:
                 deferred_provider,
                 EngineConfig(
                     system_prompt=prompt,
-                    max_batch_chars=batch_chars,
-                    max_batch_segments=batch_segments,
+                    max_batch_chars=bounds.max_chars,
+                    max_batch_segments=bounds.max_segments,
+                    separator_overhead=bounds.separator_overhead,
                     max_split_depth=0 if is_metered(model.provider) else split_depth,
                     resume_translations={key: record.translated for key, record in records.items()},
                     on_checkpoint_batch=persist,
@@ -508,8 +429,8 @@ class TranslationOrchestrator:
                         for segment in segments
                         if segment.id in translated_text
                     ],
-                    checkpoint_directory / "term-consistency.json"
-                    if checkpoint_directory is not None
+                    session.directory / "term-consistency.json"
+                    if session.directory is not None
                     else output_file.with_name(output_file.name + ".term-consistency.json"),
                 )
             if warning_log is not None:
@@ -595,14 +516,11 @@ def count_epub_segments(input_path: Path) -> int:
 
 def default_epub_checkpoint_dir(input_path: Path, output_path: Path) -> Path:
     """Where an EPUB run without ``--checkpoint-dir`` keeps its checkpoint."""
-    return _resolve_checkpoint_dir(
-        checkpoint_dir=None, input_file=input_path, output_file=output_path, input_format="epub"
-    )
+    return checkpoint_directory(explicit=None, input_file=input_path, output_file=output_path)
 
 
 # ── Checkpoint and batch constants ────────────────────────────
 
-_CHECKPOINT_ROOT = ".bookweaver_checkpoints"
 _ACTIVE_EPUB_SEGMENTER_SIGNATURE = "epub-leaf-block-v4-source-only-bibliography"
 _DEFAULT_BATCH_CHARS_PRO_EPUB = 60_000
 _DEFAULT_BATCH_CHARS_STANDARD_EPUB = 60_000
@@ -867,19 +785,7 @@ def _compute_input_signature(input_file: Path) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _resolve_checkpoint_dir(
-    *,
-    checkpoint_dir: str | None,
-    input_file: Path,
-    output_file: Path,
-    input_format: str,
-) -> Path:
-    if checkpoint_dir is not None:
-        return Path(checkpoint_dir)
-    return output_file.parent / _CHECKPOINT_ROOT / input_format / input_file.stem
-
-
-# ── Wiring helpers ────────────────────────────────────────────
+# ── Configuration and progress helpers ────────────────────────
 
 
 def _resolve_positive_int_config(
