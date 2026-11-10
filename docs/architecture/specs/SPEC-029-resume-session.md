@@ -2,7 +2,7 @@
 specId: SPEC-029
 title: Resume Session — one module for checkpoint verify, restore and commit
 status: Approved by the owner (2026-11-10) — three-step delivery (§5) and interface (§2.1), including the tach.toml change; §6 item 2 approved for PR B; §6 item 3 kept as is
-implementationStatus: Step 1 (blank-segment fix, §6 item 1) merged in PR 108; PR A and PR B wait for SPEC-028 Phase 2b
+implementationStatus: Step 1 merged (PR 108); PR A merged (PR 110); PR B implemented on branch claude/spec-029-resume-session-module
 priority: P2 - Reliability
 creationDate: 2026-11-10
 lastUpdateDate: 2026-11-10
@@ -155,6 +155,11 @@ SPEC-028 Phase 2b (`--term-panel`, issue 100, session "Session Handoff 阶段 2b
 5. **A forced resume leaves no trace in the records**: they carry no prompt hash, so later plain resumes can mix prompts without a signal unless the model id differs.
 6. **Split halves are not committed**: a successful left half is translated again when the right half fails (subscription runtimes).
 7. **No per-segment source digest**: segment IDs are positional; only the book hash and the hand-bumped segmenter constant guard their meaning.
+
+## 6a. Implementation notes (PR B)
+
+- **One deviation from §2.3:** `CheckpointStore.load` gains an optional `deferred` keyword that skips the named soft fields. `verify` uses it to check every soft field except `system_prompt_hash` before term extraction. Without the keyword the load behaves as before; the file format and validation are unchanged.
+- **Error text:** a soft mismatch now names only the fields known at `verify` (for example `Checkpoint mismatch: effort`). When the prompt also changed, `restore` reports it afterwards; before, one late message listed all fields together.
 
 ## 7. Alternatives
 

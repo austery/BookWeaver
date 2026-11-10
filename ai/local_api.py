@@ -310,14 +310,7 @@ def _state(record: RunRecord, child: subprocess.Popen[bytes] | None) -> RunState
 
 
 def _done_segments(record: RunRecord) -> int | None:
-    path = Path(record.checkpoint_dir) / "checkpoint.json"
-    try:
-        count = json.loads(path.read_text(encoding="utf-8")).get("translated_segment_count")
-    except FileNotFoundError:
-        return 0
-    except (OSError, ValueError, AttributeError):
-        return None
-    return count if isinstance(count, int) else None
+    return orchestration.checkpoint_progress(Path(record.checkpoint_dir))
 
 
 def _log_tail(path: str) -> list[str]:

@@ -15,7 +15,7 @@
 - Antigravity version gate: `CERTIFIED_AGY_MODELS` seeds `(agy version, model)` pairs with probe evidence. Any other pair runs a synthetic three-passage probe per framing protocol before its first book batch; passes are recorded in `$XDG_STATE_HOME/bookweaver/runtime-certifications.json` (default `~/.local/state/bookweaver/`). To re-probe, delete the matching entry.
 - Paid API construction is authorization-gated by `ai/runtime_factory.py`. Metered providers (`gemini`, `anthropic`, `openai`) share one any-llm adapter there (SPEC-024); pinned models live in `ai/model_profiles.py`. No automatic paid fallback. No live API tests without separate authorization.
 - Runtime JSON validation: `ai/runtime_config.py`, `ai/config_schema.json`. Never automatically overwrite ignored user configuration.
-- Checkpoint: `ai/checkpoint_store.py`, single atomic schema-v2 document, exclusive run lock, explicit mismatch failures, legacy import without rewriting v1 files.
+- Checkpoint: `ai/checkpoint_store.py`, single atomic schema-v2 document, exclusive run lock, explicit mismatch failures, legacy import without rewriting v1 files. Resume order lives in `ai/resume.py` (SPEC-029): `verify` before any external work (hard fields, the Codex/Claude Code model stop, then soft fields except the prompt hash), `restore` under the prompt hash, `commit` per batch.
 
 ## Migration status
 

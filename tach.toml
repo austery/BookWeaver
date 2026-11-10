@@ -39,7 +39,7 @@ utility = true
 # Current invocation composition.
 [[modules]]
 path = "ai.orchestration"
-depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.term_panel", "ai.term_extraction"]
+depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.term_panel", "ai.term_extraction", "ai.resume"]
 
 [[modules]]
 path = "ai.runtime_factory"
@@ -52,6 +52,11 @@ depends_on = ["ai.core"]
 [[modules]]
 path = "ai.checkpoint_store"
 depends_on = []
+
+# Resume session (SPEC-029): the one owner of checkpoint verify, restore and commit.
+[[modules]]
+path = "ai.resume"
+depends_on = ["ai.checkpoint_store", "ai.model_profiles", "ai.ports"]
 
 [[modules]]
 path = "ai.model_profiles"
