@@ -485,7 +485,8 @@ def create_app(
     preset_field = Form(description="Model and effort to use, as `GET /presets` explains them.")
     configured = term_panels if term_panels is not None else orchestration.configured_term_panels()
     # The panel name becomes part of a folder name; a name that cannot be one is not offered.
-    panels = [name for name in configured if _is_plain_folder_name(f"panel-{name}")]
+    # An empty name is not offered either: the form would read it as the default, `none`.
+    panels = [name for name in configured if name and _is_plain_folder_name(f"panel-{name}")]
     # "none" is a real choice, not an optional field: anyOf with null would hide the dropdown.
     PanelChoice = StrEnum(  # type: ignore[misc]
         "TermPanelName",
@@ -613,7 +614,8 @@ def create_app(
         if extraction_model is not None:
             command += ["--extraction-model", extraction_model]
         if term_panel is not None:
-            command += ["--term-panel", term_panel]
+            # One token, so a panel name that starts with "-" is not read as an option.
+            command.append(f"--term-panel={term_panel}")
         if glossary_mode == "deep-scan":
             command += ["--glossary-mode", "deep-scan"]
         if allow_paid_api:

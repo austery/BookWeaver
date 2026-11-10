@@ -89,7 +89,7 @@ def test_a_panel_upload_runs_the_panel_in_its_own_folder(
 
     assert response.status_code == 202, response.text
     args = _child_args(client)
-    assert args[args.index("--term-panel") + 1] == "three-vendor"
+    assert "--term-panel=three-vendor" in args
     assert "--extraction-model" not in args  # the panel replaces it (SPEC-028 §3.10)
     book = tmp_path / "library" / "garden" / "garden.epub"
     folder = f"panel-three-vendor-{orchestration.panel_upload_plan(book, 'three-vendor').folder_id}"
@@ -140,7 +140,7 @@ def test_without_a_panel_the_upload_is_unchanged(client: TestClient, tmp_path: P
 
     assert response.status_code == 202, response.text
     args = _child_args(client)
-    assert "--term-panel" not in args
+    assert not any(arg.startswith("--term-panel") for arg in args)
     assert response.json()["term_panel_plan"] is None
     assert args[args.index("--extraction-model") + 1] == "pro"
     assert args[args.index("--output") + 1] == str(
@@ -244,7 +244,7 @@ def test_a_panel_name_that_cannot_be_a_folder_is_not_offered(tmp_path: Path) -> 
         state_dir=tmp_path / "state",
         library_dir=tmp_path / "library",
         disabled_runtimes=frozenset(),
-        term_panels=("three-vendor", "a/b", "tab\there"),
+        term_panels=("three-vendor", "a/b", "tab\there", ""),
     )
     schema = TestClient(app, base_url=BASE_URL).get("/openapi.json").json()
 
@@ -268,3 +268,18 @@ def test_a_linked_panel_folder_is_refused_without_touching_its_target(
     assert response.status_code == 400
     assert "symbolic link" in response.json()["detail"]
     assert (outside / "agy-flash-low").is_dir()  # never removed through the link
+
+
+def test_a_panel_name_with_a_leading_hyphen_reaches_the_cli_as_a_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ai import cli
+
+    captured: list[object] = []
+    monkeypatch.setattr(cli.orchestration, "translate_epub", lambda *a: captured.append(a[2]))
+    source = tmp_path / "book.epub"
+    source.write_bytes(b"epub")
+
+    cli.main([str(source), "--output", "out.epub", "--term-panel=-team"])
+
+    assert captured[0].glossary.term_panel == "-team"
