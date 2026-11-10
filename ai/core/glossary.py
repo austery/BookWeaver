@@ -128,7 +128,9 @@ def measure_term_usage(
         words = r"\s+".join(re.escape(word) for word in term.split())
         pattern = re.compile(rf"(?<!\w){words}(?!\w)", re.IGNORECASE)
         matched = [target for source, target in segments if pattern.search(source)]
-        alternatives = _alternatives(entry)
+        tier = entry.get("tier")
+        # A fixed term must use its own translation; its alternatives then count as missing.
+        alternatives = [] if tier == "fixed" else _alternatives(entry)
         parts = [part for part in [*_SLASH.split(translation), *alternatives] if part]
         # The whole translation and the longest part first, so that a part found only inside
         # a longer one is not counted as a second translation.
@@ -144,7 +146,6 @@ def measure_term_usage(
                     remaining = remaining.replace(option, "")
                     found = True
             missing += not found
-        tier = entry.get("tier")
         usage.append(
             TermUsage(
                 term,

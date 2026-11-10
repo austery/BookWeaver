@@ -288,3 +288,19 @@ def test_term_usage_carries_the_tier() -> None:
 
     assert usage["Uniformity"].tier == "preferred"
     assert usage["Unity"].tier is None
+
+
+def test_a_fixed_term_using_only_its_alternative_is_drift() -> None:
+    terms: list[dict[str, object]] = [
+        {
+            "term": "garden",
+            "suggested_translation": "花园",
+            "alternatives": ["园子"],
+            "tier": "fixed",
+        }
+    ]
+
+    usage = measure_term_usage(terms, [("garden", "园子"), ("a garden", "园子")])
+
+    assert usage[0].missing == 2
+    assert not usage[0].consistent
