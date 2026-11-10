@@ -197,7 +197,7 @@ def test_a_panel_glossary_resumes_a_run_that_named_it_with_glossary(
         (GlossarySpec(path=Path("g.json"), term_panel="three-vendor"), "--glossary"),
         (
             GlossarySpec(extract=True, extraction_model="flash", term_panel="three-vendor"),
-            "--extraction-model",
+            r"drop --extraction-model$",  # not --extract-glossary, which was not passed
         ),
         (GlossarySpec(extract=True, term_panel="three-vendor"), "--extract-glossary"),
         (GlossarySpec(mode="deep-scan", term_panel="three-vendor"), "Deep Scan"),
@@ -391,7 +391,8 @@ def test_the_upload_has_no_default_when_the_default_runtime_is_disabled(tmp_path
     form = next(
         value for name, value in schema["components"]["schemas"].items() if "upload" in name.lower()
     )
-    assert form["properties"]["preset"].get("default") is None  # no silent default
+    assert "preset" in form["required"]  # no silent default
+    assert "$ref" in form["properties"]["preset"]  # still a dropdown, not anyOf with null
     choices = schema["components"]["schemas"]["PresetName"]["enum"]
     assert choices and not any(name.startswith("agy-") for name in choices)
     assert client.get("/presets").json()[0]["runtime"] != "antigravity"
@@ -400,8 +401,8 @@ def test_the_upload_has_no_default_when_the_default_runtime_is_disabled(tmp_path
     response = client.post(
         "/runs/upload", files={"file": ("book.epub", source.read_bytes(), "application/epub+zip")}
     )
-    assert response.status_code == 400
-    assert "choose a preset" in response.json()["detail"]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", "preset"]
 
 
 def test_presets_read_runtimes_disabled_from_the_configuration_file(

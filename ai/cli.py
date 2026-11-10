@@ -268,7 +268,11 @@ def serve_main(tokens: list[str]) -> None:
             "install it with: uv sync --extra api (in a checkout), "
             "or install the bookweaver[api] package"
         )
-    local_api.serve(args.port)
+    try:
+        local_api.serve(args.port)
+    except ValueError as exc:
+        # The API reads runtimes.disabled from the configuration when it starts.
+        parser.exit(2, f"bookweaver serve: {exc}\n")
 
 
 def _apply_preset(

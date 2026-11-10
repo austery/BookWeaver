@@ -10,6 +10,7 @@ reported by the CLI before anything starts.
 from __future__ import annotations
 
 import fcntl
+import inspect
 import filecmp
 import json
 import os
@@ -468,11 +469,24 @@ def create_app(
     preset_field = Form(description="Model and effort to use, as `GET /presets` explains them.")
 
     def _with_preset_choices(endpoint: Callable[..., RunStatus]) -> Callable[..., RunStatus]:
-        """Give ``preset`` this app's choices; this module's string annotations cannot name a
-        type built here, so the object replaces the string before FastAPI reads the signature."""
-        # Optional only without a default: anyOf with null would hide the dropdown otherwise.
-        choice = UploadPreset if upload_default is not None else UploadPreset | None
-        endpoint.__annotations__["preset"] = Annotated[choice, preset_field]
+        """Give ``preset`` this app's choices, and make it required when it has no default.
+
+        This module's string annotations cannot name a type built here, so the signature
+        FastAPI reads carries the type object. Keyword-only parameters let a required
+        ``preset`` follow parameters with defaults; FastAPI passes form fields by name.
+        """
+        signature = inspect.signature(endpoint)
+        parameters = [
+            parameter.replace(
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=Annotated[UploadPreset, preset_field],
+                default=upload_default if upload_default is not None else inspect.Parameter.empty,
+            )
+            if name == "preset"
+            else parameter.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+            for name, parameter in signature.parameters.items()
+        ]
+        endpoint.__signature__ = signature.replace(parameters=parameters)  # type: ignore[attr-defined]
         return endpoint
 
     store = _RunStore(state_dir or default_state_dir())
@@ -662,7 +676,7 @@ def create_app(
             str,
             Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
-        preset: Annotated[str | None, preset_field] = upload_default,  # see _with_preset_choices
+        preset: Annotated[str, preset_field] = DEFAULT_PRESET.value,  # see _with_preset_choices
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
@@ -684,11 +698,6 @@ def create_app(
             Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
     ) -> RunStatus:
-        if preset is None:
-            raise HTTPException(
-                400,
-                "The default preset's runtime is switched off by runtimes.disabled; choose a preset",
-            )
         # The dropdown holds only presets on enabled runtimes (refuse_disabled guards POST /runs).
         selected = orchestration.find_preset(preset)
         _check_consent(selected, allow_paid_api)
