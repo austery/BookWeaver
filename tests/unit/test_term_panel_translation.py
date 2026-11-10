@@ -424,3 +424,23 @@ def test_presets_read_runtimes_disabled_from_the_configuration_file(
         cli.main(["presets"])
     assert exit_info.value.code == 2
     assert "Invalid runtime configuration" in capsys.readouterr().err
+
+
+def test_serve_reports_an_invalid_configuration_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import uvicorn
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    user_config = tmp_path / ".config" / "bookweaver" / "config.json"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text('{"runtimes": {"disabled": ["copilot"]}}')
+    started: list[object] = []
+    monkeypatch.setattr(uvicorn, "run", lambda app, **_: started.append(app))
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["serve", "--port", "8800"])
+
+    assert exit_info.value.code == 2
+    assert "bookweaver serve: Invalid runtime configuration" in capsys.readouterr().err
+    assert started == []

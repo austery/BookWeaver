@@ -22,6 +22,12 @@ from ai.prompt_preparation import build_system_prompt, load_glossary_block, _get
 # ── Prompt assembly ───────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def no_runtime_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`bookweaver presets` reads runtimes.disabled; ignore the owner's configuration."""
+    monkeypatch.setattr(cli_module, "configured_disabled_runtimes", lambda: frozenset())
+
+
 class TestBuildSystemPrompt:
     def test_basic_prompt(self) -> None:
         prompt = build_system_prompt("Chinese")

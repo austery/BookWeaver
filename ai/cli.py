@@ -269,10 +269,11 @@ def serve_main(tokens: list[str]) -> None:
             "or install the bookweaver[api] package"
         )
     try:
-        local_api.serve(args.port)
+        # The API reads runtimes.disabled from the configuration when it is built.
+        app = local_api.create_app(port=args.port)
     except ValueError as exc:
-        # The API reads runtimes.disabled from the configuration when it starts.
         parser.exit(2, f"bookweaver serve: {exc}\n")
+    local_api.serve(args.port, app)
 
 
 def _apply_preset(

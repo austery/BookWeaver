@@ -68,10 +68,15 @@ def make_epub(path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def no_runtime_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every runtime enabled, whatever the owner's configuration says (SPEC-028 §3.12)."""
+    monkeypatch.setattr(orchestration, "configured_disabled_runtimes", lambda: frozenset())
+
+
 @pytest.fixture
 def client() -> TestClient:
-    # No runtime disabled, whatever the owner's configuration says (SPEC-028 §3.12).
-    return TestClient(local_api.create_app(disabled_runtimes=frozenset()), base_url=BASE_URL)
+    return TestClient(local_api.create_app(), base_url=BASE_URL)
 
 
 @pytest.fixture
@@ -82,7 +87,6 @@ def runs(tmp_path: Path) -> Iterator[tuple[TestClient, Path]]:
         state_dir=tmp_path / "state",
         child_command=(sys.executable, str(script)),
         library_dir=tmp_path / "library",
-        disabled_runtimes=frozenset(),
     )
     with TestClient(app, base_url=BASE_URL) as test_client:
         yield test_client, tmp_path
@@ -130,9 +134,8 @@ def child_args(status: dict[str, object]) -> list[str]:
 
 
 def test_presets_endpoint_matches_the_cli_listing(
-    client: TestClient, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    client: TestClient, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(orchestration, "configured_disabled_runtimes", lambda: frozenset())
     response = client.get("/presets")
     assert response.status_code == 200
     entry_module.main(["presets", "--json"])

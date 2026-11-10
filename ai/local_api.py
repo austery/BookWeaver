@@ -10,8 +10,8 @@ reported by the CLI before anything starts.
 from __future__ import annotations
 
 import fcntl
-import inspect
 import filecmp
+import inspect
 import json
 import os
 import signal
@@ -785,6 +785,6 @@ def create_app(
     return app
 
 
-def serve(port: int) -> None:
+def serve(port: int, app: FastAPI | None = None) -> None:
     """Run the API in the foreground until interrupted; never binds beyond this Mac."""
-    uvicorn.run(create_app(port=port), host=HOST, port=port)
+    uvicorn.run(app or create_app(port=port), host=HOST, port=port)
