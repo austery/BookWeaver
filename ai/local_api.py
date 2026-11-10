@@ -444,8 +444,37 @@ def create_app(
     state_dir: Path | None = None,
     child_command: Sequence[str] = _CHILD_COMMAND,
     library_dir: Path | None = None,
+    disabled_runtimes: frozenset[str] | None = None,
 ) -> FastAPI:
-    """Build the API; separate from ``serve`` so tests can call it without a socket."""
+    """Build the API; separate from ``serve`` so tests can call it without a socket.
+
+    ``disabled_runtimes`` defaults to ``runtimes.disabled`` read once from the configuration
+    (SPEC-028 §3.12); restart ``serve`` after changing it.
+    """
+    disabled = (
+        disabled_runtimes
+        if disabled_runtimes is not None
+        else orchestration.configured_disabled_runtimes()
+    )
+    available = [p for p in orchestration.enabled_presets() if p.runtime not in disabled]
+    # The upload dropdown lists only presets a run may use. A disabled default leaves no
+    # default (None): the upload then requires an explicit preset, never a silent substitute.
+    UploadPreset = StrEnum("PresetName", [(p.name, p.name) for p in available])  # type: ignore[misc]
+    upload_default = (
+        UploadPreset(DEFAULT_PRESET.value)
+        if DEFAULT_PRESET.value in {p.name for p in available}
+        else None
+    )
+    preset_field = Form(description="Model and effort to use, as `GET /presets` explains them.")
+
+    def _with_preset_choices(endpoint: Callable[..., RunStatus]) -> Callable[..., RunStatus]:
+        """Give ``preset`` this app's choices; this module's string annotations cannot name a
+        type built here, so the object replaces the string before FastAPI reads the signature."""
+        # Optional only without a default: anyOf with null would hide the dropdown otherwise.
+        choice = UploadPreset if upload_default is not None else UploadPreset | None
+        endpoint.__annotations__["preset"] = Annotated[choice, preset_field]
+        return endpoint
+
     store = _RunStore(state_dir or default_state_dir())
     library = library_dir or default_library_dir()
     children: dict[str, subprocess.Popen[bytes]] = {}
@@ -476,18 +505,17 @@ def create_app(
         response_model=list[orchestration.Preset],
         summary="List enabled presets",
         description=(
-            "Every selection a run may use, the default preset first. Metered presets are paid "
-            "and need per-run consent. Presets on a runtime that `runtimes.disabled` in the "
-            "configuration switches off are left out."
+            "Every selection a run may use, the default preset first unless its runtime is "
+            "disabled. Metered presets are paid and need per-run consent. Presets on a runtime "
+            "that `runtimes.disabled` in the configuration switches off are left out."
         ),
     )
     def list_presets() -> list[orchestration.Preset]:
-        disabled = orchestration.configured_disabled_runtimes()
-        return [p for p in orchestration.enabled_presets() if p.runtime not in disabled]
+        return available
 
     def refuse_disabled(preset: orchestration.Preset) -> None:
         """SPEC-028 §3.12: the run would fail before any call; say so before starting it."""
-        if preset.runtime in orchestration.configured_disabled_runtimes():
+        if preset.runtime in disabled:
             raise HTTPException(
                 400,
                 f"Preset {preset.name} runs on {preset.runtime}, which runtimes.disabled in "
@@ -624,6 +652,7 @@ def create_app(
             "fails, because this API has no `--force-resume`. Only one run at a time."
         ),
     )
+    @_with_preset_choices
     def upload_run(
         file: Annotated[
             UploadFile,
@@ -633,10 +662,7 @@ def create_app(
             str,
             Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
-        preset: Annotated[
-            PresetName,
-            Form(description="Model and effort to use, as `GET /presets` explains them."),
-        ] = DEFAULT_PRESET,
+        preset: Annotated[str | None, preset_field] = upload_default,  # see _with_preset_choices
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
@@ -658,8 +684,13 @@ def create_app(
             Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
     ) -> RunStatus:
-        selected = orchestration.find_preset(preset.value)
-        refuse_disabled(selected)
+        if preset is None:
+            raise HTTPException(
+                400,
+                "The default preset's runtime is switched off by runtimes.disabled; choose a preset",
+            )
+        # The dropdown holds only presets on enabled runtimes (refuse_disabled guards POST /runs).
+        selected = orchestration.find_preset(preset)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:
             raise HTTPException(400, "prompt must not contain a NUL character")

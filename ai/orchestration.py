@@ -37,8 +37,9 @@ from ai.model_profiles import (
     Preset as Preset,
     enabled_presets as enabled_presets,
     find_preset as find_preset,
-    disabled_runtimes as disabled_runtimes,
+    disabled_runtimes,
     is_metered,
+    model_runtime,
     refuse_disabled_runtime,
     resolve_preset,
     resolve_profile,
@@ -145,7 +146,7 @@ def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel
     reported = provider.backend if provider is not None else None
     if reported:
         return reported
-    return (model.runtime or "antigravity") if model.provider == "cli" else "any_llm"
+    return model_runtime(model) if model.provider == "cli" else "any_llm"
 
 
 def _refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:

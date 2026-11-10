@@ -202,7 +202,11 @@ def presets_main(tokens: list[str]) -> None:
     parser.add_argument("--json", action="store_true", help="Print presets as JSON")
     args = parser.parse_args(tokens)
     presets = orchestration.enabled_presets()
-    disabled = orchestration.configured_disabled_runtimes()
+    try:
+        disabled = orchestration.configured_disabled_runtimes()
+    except ValueError as exc:
+        # The listing marks disabled runtimes, so it now reads the configuration.
+        parser.exit(2, f"bookweaver presets: {exc}\n")
     if args.json:
         listed = [
             {**asdict(p), "status": "disabled" if p.runtime in disabled else p.status}

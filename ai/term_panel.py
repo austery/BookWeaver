@@ -246,12 +246,11 @@ def plan_panel(
     return PanelPlan(panel, identity, directory, max_terms, nominator_terms, mode)
 
 
-def refuse_disabled_members(panel: ResolvedPanel, config: Mapping[str, object]) -> None:
-    """SPEC-028 §3.12: a panel that must call a disabled runtime stops and names the member.
-
-    Checked only when the panel will run; a cached glossary needs no member.
-    """
-    for member in (*panel.nominators, *panel.judges):
+def _refuse_disabled_members(
+    panel: ResolvedPanel, members: Sequence[PanelMember], config: Mapping[str, object]
+) -> None:
+    """SPEC-028 §3.12: a member that must be called on a disabled runtime stops the panel."""
+    for member in members:
         try:
             refuse_disabled_runtime(member.model, config, f"Term Panel member {member.preset.name}")
         except ValueError as exc:
@@ -275,7 +274,6 @@ def run_panel(
     if glossary_path.exists():
         log(f"[terms] Reusing the {panel.name} glossary: {glossary_path}")
         return PanelOutcome(glossary_path, report_path, True)
-    refuse_disabled_members(panel, config)
 
     located = locate_index_and_toc(epub_path)
     if not has_usable_index(epub_path, located.index_text):
@@ -299,7 +297,11 @@ def run_panel(
     checked: set[str] = set()
 
     def ensure_ready(members: Sequence[PanelMember]) -> None:
-        """SPEC-028 §3.12: check only members that will be called, all before the next call."""
+        """SPEC-028 §3.12: check only members that will be called, all before the next call.
+
+        A member whose replies are all saved is never checked, so its runtime may be disabled.
+        """
+        _refuse_disabled_members(panel, members, config)
         for member in members:
             if member.preset.name not in checked:
                 providers[member.preset.name].check_ready()

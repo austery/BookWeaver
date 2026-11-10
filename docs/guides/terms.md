@@ -43,7 +43,7 @@ To choose the terms and translate in one command, pass `--term-panel NAME` to th
 uv run bookweaver BOOK.epub --output OUT.epub --preset agy-flash-low --term-panel three-vendor
 ```
 
-- It uses the same cache as `bookweaver terms` (beside the EPUB), so a glossary that command already wrote is reused with no model call.
+- It uses the same cache as `bookweaver terms` (beside the EPUB), so a glossary that command already wrote is reused with no model call. If you ran `bookweaver terms` with `--output-dir`, pass the printed path with `--glossary` instead; `--term-panel` looks only beside the EPUB.
 - It replaces term extraction: it cannot be combined with `--glossary`, `--extraction-model` or `--extract-glossary`, and it overrides `terminology_extraction.enabled` in the configuration.
 - The run's audit file (`.bookweaver_runs/<run_id>.json`) names the panel and its members in `term_panel`.
 - The local API upload does not offer a panel yet (issue 100, SPEC-028 Phase 4).
@@ -56,4 +56,4 @@ If you no longer have a subscription, list its runtime in your configuration:
 "runtimes": {"disabled": ["codex"]}
 ```
 
-The names are `antigravity`, `codex`, `claude-code`, `gemini`, `openai` and `anthropic`. The runtime's presets then leave `GET /presets`, show `disabled` in `bookweaver presets`, and any run that must call one stops before the call. Remove the runtime from your panels as well. A book whose panel glossary is already cached still resumes.
+The names are `antigravity`, `codex`, `claude-code`, `gemini`, `openai` and `anthropic`. The runtime's presets then leave `GET /presets` and the upload's preset list, show `disabled` in `bookweaver presets`, and any run that must call one stops before the call. If the default preset's runtime is disabled, the upload has no default and asks you to choose. Restart `bookweaver serve` after you change the list. Remove the runtime from your panels as well. A book whose panel glossary is already cached still resumes.

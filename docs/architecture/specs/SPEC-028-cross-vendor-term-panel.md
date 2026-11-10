@@ -183,7 +183,7 @@ These are Structure paths in `docs/agents/impact-radius.md`. This list is the de
 | Model registry (`ai/model_profiles.py`) | `vendor` on every preset, subscription and metered; no `model_id` changes |
 | Deep Scan prompt (`ai/glossary_extractor.py`, Phase 5) | Real title and table of contents; bumps `extractor_version` for Deep Scan caches only |
 | Term report (`term-consistency.json`) | Per-tier grading; reports without tiers keep their current shape |
-| Invocation audit (`.bookweaver_runs/<run_id>.json`, Phase 2b) | New field `term_panel`: `null`, or the panel `name`, its cache `identity`, `reused`, and `members` (each `role`, `preset`, `model`), recorded before any member is created. `extraction_model` keeps its meaning and is `null` on a panel run. Votes and failures stay in `term-panel-report.json`. Owner decision, 2026-11-10 |
+| Invocation audit (`.bookweaver_runs/<run_id>.json`, Phase 2b) | New field `term_panel`: `null`, or the panel `name`, its cache `identity`, `reused`, and `members` (each `role`, `preset`, `model`). It is set before any member is created, so a refused or failing member still appears; like every audit field, it is written when the run ends, including on an exception, but not when the process is killed. `extraction_model` keeps its meaning and is `null` on a panel run. Votes and failures stay in `term-panel-report.json`. Owner decision, 2026-11-10 |
 
 No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only for books that use it.
 
@@ -195,8 +195,8 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 - A panel that names a disabled or logged-out member stops before any call and names the member. The program never shrinks a panel silently.
 - Readiness before any model call means login, version and, where the runtime lists its models, the roster. Claude Code has no model list, so a Claude model the account cannot use is found by its compatibility probe on first use; by then earlier nominators may have answered. Their replies are saved, so the rerun repeats no call.
 - Availability is checked only when a member must be called. A book whose panel glossary is already cached resumes even after a member's subscription ended.
-- If the default preset's runtime is disabled, `GET /presets` marks it and the upload requires an explicit preset; the default never changes silently.
-- Delivered in Phase 2b: `bookweaver presets` (table and `--json`) shows `disabled` as the status of such presets; `GET /presets` leaves them out; `POST /runs/upload` and `POST /runs` refuse them with 400 before starting a child; a translation, extraction or panel member on a disabled runtime fails before any call. The upload's preset dropdown is built when the module loads, before the configuration is read, so it still lists them; it moves to Phase 4 with the default-preset rule above.
+- If the default preset's runtime is disabled, it leaves `GET /presets` like any other disabled preset, and the upload requires an explicit preset; the default never changes silently.
+- Delivered in Phase 2b: `bookweaver presets` (table and `--json`) shows `disabled` as the status of such presets; `GET /presets` and the upload's preset dropdown leave them out, read once when `serve` starts; a disabled default leaves the upload without a default, so it requires an explicit preset; `POST /runs/upload` and `POST /runs` refuse a disabled preset with 400 before starting a child; a translation model or panel member on a disabled runtime fails before any call.
 - The local API may show login status from the existing login checks (`codex login status`, `claude auth status`), which spend no quota. It only reports; it never edits a panel.
 
 ### 3.13 Deep Scan with a panel

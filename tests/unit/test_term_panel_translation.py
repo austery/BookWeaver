@@ -10,6 +10,7 @@ import json
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
@@ -235,7 +236,9 @@ def test_a_disabled_member_stops_the_panel_and_the_audit_names_the_panel(
         PanelError, match=r"member codex-gpt-6.1-sol-low \(gpt-6.1-sol-low\) runs on codex"
     ):
         _translate(book, tmp_path / "out.epub", factory, config=config)
-    assert factory.created == []
+    # Members are constructed (no side effect) but none is checked or called.
+    assert factory.calls == [] and factory.checked == []
+    assert "segment_tags" not in {protocol for _, protocol in factory.created}
     panel = factory.audits[-1]["term_panel"]
     assert isinstance(panel, dict) and panel["name"] == "three-vendor"
 
@@ -254,6 +257,24 @@ def test_a_cached_panel_glossary_resumes_after_a_member_runtime_is_disabled(
     assert factory.calls == []
 
 
+def test_a_member_whose_replies_are_saved_may_be_disabled_on_a_rerun(
+    book: Path, tmp_path: Path
+) -> None:
+    """SPEC-028 §3.7 and §3.12: a stopped panel reruns only the missing members."""
+    broken = PanelAndTranslator()
+    broken.broken_judge = "claude"
+    with pytest.raises(PanelError, match="judge reply 1 is unusable"):
+        _translate(book, tmp_path / "out.epub", broken)
+    factory = PanelAndTranslator()
+    config = {**_PANEL, "runtimes": {"disabled": ["codex"]}}  # its replies are all saved
+
+    summary = _translate(book, tmp_path / "out.epub", factory, config=config)
+
+    assert factory.calls == [("claude", "judge")]
+    assert factory.checked == ["claude-opus-5-5-low"]
+    assert summary.translated_segments == summary.total_segments
+
+
 def test_a_disabled_translation_runtime_fails_before_any_call(book: Path, tmp_path: Path) -> None:
     factory = PanelAndTranslator()
     config = {"runtimes": {"disabled": ["antigravity"]}}
@@ -268,8 +289,6 @@ def test_a_disabled_translation_runtime_fails_before_any_call(book: Path, tmp_pa
 def test_the_schema_names_every_runtime_and_nothing_else() -> None:
     schema = json.loads((Path(orchestration.__file__).parent / "config_schema.json").read_text())
     names = schema["properties"]["runtimes"]["properties"]["disabled"]["items"]["enum"]
-    from typing import get_args
-
     assert set(names) == set(get_args(CliRuntime)) | set(get_args(MeteredProvider))
     with pytest.raises(ValueError, match="Unsupported value"):
         orchestration.validate_config({"runtimes": {"disabled": ["copilot"]}})
@@ -340,6 +359,67 @@ def test_local_api_leaves_disabled_presets_out_and_refuses_them(
         files={"file": ("book.epub", source.read_bytes(), "application/epub+zip")},
         data={"preset": "codex-gpt-6.1-sol-low"},
     )
+    assert response.status_code == 422  # not among the dropdown's choices
+    assert not (tmp_path / "library").exists() or not any((tmp_path / "library").rglob("*.epub"))
+
+
+def test_post_runs_refuses_a_disabled_preset(api: TestClient, tmp_path: Path) -> None:
+    source = tmp_path / "book.epub"
+    _book(source)
+
+    response = api.post(
+        "/runs",
+        json={
+            "source": str(source),
+            "output": str(tmp_path / "out.epub"),
+            "preset": "codex-gpt-6.1-sol-low",
+        },
+    )
+
     assert response.status_code == 400
     assert "runtimes.disabled" in response.json()["detail"]
-    assert not (tmp_path / "library").exists() or not any((tmp_path / "library").rglob("*.epub"))
+
+
+def test_the_upload_has_no_default_when_the_default_runtime_is_disabled(tmp_path: Path) -> None:
+    app = local_api.create_app(
+        state_dir=tmp_path / "state",
+        library_dir=tmp_path / "library",
+        disabled_runtimes=frozenset({"antigravity"}),
+    )
+    client = TestClient(app, base_url="http://127.0.0.1:8765")
+    schema = client.get("/openapi.json").json()
+    form = next(
+        value for name, value in schema["components"]["schemas"].items() if "upload" in name.lower()
+    )
+    assert form["properties"]["preset"].get("default") is None  # no silent default
+    choices = schema["components"]["schemas"]["PresetName"]["enum"]
+    assert choices and not any(name.startswith("agy-") for name in choices)
+    assert client.get("/presets").json()[0]["runtime"] != "antigravity"
+    source = tmp_path / "book.epub"
+    _book(source)
+    response = client.post(
+        "/runs/upload", files={"file": ("book.epub", source.read_bytes(), "application/epub+zip")}
+    )
+    assert response.status_code == 400
+    assert "choose a preset" in response.json()["detail"]
+
+
+def test_presets_read_runtimes_disabled_from_the_configuration_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No patch: the user configuration file reaches the listing."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    user_config = tmp_path / ".config" / "bookweaver" / "config.json"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text('{"runtimes": {"disabled": ["claude-code"]}}')
+
+    cli.main(["presets", "--json"])
+    listed = {p["name"]: p["status"] for p in json.loads(capsys.readouterr().out)}
+    assert listed["claude-opus-5-5-low"] == "disabled"
+    assert listed["agy-flash-low"] == "default"
+
+    user_config.write_text('{"runtimes": {"disabled": ["copilot"]}}')
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(["presets"])
+    assert exit_info.value.code == 2
+    assert "Invalid runtime configuration" in capsys.readouterr().err

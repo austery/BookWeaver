@@ -219,7 +219,8 @@ def _plan_panel_glossary(
         for flag, given in (
             ("--glossary", glossary_path is not None),
             ("--extraction-model", extraction_model is not None),
-            ("--extract-glossary", extract),
+            # The CLI sets `extract` for --extraction-model too; name only what was passed.
+            ("--extract-glossary", extract and extraction_model is None),
         )
         if given
     ]
