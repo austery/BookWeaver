@@ -74,6 +74,8 @@ class TestSplitResponse:
         assert split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS) == ["甲", "乙"]
 
     def test_segment_tags_allows_empty_segment_body(self) -> None:
+        # The parser returns the blank body; TranslationEngine then fails the batch so it
+        # never reaches the checkpoint (tests/unit/test_core_engine.py).
         text = '<segment id="1">甲</segment>\n<segment id="2">   </segment>'
         assert split_response(text, 2, protocol=PROTOCOL_SEGMENT_TAGS) == ["甲", ""]
 

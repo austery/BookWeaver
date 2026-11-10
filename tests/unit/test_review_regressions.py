@@ -382,14 +382,15 @@ def test_a_blank_segment_in_a_reply_does_not_poison_the_checkpoint(tmp_path: Pat
     assert again.calls == 0
 
 
-def test_a_persistent_blank_segment_stops_and_leaves_the_checkpoint_loadable(
+def test_a_segment_that_stays_blank_stops_after_the_saved_batches_and_resumes_later(
     tmp_path: Path,
 ) -> None:
     from ai.ports.provider import TranslationError
 
     source, output = tmp_path / "book.epub", tmp_path / "out.epub"
     make_epub(source)
-    options = EpubTranslationOptions(config={})
+    # One segment per batch: the first batch is saved before the blank one stops the run.
+    options = EpubTranslationOptions(config={}, quality=QualityPolicy(max_batch_chars=30))
     with pytest.raises(TranslationError, match="empty translation"):
         TranslationOrchestrator(
             provider_factory=_OneProviderFactory(_BlankSecondBodyProvider(blank_singles=True))
@@ -399,4 +400,5 @@ def test_a_persistent_blank_segment_stops_and_leaves_the_checkpoint_loadable(
     result = TranslationOrchestrator(provider_factory=_OneProviderFactory(good)).translate(
         source, output, options, input_format="epub"
     )
-    assert result.translated_segments == 2
+    assert result.resumed_segments == 1
+    assert good.calls == 1
