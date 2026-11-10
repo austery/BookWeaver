@@ -176,6 +176,7 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 - [x] Owner confirmed on 2026-11-09: one vote per vendor (§3.2), not one per preset.
 - [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement; in the replay it chose Opus.
 - [x] Run-to-run register variation, measured on ch007 (2026-11-10): two strict runs differed by 0.54 per 1,000 characters; the 91-term glossary did not lower register there.
+- [ ] Owner feedback, 2026-11-10: do not normalize terms fully; adapting a word to the sentence is welcome. Phase 2 should keep the `fixed` tier narrow (the author's coined concepts, names and titles, established doctrines) and leave ordinary words `preferred`. Decide whether §3.4 rule 6 needs a judge field for this, or only a sharper `enforce` instruction in the judge prompt.
 - [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
 - [ ] Confirm the prompt limit per runtime before relying on one-call judging.
 - [ ] `duplicate_of` is new; no judge has produced it yet.

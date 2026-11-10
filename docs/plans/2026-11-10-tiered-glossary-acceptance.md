@@ -26,9 +26,11 @@ The decision gate was written before the run (SPEC-028 §6 item 1): no fixed dri
 - **Register:** the two strict runs differ by 0.54. The tiered run is 0.64 above the higher strict run. This is one run per setting, so it is an indication, not a measurement of effect size.
 - **Size of change:** mean per-segment text similarity was 0.814 between the two strict runs and 0.772 between strict and tiered. Tiers changed some wording beyond the terms, modestly.
 - **Alternatives used:** Ortega y Gasset twice as 何塞·奥尔特加-加塞特, and Transcendence once as 超越者. Both were judge-approved alternatives.
-- **Owner:** read the 35 segments side by side and chose the tiered version.
+- **Owner:** read the 35 segments side by side and chose the tiered version. By eye, the three versions differ little. The owner liked that the translator did not force one word everywhere: all three versions, the strict ones included, wrote 习俗 in 2 segments and 社会约定 in 5 for Convention. The owner does not want full normalization of terms.
 
 ## Side findings
+
+- A strict instruction does not force full uniformity either: Flash still adapted Convention to 习俗 where the sentence needed it. So the tier mainly changes how far the translator may adapt, not whether it can.
 
 - The earlier register drop on chapters 1 and 2 (5.53 and 5.98 with the same 91 terms) did not recur here: strict ch007 scored 6.15 and 6.69. The chapter, not the glossary size, more likely explains it.
 - Essentially Equal (本质上平等) and Essentially Superior (本质上优越) missed in every version. They are phrases that bend to fit a sentence (在本质上是平等的), so they are poor glossary terms. That is a term-selection problem for Phase 2, not a tier problem.
