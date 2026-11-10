@@ -68,6 +68,10 @@ _RUNTIME_PREFIX: dict[CliRuntime, str] = {
 }
 _CODEX_EVIDENCE = "offline fake-server capture only; probed automatically on first use"
 _CODEX_LIVE_EVIDENCE = "codex-cli 0.167.0 live probe 2026-11-09 (segment_tags and delimiter)"
+_CODEX_TERRA_EVIDENCE = (
+    "codex-cli 0.167.0 live probe 2026-11-09 (segment_tags; delimiter probed automatically on "
+    "first use); translated Political Thinking ch1-2 and A Philosophy of Software Design"
+)
 _CLAUDE_CODE_LIVE_EVIDENCE = (
     "Claude Code 2.1.311 live probe 2026-11-09 (segment_tags and delimiter)"
 )
@@ -127,8 +131,17 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
     ),
     # Owner decision 2026-11-09: several models stay selectable until test rounds pick one, all at
     # low effort. Astra costs the most, so no bare tier ever resolves to it.
+    # Owner decision 2026-11-10: the Codex flash tier means Terra; Luna runs only by name.
     _CliPreset(
-        "codex", "flash", "gpt-6-luna", "low", "experiment", 2, _CODEX_LIVE_EVIDENCE, "gpt-6-luna"
+        "codex",
+        "flash",
+        "gpt-6-luna",
+        "low",
+        "experiment",
+        2,
+        _CODEX_LIVE_EVIDENCE,
+        "gpt-6-luna",
+        tier_default=False,
     ),
     _CliPreset(
         "codex",
@@ -136,10 +149,9 @@ _CLI_PRESETS: tuple[_CliPreset, ...] = (
         "gpt-6.1-terra",
         "low",
         "experiment",
-        1,
-        _CODEX_EVIDENCE,
+        2,
+        _CODEX_TERRA_EVIDENCE,
         "gpt-6.1-terra",
-        tier_default=False,
     ),
     _CliPreset(
         "codex", "pro", "gpt-6.1-sol", "low", "experiment", 2, _CODEX_LIVE_EVIDENCE, "gpt-6.1-sol"

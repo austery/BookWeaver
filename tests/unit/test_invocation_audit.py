@@ -220,7 +220,7 @@ def test_run_reports_saved_terms_it_reuses(
 
 
 @pytest.mark.parametrize(
-    "extraction_model,expected", [("flash", "gpt-6-luna-low"), ("pro", "gpt-6.1-sol-low")]
+    "extraction_model,expected", [("flash", "gpt-6.1-terra-low"), ("pro", "gpt-6.1-sol-low")]
 )
 def test_a_codex_run_extracts_terms_on_codex_and_records_its_runtime(
     tmp_path: Path, extraction_model: str, expected: str
