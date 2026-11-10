@@ -2,10 +2,10 @@
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
 status: Draft for owner review (2026-11-09)
-implementationStatus: Phase 1 implemented offline (2026-11-09); its live acceptance has not run; Phases 2-4 not started
+implementationStatus: Phase 1 implemented (PR 94) and adopted by the owner after live acceptance (2026-11-10); Phases 2-4 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
-lastUpdateDate: 2026-11-09
+lastUpdateDate: 2026-11-10
 owner: User (AI-Assisted)
 relatedSpecs: [SPEC-010, SPEC-015, SPEC-024, SPEC-025]
 tags:
@@ -175,14 +175,14 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 
 - [x] Owner confirmed on 2026-11-09: one vote per vendor (§3.2), not one per preset.
 - [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement; in the replay it chose Opus.
-- [ ] Measure run-to-run register variation of Flash on chapters 1 and 2, and whether glossary size lowers it (§2).
+- [x] Run-to-run register variation, measured on ch007 (2026-11-10): two strict runs differed by 0.54 per 1,000 characters; the 91-term glossary did not lower register there.
 - [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
 - [ ] Confirm the prompt limit per runtime before relying on one-call judging.
 - [ ] `duplicate_of` is new; no judge has produced it yet.
 
 ## 6. Phases
 
-1. **Tiered glossary.** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report.
+1. **Tiered glossary (done; adopted 2026-11-10, `docs/plans/2026-11-10-tiered-glossary-acceptance.md`).** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report.
    - Live acceptance: one chapter with several `preferred` terms (where Cosmic morale or Socratic civility occur; chapters 1 and 2 hold only nine), translated strict and tiered with the same glossary. Also measure register for both.
    - Gate, fixed before the run: adopt tiers when `fixed` drift is zero in the tiered version, register does not fall, and the owner does not prefer the strict version. Otherwise keep one strict block and record why. Closes issue 82 either way.
 2. **Panel on the index path, subscription presets only.** Vendor field, candidates with sentences, judges, aggregator, report, cache, saved replies, CLI and configuration. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, cache identity.
