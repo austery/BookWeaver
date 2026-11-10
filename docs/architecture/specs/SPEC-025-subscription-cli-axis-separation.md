@@ -176,7 +176,7 @@ Initial presets (proposal for owner review):
 | antigravity | flash | `gemini-3.8-flash` | medium, high | experiment | Layer 1; kept for effort comparison (low is the normal choice for translation); probed automatically on first use |
 | antigravity | pro | `gemini-4-argon` | low | experiment | Layer 2 (agy 1.5.3 probe, both protocols) |
 | antigravity | pro | `gemini-4-argon` | high | experiment | Layer 1; probed automatically on first use |
-| codex | flash | `gpt-6-luna` (tier default), `gpt-6.1-terra` | low | experiment | Luna Layer 2 (codex-cli 0.167.0 probe); Terra Layer 1, probed automatically on first use |
+| codex | flash | `gpt-6.1-terra` (tier default since 2026-11-10, owner decision), `gpt-6-luna` | low | experiment | Terra Layer 2 (segment_tags probe; translated Political Thinking ch1-2 and A Philosophy of Software Design; delimiter probed on first use); Luna Layer 2 (codex-cli 0.167.0 probe) |
 | codex | pro | `gpt-6.1-sol` (tier default), `gpt-6-astra` | low | experiment | Sol Layer 2 (codex-cli 0.167.0 probe); Astra Layer 1, probed automatically on first use |
 | claude-code | flash / pro | `claude-sonnet-5-5` / `claude-opus-5-5` | low | experiment | none yet |
 | anthropic / gemini API | flash / pro | as pinned in SPEC-024 | vendor-pinned | manual (paid) | Layer 2 offline only |

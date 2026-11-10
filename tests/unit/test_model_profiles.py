@@ -115,7 +115,7 @@ def test_presets_are_unique_default_first_and_resolve_to_their_model() -> None:
 
 def test_a_bare_tier_stays_on_antigravity_and_never_means_astra() -> None:
     assert resolve_profile("flash", effort="low").model_id == "gemini-3.8-flash-low"
-    assert resolve_profile("flash", runtime="codex").model_id == "gpt-6-luna-low"
+    assert resolve_profile("flash", runtime="codex").model_id == "gpt-6.1-terra-low"
     assert resolve_profile("pro", runtime="codex").model_id == "gpt-6.1-sol-low"
     assert resolve_preset("codex-gpt-6-astra-low").model_id == "gpt-6-astra-low"
 
