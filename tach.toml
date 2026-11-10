@@ -39,7 +39,7 @@ utility = true
 # Current invocation composition.
 [[modules]]
 path = "ai.orchestration"
-depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.glossary_extractor", "ai.term_panel"]
+depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.term_panel", "ai.term_extraction"]
 
 [[modules]]
 path = "ai.runtime_factory"
@@ -68,6 +68,11 @@ depends_on = []
 [[modules]]
 path = "ai.glossary_extractor"
 depends_on = ["ai.core", "ai.epub_package"]
+
+# Which glossary a run uses and which model extracts it (SPEC-028 Phase 2b, first step).
+[[modules]]
+path = "ai.term_extraction"
+depends_on = ["ai.ports", "ai.model_profiles", "ai.glossary_extractor"]
 
 # Term Panel runner (SPEC-028): its only output is a glossary file. Only run_term_panel in
 # ai.orchestration calls it; the translation functions do not (not enforced by tach).

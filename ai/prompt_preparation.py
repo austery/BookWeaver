@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -146,31 +145,3 @@ class PromptPreparation:
                 .replace("{CUSTOM_INSTRUCTIONS_BLOCK}", self.custom_prompt or "")
             )
         return EffectivePrompt(text, hashlib.sha256(text.encode()).hexdigest())
-
-
-def glossary_cache_path(
-    directory: Path,
-    *,
-    source_signature: str | None,
-    mode: str,
-    max_terms: int,
-    model_id: str,
-    effort: str | None,
-) -> Path:
-    """Preserve the version-1 extraction identity independently of output names."""
-    identity = json.dumps(
-        {
-            "source": source_signature,
-            "mode": mode,
-            "max_terms": max_terms,
-            "model": model_id,
-            "effort": effort,
-            "extractor_version": 1,
-        },
-        sort_keys=True,
-    )
-    return (
-        directory
-        / ".bookweaver_glossaries"
-        / f"{hashlib.sha256(identity.encode()).hexdigest()}.json"
-    )

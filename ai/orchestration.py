@@ -45,9 +45,13 @@ from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
 from ai.term_panel import PanelError, resolve_panel, run_panel
 from ai.term_panel import ProviderFactory as PanelProviderFactory
-from ai.prompt_preparation import (
-    PromptPreparation,
-    glossary_cache_path,
+from ai.prompt_preparation import PromptPreparation
+from ai.term_extraction import (
+    announce_extraction,
+    configured_term_limit,
+    extract_glossary,
+    plan_glossary,
+    report_reuse,
 )
 from ai.ports.source import IBookSource
 
@@ -55,7 +59,6 @@ from ai.adapters.providers._delimiter import SEPARATOR_OVERHEAD
 from ai.adapters.sources.epub_adapter import EpubSourceAdapter
 from ai.core.engine import EngineConfig, TranslationEngine
 from ai.core.glossary import GlossaryManager, TermUsage, measure_term_usage
-from ai.core.glossary_resolution import resolve_glossary_request
 
 # TranslationError is re-exported for ai.cli, which may import only this module (tach).
 from ai.ports.provider import ITranslationProvider, TranslationError as TranslationError
@@ -319,73 +322,37 @@ class TranslationOrchestrator:
                     )
                     if not resume.force:
                         _refuse_trial_model_change(saved, model)
-            glossary_path = glossary.path
-            request = resolve_glossary_request(
-                glossary=str(glossary_path) if glossary_path else None,
-                glossary_mode=glossary.mode,
-                extract_glossary=glossary.extract or extraction.get("enabled") is True,
+            glossary_plan = plan_glossary(
+                glossary_path=glossary.path,
+                requested_mode=glossary.mode,
+                extract=glossary.extract or extraction.get("enabled") is True,
+                max_terms=glossary.max_terms,
+                extraction_model=glossary.extraction_model,
+                config=config,
+                translation_model=model,
+                book_dir=output_file.parent,
+                source_signature=content_signature,
+                may_reuse=store is not None,
             )
-            if glossary.max_terms is not None and glossary.max_terms <= 0:
-                raise ValueError("glossary_max_terms must be positive")
-            if request.mode in ("auto", "deep-scan"):
-                extraction_model = glossary.extraction_model or extraction.get(
-                    "extraction_model", "pro"
+            planned = glossary_plan.extraction
+            if planned is not None and planned.reused:
+                report_reuse(planned)
+            if planned is not None and not planned.reused:
+                active_model = planned.model
+                extraction_used = planned.model
+                active_requested_effort = None
+                active_provider = None
+                announce_extraction(planned, model)
+                extractor = factory.create(
+                    planned.model,
+                    protocol="delimiter",
+                    config=config,
+                    allow_paid_api=options.provider.allow_paid_api,
+                    remaining_chars=source_chars,
                 )
-                term_limit = (
-                    glossary.max_terms
-                    if glossary.max_terms is not None
-                    else _configured_term_limit(config)
-                )
-                if not isinstance(extraction_model, str) or not isinstance(term_limit, int):
-                    raise ValueError("Invalid terminology extraction configuration")
-                extraction_selection = resolve_profile(
-                    extraction_model, provider=model.provider, runtime=model.runtime
-                )
-                glossary_path = glossary_cache_path(
-                    output_file.parent,
-                    source_signature=content_signature,
-                    mode=request.mode,
-                    max_terms=term_limit,
-                    model_id=extraction_selection.model_id,
-                    effort=extraction_selection.effort,
-                )
-                # Cache identity includes the input and extraction request, not the output basename.
-                if store is not None and glossary_path.exists():
-                    print(
-                        "[glossary] Reusing saved terms extracted with "
-                        f"{extraction_selection.model_id}.",
-                        flush=True,
-                    )
-                if store is None or not glossary_path.exists():
-                    active_model = extraction_selection
-                    extraction_used = extraction_selection
-                    active_requested_effort = None
-                    active_provider = None
-                    difference = (
-                        f", not the translation model {model.model_id}; this draws on its quota"
-                        if extraction_selection.model_id != model.model_id
-                        else ""
-                    )
-                    print(
-                        f"[glossary] Term extraction uses {extraction_selection.model_id}{difference}.",
-                        flush=True,
-                    )
-                    extractor = factory.create(
-                        extraction_selection,
-                        protocol="delimiter",
-                        config=config,
-                        allow_paid_api=options.provider.allow_paid_api,
-                        remaining_chars=source_chars,
-                    )
-                    active_provider = extractor
-                    glossary_path.parent.mkdir(parents=True, exist_ok=True)
-                    _extract_glossary_to_path(
-                        epub_path=input_file,
-                        output_path=glossary_path,
-                        provider_adapter=extractor,
-                        max_terms=term_limit,
-                        mode=request.mode,
-                    )
+                active_provider = extractor
+                extract_glossary(planned, epub_path=input_file, provider=extractor)
+            glossary_path = glossary_plan.path
             effective_prompt = prompt_preparation.render(
                 glossary_path, min_priority=glossary.min_priority
             )
@@ -578,7 +545,7 @@ def run_term_panel(
         raise PanelError(f"A Term Panel needs an EPUB file: {source}")
     runtime_config = validate_config(config) if config is not None else load_runtime_config()
     panel = resolve_panel(panel_name, runtime_config)
-    configured = _configured_term_limit(runtime_config)
+    configured = configured_term_limit(runtime_config)
     limit = max_terms if max_terms is not None else configured
     if not isinstance(limit, int) or not isinstance(configured, int) or limit <= 0:
         raise PanelError("The term limit must be a positive integer")
@@ -600,12 +567,6 @@ def run_term_panel(
         factory=factory,
     )
     return outcome.glossary_path
-
-
-def _configured_term_limit(config: dict[str, object]) -> object:
-    """``terminology_extraction.max_terms``, default 20; the caller checks the type."""
-    extraction = config.get("terminology_extraction", {})
-    return extraction.get("max_terms", 20) if isinstance(extraction, dict) else 20
 
 
 def translate_epub(
@@ -910,38 +871,6 @@ def _resolve_checkpoint_dir(
 
 
 # ── Wiring helpers ────────────────────────────────────────────
-
-
-def _extract_glossary_to_path(
-    *,
-    epub_path: Path,
-    output_path: Path,
-    provider_adapter: ITranslationProvider,
-    max_terms: int = 20,
-    mode: str = "auto",
-) -> dict[str, object]:
-    """Extract glossary JSON from EPUB and write to output_path.
-
-    Returns:
-        A report dict with extraction metadata (tier, docs, chars, candidate_count, term_count).
-    """
-    from ai.glossary_extractor import extract_glossary_from_epub
-
-    def translate_fn(prompt: str) -> str:
-        translated = provider_adapter.translate_batch([prompt], system_prompt="")
-        if not translated:
-            msg = "Glossary extraction returned empty response"
-            raise RuntimeError(msg)
-        return translated[0]
-
-    return extract_glossary_from_epub(
-        epub_path=epub_path,
-        output_path=output_path,
-        translate_fn=translate_fn,
-        max_terms=max_terms,
-        full_index=False,
-        mode=mode,
-    )
 
 
 def _resolve_positive_int_config(
