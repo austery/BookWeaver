@@ -95,7 +95,7 @@ Show estimated remaining source volume and mixed-model continuity warning. If gl
 
 Implement #19's strict JSON schema and removed-key migration errors, including schema/loader key parity. Keep only flash/pro public profiles, remove size-driven model switching, and stop reading the example config as production defaults. Preserve ignored user config; report actionable migration steps without rewriting it.
 
-EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-isolated-format`; reject DOCX and unknown formats. (Superseded by ADR-0003, accepted 2026-11-09: issue 53 removed the Markdown/PDF paths and `--allow-isolated-format`; every non-EPUB input now fails with one error. The same holds for `translate_markdown` and `translate_pdf` in §3.1, for the explicit-resume error on isolated runs below, and for the isolated-format gates in §5.) Preserve default-on EPUB resume and the explicit-resume error on isolated runs. Retire legacy shell and numbered Markdown orchestration only after the new entrypoint passes its gates, using Git recovery anchors and separate deletion review. Keep baseline EPUB tooling and evaluation assets. Do not reintroduce the orphaned legacy translation module to accelerate the migration.
+EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-isolated-format`; reject DOCX and unknown formats. (Superseded by ADR-0003, accepted 2026-11-09: issue 53 removed the Markdown/PDF paths and `--allow-isolated-format`; every non-EPUB input now fails with one error. The same holds for `translate_markdown` and `translate_pdf` in §3.1, for the explicit-resume error on isolated runs below, and for the isolated-format gates in §5.) Preserve default-on EPUB resume and the explicit-resume error on isolated runs. Retire legacy shell and numbered Markdown orchestration only after the new entrypoint passes its gates, using Git recovery anchors and separate deletion review. (Done 2026-11-10, issue 21; recovery tag `legacy-before-retirement-2026-11-10`.) Keep baseline EPUB tooling and evaluation assets. Do not reintroduce the orphaned legacy translation module to accelerate the migration.
 
 ## 4. Implementation phases
 
@@ -104,7 +104,7 @@ EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-
 - [ ] **S3 — Runtime and authorization:** implement typed model registry, Antigravity transport/adapter, typed engine policy, paid authorization, and removal of automatic fallback. Route glossary through the same construction and authorization boundary.
 - [ ] **S4 — Public contract:** implement strict config, migration errors, format isolation, documentation, and tested default Flash 3.8 Low selection. Only now advertise Antigravity as the default runtime.
 - [ ] **S5 — Live acceptance:** verify combined model/effort flags, a near-limit synthetic batch, a small actual EPUB through the public command, and interrupted/resumed execution. Then execute the book matrix below.
-- [ ] **S6 — Retirement and delivery:** independently review risky changes, fix findings, retire obsolete paths behind deletion gates, and present final diff and evidence. Commit/push/merge remain subject to existing owner approval rules.
+- [ ] **S6 — Retirement and delivery:** independently review risky changes, fix findings, retire obsolete paths behind deletion gates, and present final diff and evidence. (Retirement done 2026-11-10: issue 21 removed the legacy pipeline, shell entry point and numbered scripts; recovery tag `legacy-before-retirement-2026-11-10`.) Commit/push/merge remain subject to existing owner approval rules.
 
 ## 5. Acceptance criteria
 
@@ -115,7 +115,7 @@ EPUB is the supported CLI surface. Retain Markdown/PDF adapters behind `--allow-
 - [ ] Checkpoint tests inject failures before/after replacement, reject a concurrent writer, preserve committed segments, import valid v1 data, reject corrupt state, and prove zero calls for full resume.
 - [ ] Cross-provider resume reuses matching segments and retains actual per-segment provenance; soft and hard mismatch rules are separately tested.
 - [ ] Config-schema/loader parity, CLI import boundaries, isolated-format gates, and obsolete-runtime deletion checks pass.
-- [ ] `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q` pass. Shell syntax checks apply until shell retirement; compile changed Python modules. Run the repository architecture gate where configured.
+- [ ] `uv run ruff check .`, `uv run ruff format --check .`, and `uv run pytest -q` pass. Shell syntax checks no longer apply: the shell entry point was retired on 2026-11-10; compile changed Python modules. Run the repository architecture gate where configured.
 - [ ] A small EPUB completes through the production composition with real Antigravity; no fake provider is used as live acceptance evidence.
 - [ ] Each selected book has its source hash, exact model/effort, prompt hash, batch settings, duration, checkpoint counts, output path, structural checks, and manual review recorded.
 

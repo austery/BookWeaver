@@ -149,7 +149,7 @@ Active EPUB runs default to at most 200 segments and 60,000 source characters pe
 uv run bookweaver book.epub --output translated.epub --max-batch-segments 150
 ```
 
-The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. Legacy batchers have no segment cap unless explicitly supplied.
+The CLI overrides `epub_resilience.max_batch_segments` in configuration (positive integer). Character limits remain independently configurable. The generic batcher has no segment cap unless one is supplied.
 
 Each Antigravity batch waits up to 600 seconds for a response by default. Large batches or the Pro profile may need longer; set `antigravity.timeout_seconds` (positive number, at most 86400) in configuration. Codex and Claude Code have the same default, with `codex.timeout_seconds` and `claude_code.timeout_seconds`. A timed-out batch fails without automatic retry or paid fallback; committed batches remain resumable.
 
@@ -195,9 +195,9 @@ Custom prompt templates are optional. Supply a matching `prompt_profile` and `pr
 
 ## Scope and verification status
 
-EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. The CLI rejects Markdown, PDF, DOCX and every other input with one EPUB-only error (ADR-0003). Legacy shell and numbered scripts are pending retirement and are not the supported entry point.
+EPUB-to-EPUB is the supported product path. Table cells remain source-only for layout stability. The CLI rejects Markdown, PDF, DOCX and every other input with one EPUB-only error (ADR-0003). The legacy shell entry point and numbered scripts were retired (issue 21); `uv run bookweaver` is the only entry point.
 
-The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, full CLI/config coverage, and legacy retirement remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9) and Claude Code through `--preset claude-*` (SPEC-025 §3.10); the comparison method and first evidence are in the [evaluation record](docs/plans/2026-11-09-translation-evaluation-method.md), and no whole-book comparison has run.
+The migration remains partially accepted. One complete narrative EPUB has run through Flash 3.8 Low with controlled interruption/resume and zero-call full restore. Its [initial validation](docs/plans/2026-09-07-stoic-joy-book-validation.md) and [three-chapter quality revision](docs/plans/2026-09-07-book-quality-polish.md) record evidence and limitations. A second book ran through the local API upload on 2026-11-08, and the owner read the result and accepted its layout and format. Complete reader/layout acceptance, additional books, and full CLI/config coverage remain tracked in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Codex runs through `--preset codex-*` (SPEC-025 §3.9) and Claude Code through `--preset claude-*` (SPEC-025 §3.10); the comparison method and first evidence are in the [evaluation record](docs/plans/2026-11-09-translation-evaluation-method.md), and no whole-book comparison has run.
 
 ```bash
 uv run ruff check .

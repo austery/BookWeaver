@@ -36,9 +36,7 @@ depends_on = ["ai.ports", "ai.epub_package"]
 path = "ai.shared"
 utility = true
 
-# Current invocation composition. Historical helpers remain in this file until retirement.
-# Those helpers import ai.provider_factory and ai.model_resolver inside functions. Neither legacy
-# file is a module here, so this check does not cover them.
+# Current invocation composition.
 [[modules]]
 path = "ai.orchestration"
 depends_on = ["ai.ports", "ai.core", "ai.adapters", "ai.checkpoint_store", "ai.model_profiles", "ai.runtime_factory", "ai.runtime_config", "ai.prompt_preparation", "ai.glossary_extractor", "ai.term_panel"]
