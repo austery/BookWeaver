@@ -24,6 +24,7 @@
     "min_cjk_source_length": 40,
     "heartbeat_chars": 60
   },
+  "runtimes": {"disabled": []},
   "terminology_panels": {
     "three-vendor": {
       "nominators": ["agy-flash-low", "codex-gpt-6.1-sol-low", "claude-opus-5-5-low"],

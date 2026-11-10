@@ -1,13 +1,15 @@
 """Which glossary a translation run uses, and which model extracts it.
 
 One place for the glossary decision that used to be spread over the translation method, the
-prompt module and a request helper. Done before SPEC-028 Phase 2b, so the Term Panel can become
-one more source behind the same plan. It works in two steps so the
-caller can record the extraction model for the audit before it constructs the extractor:
+prompt module and a request helper. The Term Panel (SPEC-028 Phase 2b, ``--term-panel``) is one
+more source behind the same plan. It works in two steps so the caller can record the extraction
+model or the panel for the audit before it constructs any provider:
 
-1. ``plan_glossary`` decides, with no model call: no glossary, the user's file, a cached
-   extraction, or a new extraction (which model, which term limit, which cache file).
-2. ``extract_glossary`` runs a planned extraction with a provider the caller constructed.
+1. ``plan_glossary`` decides, with no model call: no glossary, the user's file, a Term Panel
+   glossary (cached or to run), a cached extraction, or a new extraction (which model, which
+   term limit, which cache file).
+2. ``extract_glossary`` runs a planned extraction with a provider the caller constructed;
+   ``ai.term_panel.run_panel`` runs a planned panel.
 
 Rules kept exactly as before this module existed:
 
@@ -16,6 +18,9 @@ Rules kept exactly as before this module existed:
   extracts again and overwrites the cached file, so a later resume of an older checkpoint made
   with other terms can stop on a prompt mismatch.
 - ``auto`` stops before any model call when the book has no usable index (ADR-0005).
+
+The panel keeps its own rules (SPEC-028 §3.7): its cache lives beside the EPUB, shared by every
+output folder, and a cached panel glossary is reused whether or not the run keeps a resume store.
 """
 
 from __future__ import annotations
@@ -30,6 +35,7 @@ from ai.glossary_extractor import extract_glossary_from_epub
 from ai.model_profiles import resolve_profile
 from ai.ports.model import ResolvedModel
 from ai.ports.provider import ITranslationProvider
+from ai.term_panel import PanelError, PanelPlan, plan_panel, resolve_panel
 
 GlossaryMode = Literal["none", "manual", "auto", "deep-scan"]
 ExtractionMode = Literal["auto", "deep-scan"]
@@ -55,6 +61,25 @@ def configured_term_limit(config: dict[str, object]) -> object:
     if isinstance(extraction, dict):
         return extraction.get("max_terms", DEFAULT_TERM_LIMIT)
     return DEFAULT_TERM_LIMIT
+
+
+def panel_term_limits(config: dict[str, object], max_terms: int | None) -> tuple[int, int]:
+    """The panel's glossary cap and per-nominator request (SPEC-028 §3.4 rule 7).
+
+    The cap is ``max_terms`` or the configured limit; nominators are asked for the configured
+    number, or more when the cap is larger. ``bookweaver terms`` and ``--term-panel`` share this,
+    so both find the same cached glossary.
+    """
+    configured = configured_term_limit(config)
+    limit = max_terms if max_terms is not None else configured
+    if (
+        not isinstance(limit, int)
+        or not isinstance(configured, int)
+        or isinstance(limit, bool)
+        or limit <= 0
+    ):
+        raise PanelError("The term limit must be a positive integer")
+    return limit, max(configured, limit)
 
 
 def glossary_cache_path(
@@ -102,6 +127,7 @@ class GlossaryPlan:
 
     path: Path | None
     extraction: ExtractionPlan | None
+    panel: PanelPlan | None = None
 
     @property
     def needs_extraction(self) -> bool:
@@ -120,13 +146,30 @@ def plan_glossary(
     book_dir: Path,
     source_signature: str | None,
     may_reuse: bool,
+    term_panel: str | None = None,
+    panel_dir: Path | None = None,
 ) -> GlossaryPlan:
     """Decide the run's glossary without any model call.
 
     ``extract`` is an explicit request (``--extract-glossary`` or ``--extraction-model``);
     ``terminology_extraction.enabled`` in ``config`` requests extraction as well.
     ``may_reuse`` is true when the run keeps a resume store.
+    ``term_panel`` names a panel from ``terminology_panels``; it replaces single-model
+    extraction, including extraction the configuration turns on, and keeps its cache in
+    ``panel_dir`` (the EPUB's folder).
     """
+    if term_panel is not None:
+        return _plan_panel_glossary(
+            term_panel,
+            glossary_path=glossary_path,
+            requested_mode=requested_mode,
+            extract=extract,
+            max_terms=max_terms,
+            extraction_model=extraction_model,
+            config=config,
+            panel_dir=panel_dir if panel_dir is not None else book_dir,
+            source_signature=source_signature,
+        )
     extraction = config.get("terminology_extraction", {})
     enabled = isinstance(extraction, dict) and extraction.get("enabled") is True
     mode = _glossary_mode(
@@ -156,6 +199,46 @@ def plan_glossary(
     # Cache identity includes the input and extraction request, not the output basename.
     reused = may_reuse and cache.exists()
     return GlossaryPlan(cache, ExtractionPlan(selection, mode, term_limit, cache, reused))
+
+
+def _plan_panel_glossary(
+    name: str,
+    *,
+    glossary_path: Path | None,
+    requested_mode: str | None,
+    extract: bool,
+    max_terms: int | None,
+    extraction_model: str | None,
+    config: dict[str, object],
+    panel_dir: Path,
+    source_signature: str | None,
+) -> GlossaryPlan:
+    """SPEC-028 §3.10: the conflicts, then the panel's plan; all before any call."""
+    conflicts = [
+        flag
+        for flag, given in (
+            ("--glossary", glossary_path is not None),
+            ("--extraction-model", extraction_model is not None),
+            # The CLI sets `extract` for --extraction-model too; name only what was passed.
+            ("--extract-glossary", extract and extraction_model is None),
+        )
+        if given
+    ]
+    if conflicts:
+        raise PanelError(f"--term-panel chooses the terms; drop {', '.join(conflicts)}")
+    if max_terms is not None and max_terms <= 0:
+        raise ValueError("glossary_max_terms must be positive")
+    panel = resolve_panel(name, config)
+    limit, nominator_terms = panel_term_limits(config, max_terms)
+    plan = plan_panel(
+        panel,
+        book_dir=panel_dir,
+        source_signature=source_signature,
+        max_terms=limit,
+        nominator_terms=nominator_terms,
+        mode=requested_mode or "auto",
+    )
+    return GlossaryPlan(plan.glossary_path, None, plan)
 
 
 def report_reuse(plan: ExtractionPlan) -> None:

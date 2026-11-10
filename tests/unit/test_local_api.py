@@ -68,6 +68,12 @@ def make_epub(path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def no_runtime_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every runtime enabled, whatever the owner's configuration says (SPEC-028 §3.12)."""
+    monkeypatch.setattr(orchestration, "configured_disabled_runtimes", lambda: frozenset())
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(local_api.create_app(), base_url=BASE_URL)

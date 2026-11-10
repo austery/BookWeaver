@@ -54,6 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--glossary", default=None, help="Path to extracted glossary JSON")
     p.add_argument(
+        "--term-panel",
+        default=None,
+        metavar="NAME",
+        help="Choose the terms with a named Term Panel from your configuration, then translate; "
+        "replaces --glossary, --extract-glossary and --extraction-model (SPEC-028)",
+    )
+    p.add_argument(
         "--extraction-model",
         choices=["flash", "pro"],
         default=None,
@@ -143,8 +150,13 @@ def _is_model_flag_explicit(argv: list[str] | None) -> bool:
     return any(token == "--model" or token.startswith("--model=") for token in args)
 
 
-def _format_presets(presets: tuple[orchestration.Preset, ...]) -> str:
-    """Plain table: one preset per line, evidence last because it is free text."""
+def _format_presets(
+    presets: tuple[orchestration.Preset, ...], disabled: frozenset[str] = frozenset()
+) -> str:
+    """Plain table: one preset per line, evidence last because it is free text.
+
+    A preset whose runtime ``runtimes.disabled`` switches off shows STATUS ``disabled``.
+    """
     # Same fields as `presets --json`, in Preset field order.
     header = (
         "PRESET",
@@ -166,7 +178,7 @@ def _format_presets(presets: tuple[orchestration.Preset, ...]) -> str:
             preset.profile,
             preset.effort or "-",
             preset.model_id,
-            preset.status,
+            "disabled" if preset.runtime in disabled else preset.status,
             "-" if preset.layer is None else str(preset.layer),
             preset.vendor,
             preset.evidence,
@@ -190,10 +202,19 @@ def presets_main(tokens: list[str]) -> None:
     parser.add_argument("--json", action="store_true", help="Print presets as JSON")
     args = parser.parse_args(tokens)
     presets = orchestration.enabled_presets()
+    try:
+        disabled = orchestration.configured_disabled_runtimes()
+    except ValueError as exc:
+        # The listing marks disabled runtimes, so it now reads the configuration.
+        parser.exit(2, f"bookweaver presets: {exc}\n")
     if args.json:
-        print(json.dumps([asdict(preset) for preset in presets], indent=2))
+        listed = [
+            {**asdict(p), "status": "disabled" if p.runtime in disabled else p.status}
+            for p in presets
+        ]
+        print(json.dumps(listed, indent=2))
     else:
-        print(_format_presets(presets))
+        print(_format_presets(presets, disabled))
 
 
 def terms_main(tokens: list[str]) -> None:
@@ -247,7 +268,12 @@ def serve_main(tokens: list[str]) -> None:
             "install it with: uv sync --extra api (in a checkout), "
             "or install the bookweaver[api] package"
         )
-    local_api.serve(args.port)
+    try:
+        # The API reads runtimes.disabled from the configuration when it is built.
+        app = local_api.create_app(port=args.port)
+    except ValueError as exc:
+        parser.exit(2, f"bookweaver serve: {exc}\n")
+    local_api.serve(args.port, app)
 
 
 def _apply_preset(
@@ -319,6 +345,7 @@ def main(argv: list[str] | None = None) -> None:
             args.glossary_min_priority,
             args.glossary_max_terms,
             args.extraction_model,
+            args.term_panel,
         ),
         resume=orchestration.ResumePolicy(
             args.resume,
@@ -326,7 +353,11 @@ def main(argv: list[str] | None = None) -> None:
             Path(args.checkpoint_dir) if args.checkpoint_dir else None,
         ),
     )
-    orchestration.translate_epub(path, Path(args.output), options)
+    try:
+        orchestration.translate_epub(path, Path(args.output), options)
+    except orchestration.PanelError as exc:
+        # Panel configuration and conflicts are the user's to fix, as on `bookweaver terms`.
+        parser.exit(2, f"bookweaver: {exc}\n")
 
 
 if __name__ == "__main__":

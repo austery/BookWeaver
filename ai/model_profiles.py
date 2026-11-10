@@ -1,5 +1,6 @@
 """Version-pinned model selection; update concrete mappings here when upgrading."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, get_args
 
@@ -345,6 +346,33 @@ def find_preset(name: str) -> Preset:
     raise ValueError(
         f"Unknown preset {name!r}; enabled presets: {', '.join(r.name for r in presets)}"
     )
+
+
+def disabled_runtimes(config: Mapping[str, object]) -> frozenset[str]:
+    """``runtimes.disabled``: the quota pools the owner has switched off (SPEC-028 §3.12).
+
+    Configuration records subscriptions; presets stay in code. The schema checks the names.
+    """
+    section = config.get("runtimes", {})
+    listed = section.get("disabled", []) if isinstance(section, dict) else []
+    return frozenset(item for item in listed if isinstance(item, str))
+
+
+def model_runtime(model: ResolvedModel) -> str:
+    """The quota pool a resolved model draws on: its subscription CLI, or the metered vendor."""
+    if model.provider == "cli":
+        return model.runtime or "antigravity"
+    return model.provider
+
+
+def refuse_disabled_runtime(model: ResolvedModel, config: Mapping[str, object], role: str) -> None:
+    """Fail before any call when ``model`` needs a runtime the configuration disables."""
+    runtime = model_runtime(model)
+    if runtime in disabled_runtimes(config):
+        raise ValueError(
+            f"The {role} ({model.model_id}) runs on {runtime}, which runtimes.disabled in your "
+            "configuration switches off; choose another preset or remove it from that list"
+        )
 
 
 def is_metered(provider: str) -> bool:

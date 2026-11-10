@@ -144,6 +144,27 @@
         }
       }
     },
+    "runtimes": {
+      "type": "object",
+      "description": "Which subscriptions and paid vendors the owner has (SPEC-028 §3.12).",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "antigravity",
+              "codex",
+              "claude-code",
+              "gemini",
+              "openai",
+              "anthropic"
+            ]
+          }
+        }
+      }
+    },
     "terminology_panels": {
       "type": "object",
       "description": "Named Term Panels (SPEC-028 §3.10). The key is the name users choose.",

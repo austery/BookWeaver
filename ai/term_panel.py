@@ -38,7 +38,14 @@ from ai.glossary_extractor import (
     locate_index_and_toc,
     parse_glossary_reply,
 )
-from ai.model_profiles import Preset, ResolvedModel, find_preset, is_metered, resolve_preset
+from ai.model_profiles import (
+    Preset,
+    ResolvedModel,
+    find_preset,
+    is_metered,
+    refuse_disabled_runtime,
+    resolve_preset,
+)
 from ai.ports.provider import ITranslationProvider
 
 DEFAULT_JUDGE_PROMPT_MAX_CHARS = 200_000
@@ -171,8 +178,47 @@ def panel_identity(
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
-def run_panel(
-    epub_path: Path,
+@dataclass(frozen=True)
+class PanelPlan:
+    """Where a panel's glossary lives and whether it exists; decided without any model call."""
+
+    panel: ResolvedPanel
+    identity: str
+    directory: Path
+    max_terms: int
+    nominator_terms: int
+    mode: str
+
+    @property
+    def glossary_path(self) -> Path:
+        return self.directory / "glossary.json"
+
+    @property
+    def report_path(self) -> Path:
+        return self.directory / "term-panel-report.json"
+
+    @property
+    def reused(self) -> bool:
+        return self.glossary_path.exists()
+
+    def audit(self) -> dict[str, object]:
+        """The invocation audit's ``term_panel`` field: which quota pools the panel draws on."""
+        return {
+            "name": self.panel.name,
+            "identity": self.identity,
+            "reused": self.reused,
+            "members": [
+                {"role": role, "preset": m.preset.name, "model": m.model.model_id}
+                for role, members in (
+                    ("nominator", self.panel.nominators),
+                    ("judge", self.panel.judges),
+                )
+                for m in members
+            ],
+        }
+
+
+def plan_panel(
     panel: ResolvedPanel,
     *,
     book_dir: Path,
@@ -180,11 +226,8 @@ def run_panel(
     max_terms: int,
     nominator_terms: int,
     mode: str,
-    config: dict[str, object],
-    factory: ProviderFactory,
-    log: Callable[[str], None] = print,
-) -> PanelOutcome:
-    """Run the panel once per identity; a cached glossary is reused without any call."""
+) -> PanelPlan:
+    """The panel's cache folder and identity (SPEC-028 §3.7); refusals before any call."""
     if mode != "auto":
         raise PanelError(
             "A Term Panel reads the book's index; Deep Scan with a panel is not supported yet "
@@ -200,8 +243,34 @@ def run_panel(
         mode=mode,
     )
     directory = book_dir / ".bookweaver_glossaries" / "panel" / identity
-    glossary_path = directory / "glossary.json"
-    report_path = directory / "term-panel-report.json"
+    return PanelPlan(panel, identity, directory, max_terms, nominator_terms, mode)
+
+
+def _refuse_disabled_members(
+    panel: ResolvedPanel, members: Sequence[PanelMember], config: Mapping[str, object]
+) -> None:
+    """SPEC-028 §3.12: a member that must be called on a disabled runtime stops the panel."""
+    for member in members:
+        try:
+            refuse_disabled_runtime(member.model, config, f"Term Panel member {member.preset.name}")
+        except ValueError as exc:
+            raise PanelError(f"Term Panel {panel.name!r}: {exc}") from exc
+
+
+def run_panel(
+    epub_path: Path,
+    plan: PanelPlan,
+    *,
+    config: dict[str, object],
+    factory: ProviderFactory,
+    log: Callable[[str], None] = print,
+) -> PanelOutcome:
+    """Run the planned panel once per identity; a cached glossary is reused without any call."""
+    panel = plan.panel
+    max_terms, nominator_terms = plan.max_terms, plan.nominator_terms
+    directory = plan.directory
+    glossary_path = plan.glossary_path
+    report_path = plan.report_path
     if glossary_path.exists():
         log(f"[terms] Reusing the {panel.name} glossary: {glossary_path}")
         return PanelOutcome(glossary_path, report_path, True)
@@ -228,7 +297,11 @@ def run_panel(
     checked: set[str] = set()
 
     def ensure_ready(members: Sequence[PanelMember]) -> None:
-        """SPEC-028 §3.12: check only members that will be called, all before the next call."""
+        """SPEC-028 §3.12: check only members that will be called, all before the next call.
+
+        A member whose replies are all saved is never checked, so its runtime may be disabled.
+        """
+        _refuse_disabled_members(panel, members, config)
         for member in members:
             if member.preset.name not in checked:
                 providers[member.preset.name].check_ready()

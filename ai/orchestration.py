@@ -37,19 +37,22 @@ from ai.model_profiles import (
     Preset as Preset,
     enabled_presets as enabled_presets,
     find_preset as find_preset,
+    disabled_runtimes,
     is_metered,
+    model_runtime,
+    refuse_disabled_runtime,
     resolve_preset,
     resolve_profile,
 )
 from ai.runtime_factory import DefaultProviderFactory, IProviderFactory
 from ai.runtime_config import load_runtime_config, validate_config
-from ai.term_panel import PanelError, resolve_panel, run_panel
+from ai.term_panel import PanelError, plan_panel, resolve_panel, run_panel
 from ai.term_panel import ProviderFactory as PanelProviderFactory
 from ai.prompt_preparation import PromptPreparation
 from ai.term_extraction import (
     announce_extraction,
-    configured_term_limit,
     extract_glossary,
+    panel_term_limits,
     plan_glossary,
     report_reuse,
 )
@@ -112,6 +115,8 @@ class GlossarySpec:
     min_priority: str | None = None
     max_terms: int | None = None
     extraction_model: str | None = None
+    # A named Term Panel (SPEC-028 §3.10); it replaces single-model extraction.
+    term_panel: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,7 +146,7 @@ def _segment_backend(provider: ITranslationProvider | None, model: ResolvedModel
     reported = provider.backend if provider is not None else None
     if reported:
         return reported
-    return (model.runtime or "antigravity") if model.provider == "cli" else "any_llm"
+    return model_runtime(model) if model.provider == "cli" else "any_llm"
 
 
 def _refuse_trial_model_change(records: dict[str, SegmentRecord], model: ResolvedModel) -> None:
@@ -206,6 +211,7 @@ class TranslationOrchestrator:
         config = (
             validate_config(options.config) if options.config is not None else load_runtime_config()
         )
+        refuse_disabled_runtime(model, config, "translation model")
         prompt_preparation = PromptPreparation.from_config(
             config,
             output_lang=options.spec.output_lang,
@@ -265,6 +271,8 @@ class TranslationOrchestrator:
             active_requested_effort = options.model.effort
             # Extraction may run on another preset; keep it visible in the audit (SPEC-025 §3.8).
             extraction_used: ResolvedModel | None = None
+            # A Term Panel calls several members; the audit names each (owner, 2026-11-10).
+            panel_used: dict[str, object] | None = None
 
             def finalize_audit(
                 exc_type: type[BaseException] | None,
@@ -287,6 +295,7 @@ class TranslationOrchestrator:
                             "extraction_preset_status": extraction_used.status
                             if extraction_used is not None
                             else None,
+                            "term_panel": panel_used,
                             "runtime_version": active_provider.runtime_version
                             if active_provider is not None
                             else None,
@@ -331,7 +340,13 @@ class TranslationOrchestrator:
                 book_dir=output_file.parent,
                 source_signature=content_signature,
                 may_reuse=store is not None,
+                term_panel=glossary.term_panel,
+                panel_dir=input_file.parent,
             )
+            if glossary_plan.panel is not None:
+                # Recorded before any member exists, so a refused member still shows in the audit.
+                panel_used = glossary_plan.panel.audit()
+                run_panel(input_file, glossary_plan.panel, config=config, factory=factory)
             planned = glossary_plan.extraction
             if planned is not None and not glossary_plan.needs_extraction:
                 report_reuse(planned)
@@ -543,28 +558,24 @@ def run_term_panel(
         raise PanelError(f"A Term Panel needs an EPUB file: {source}")
     runtime_config = validate_config(config) if config is not None else load_runtime_config()
     panel = resolve_panel(panel_name, runtime_config)
-    configured = configured_term_limit(runtime_config)
-    limit = max_terms if max_terms is not None else configured
-    if not isinstance(limit, int) or not isinstance(configured, int) or limit <= 0:
-        raise PanelError("The term limit must be a positive integer")
-    # SPEC-028 §3.4 rule 7: the limit caps the final glossary; nominators are asked for the
-    # configured number, or more when the cap is larger.
-    nominator_terms = max(configured, limit)
+    limit, nominator_terms = panel_term_limits(runtime_config, max_terms)
     book_dir = Path(output_dir) if output_dir is not None else source.parent
-    # No audit directory: panels refuse paid members, and the audit records only metered usage.
-    factory = provider_factory or DefaultProviderFactory()
-    outcome = run_panel(
-        source,
+    plan = plan_panel(
         panel,
         book_dir=book_dir,
         source_signature=_compute_content_signature(source),
         max_terms=limit,
         nominator_terms=nominator_terms,
         mode=mode,
-        config=runtime_config,
-        factory=factory,
     )
-    return outcome.glossary_path
+    # No audit directory: panels refuse paid members, and the audit records only metered usage.
+    factory = provider_factory or DefaultProviderFactory()
+    return run_panel(source, plan, config=runtime_config, factory=factory).glossary_path
+
+
+def configured_disabled_runtimes() -> frozenset[str]:
+    """``runtimes.disabled`` from the runtime configuration, for preset listings (SPEC-028 §3.12)."""
+    return disabled_runtimes(load_runtime_config())
 
 
 def translate_epub(

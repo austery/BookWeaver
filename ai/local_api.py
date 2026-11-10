@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fcntl
 import filecmp
+import inspect
 import json
 import os
 import signal
@@ -444,8 +445,50 @@ def create_app(
     state_dir: Path | None = None,
     child_command: Sequence[str] = _CHILD_COMMAND,
     library_dir: Path | None = None,
+    disabled_runtimes: frozenset[str] | None = None,
 ) -> FastAPI:
-    """Build the API; separate from ``serve`` so tests can call it without a socket."""
+    """Build the API; separate from ``serve`` so tests can call it without a socket.
+
+    ``disabled_runtimes`` defaults to ``runtimes.disabled`` read once from the configuration
+    (SPEC-028 §3.12); restart ``serve`` after changing it.
+    """
+    disabled = (
+        disabled_runtimes
+        if disabled_runtimes is not None
+        else orchestration.configured_disabled_runtimes()
+    )
+    available = [p for p in orchestration.enabled_presets() if p.runtime not in disabled]
+    # The upload dropdown lists only presets a run may use. A disabled default leaves no
+    # default (None): the upload then requires an explicit preset, never a silent substitute.
+    UploadPreset = StrEnum("PresetName", [(p.name, p.name) for p in available])  # type: ignore[misc]
+    upload_default = (
+        UploadPreset(DEFAULT_PRESET.value)
+        if DEFAULT_PRESET.value in {p.name for p in available}
+        else None
+    )
+    preset_field = Form(description="Model and effort to use, as `GET /presets` explains them.")
+
+    def _with_preset_choices(endpoint: Callable[..., RunStatus]) -> Callable[..., RunStatus]:
+        """Give ``preset`` this app's choices, and make it required when it has no default.
+
+        This module's string annotations cannot name a type built here, so the signature
+        FastAPI reads carries the type object. Keyword-only parameters let a required
+        ``preset`` follow parameters with defaults; FastAPI passes form fields by name.
+        """
+        signature = inspect.signature(endpoint)
+        parameters = [
+            parameter.replace(
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=Annotated[UploadPreset, preset_field],
+                default=upload_default if upload_default is not None else inspect.Parameter.empty,
+            )
+            if name == "preset"
+            else parameter.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+            for name, parameter in signature.parameters.items()
+        ]
+        endpoint.__signature__ = signature.replace(parameters=parameters)  # type: ignore[attr-defined]
+        return endpoint
+
     store = _RunStore(state_dir or default_state_dir())
     library = library_dir or default_library_dir()
     children: dict[str, subprocess.Popen[bytes]] = {}
@@ -476,12 +519,22 @@ def create_app(
         response_model=list[orchestration.Preset],
         summary="List enabled presets",
         description=(
-            "Every selection a run may use, the default preset first. Metered presets are paid "
-            "and need per-run consent."
+            "Every selection a run may use, the default preset first unless its runtime is "
+            "disabled. Metered presets are paid and need per-run consent. Presets on a runtime "
+            "that `runtimes.disabled` in the configuration switches off are left out."
         ),
     )
     def list_presets() -> list[orchestration.Preset]:
-        return list(orchestration.enabled_presets())
+        return available
+
+    def refuse_disabled(preset: orchestration.Preset) -> None:
+        """SPEC-028 §3.12: the run would fail before any call; say so before starting it."""
+        if preset.runtime in disabled:
+            raise HTTPException(
+                400,
+                f"Preset {preset.name} runs on {preset.runtime}, which runtimes.disabled in "
+                "the configuration switches off; choose another preset",
+            )
 
     def ensure_idle() -> None:
         """Call with the store lock held."""
@@ -575,6 +628,7 @@ def create_app(
     @app.post("/runs", status_code=202, response_model=RunStatus, include_in_schema=False)
     def start_run(body: RunRequest) -> RunStatus:
         preset = orchestration.find_preset(body.preset.value)
+        refuse_disabled(preset)
         _check_consent(preset, body.allow_paid_api)
         source = Path(body.source).expanduser().resolve()
         output = Path(body.output).expanduser().resolve()
@@ -612,6 +666,7 @@ def create_app(
             "fails, because this API has no `--force-resume`. Only one run at a time."
         ),
     )
+    @_with_preset_choices
     def upload_run(
         file: Annotated[
             UploadFile,
@@ -621,10 +676,7 @@ def create_app(
             str,
             Form(description="Name of the translated file; empty means `<book name>.zh.epub`."),
         ] = "",
-        preset: Annotated[
-            PresetName,
-            Form(description="Model and effort to use, as `GET /presets` explains them."),
-        ] = DEFAULT_PRESET,
+        preset: Annotated[str, preset_field] = DEFAULT_PRESET.value,  # see _with_preset_choices
         prompt: Annotated[
             str, Form(description="Extra translation instructions; empty means none.")
         ] = "",
@@ -646,7 +698,8 @@ def create_app(
             Form(description="Consent to paid calls for this run, which paid presets require."),
         ] = False,
     ) -> RunStatus:
-        selected = orchestration.find_preset(preset.value)
+        # The dropdown holds only presets on enabled runtimes (refuse_disabled guards POST /runs).
+        selected = orchestration.find_preset(preset)
         _check_consent(selected, allow_paid_api)
         if "\0" in prompt:
             raise HTTPException(400, "prompt must not contain a NUL character")
@@ -732,6 +785,6 @@ def create_app(
     return app
 
 
-def serve(port: int) -> None:
+def serve(port: int, app: FastAPI | None = None) -> None:
     """Run the API in the foreground until interrupted; never binds beyond this Mac."""
-    uvicorn.run(create_app(port=port), host=HOST, port=port)
+    uvicorn.run(app or create_app(port=port), host=HOST, port=port)

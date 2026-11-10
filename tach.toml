@@ -69,13 +69,13 @@ depends_on = []
 path = "ai.glossary_extractor"
 depends_on = ["ai.core", "ai.epub_package"]
 
-# Which glossary a run uses and which model extracts it (prepared for SPEC-028 Phase 2b).
+# Which glossary a run uses: a supplied file, one extraction model, or a Term Panel.
 [[modules]]
 path = "ai.term_extraction"
-depends_on = ["ai.ports", "ai.model_profiles", "ai.glossary_extractor"]
+depends_on = ["ai.ports", "ai.model_profiles", "ai.glossary_extractor", "ai.term_panel"]
 
-# Term Panel runner (SPEC-028): its only output is a glossary file. Only run_term_panel in
-# ai.orchestration calls it; the translation functions do not (not enforced by tach).
+# Term Panel runner (SPEC-028): its only output is a glossary file. `bookweaver terms` and
+# `--term-panel` reach it through ai.orchestration; ai.term_extraction plans it.
 [[modules]]
 path = "ai.term_panel"
 depends_on = ["ai.ports", "ai.core", "ai.model_profiles", "ai.glossary_extractor"]
