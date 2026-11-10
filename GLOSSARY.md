@@ -53,7 +53,7 @@ Term Extraction that sends the whole book to a model. It runs only when a person
 _Avoid_: Tier 3, full scan
 
 **Term Panel**:
-Presets from different vendors that propose and judge the terms for one book; a program, not a model, combines their votes (SPEC-028).
+A named set of presets from different vendors that propose and judge the terms for one book; a program, not a model, combines their votes into a tiered glossary (SPEC-028). Users choose a panel by name, never its members one by one.
 _Avoid_: committee, ensemble
 
 **Nominator**:

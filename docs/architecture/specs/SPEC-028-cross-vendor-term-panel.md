@@ -1,7 +1,7 @@
 ---
 specId: SPEC-028
 title: Cross-Vendor Term Panel and Tiered Glossary
-status: Draft for owner review (2026-11-09)
+status: Approved by the owner (2026-11-09); amended 2026-11-10 (named panels, panel as its own step, availability, Deep Scan)
 implementationStatus: Phase 1 implemented (PR 94) and adopted by the owner after live acceptance (2026-11-10); Phases 2-4 not started
 priority: P1 - Translation Quality
 creationDate: 2026-11-09
@@ -52,13 +52,15 @@ All runs used the trimmed EPUB of chapters 1 and 2 with the full book's index an
 | Aggregator | Program, no model | Glossary with tiers, and a panel report |
 | Translator | The run's preset | Translation with the glossary |
 
-- A role is a list of named presets from `ai/model_profiles.py` (SPEC-025 §3.8). A preset may serve in both roles. List order is significant: it is the last tie-break.
+- The translator role takes one preset, as today. The term role takes one **named Term Panel**, or none.
+- A Term Panel names its nominators and judges: each a list of presets from `ai/model_profiles.py` (SPEC-025 §3.8). A preset may serve in both lists. List order is significant: it is the last tie-break.
+- Users choose a panel by name. No surface offers a free combination of presets (amendment 2026-11-10; the owner's rule that a profile is a named intent, not a model).
 - With no panel configured, extraction and the prompt stay exactly as today. Existing books and checkpoints are unaffected.
 - Nomination reads the index and table of contents (SPEC-015 Tier 1). SPEC-015's source ladder is unchanged; this spec decides who extracts and how results combine. One departure from the SPEC-015 resolution contract: there, `--glossary` wins over extraction flags with a warning; a panel with `--glossary` fails instead (§3.10), because a panel spends calls.
 
 ### 3.2 Vendor, not model count
 
-- Each preset carries a vendor: `google`, `openai` or `anthropic`. The registry gains this field.
+- Each preset carries a vendor: `google`, `openai` or `anthropic`. The registry gains this field for subscription presets and metered presets alike (`anthropic-pro` is `anthropic`). A future runtime that serves another vendor's models, such as Copilot, adds a quota pool, not a vote.
 - One vendor casts one vote per role. Two presets from one vendor in the same role are rejected before any call, because their judgments correlate (Sonnet and Opus: 37 of 50 shared terms).
 - "Own" in every rule below means the judge's vendor, not the judge's preset. A term only Sonnet nominated is Opus's own term.
 
@@ -120,7 +122,7 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 
 ### 3.7 Cache, reuse and saved replies
 
-- Location: `<book folder>/.bookweaver_glossaries/panel/<sha256>.json`. For the CLI the book folder is the output file's folder. For a local API upload it is the library folder `~/Documents/BookWeaver/<book name>/`, which the per-preset output folders share. This closes issue 86 for panel runs.
+- Location: `<book folder>/.bookweaver_glossaries/panel/<sha256>.json`. For `bookweaver terms` the book folder is the `--output-dir` it is given, default the EPUB's folder. For a local API upload it is the library folder `~/Documents/BookWeaver/<book name>/`, which every output folder of that book shares. This closes issue 86 for panel runs.
 - Identity: source signature, mode, term limit, nominator presets in order, judge presets in order, sentence-selection version, rule version.
 - Each member's raw reply is saved next to the cache under the same identity plus the member and chunk. A rerun after a failure reuses saved replies and calls only the missing members.
 - The cached glossary feeds the prompt hash, as today. A changed panel gives a new identity and a new glossary; it never rewrites a saved one.
@@ -128,7 +130,7 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 ### 3.8 Paid members
 
 - A panel may include metered presets (SPEC-024), as nominator or as judge.
-- Consent is per run and lists every paid member by name. Today `--allow-paid-api` requires a metered translator, and the factory refuses it for a CLI model. Consent must become per role, so that a CLI translator can run with a paid judge. This touches the paid-call gate and needs the deep review.
+- The panel runs as its own step (§3.10), so its consent is its own: `bookweaver terms --allow-paid-api` covers the paid members it lists by name, and the translation run keeps today's gate unchanged. Only the inline API path (§3.10) runs both steps in one child; it gets separate consent for the panel. Either way this touches the paid-call gate and needs the deep review.
 - No automatic fallback in either direction. The program never adds or substitutes a paid member.
 
 ### 3.9 Failure and scale
@@ -141,11 +143,30 @@ No rule sends a term to a person. The owner may still edit the glossary file bef
 
 ### 3.10 Interface
 
-- CLI: `--term-nominators PRESET[,PRESET...]` and `--term-judges PRESET[,PRESET...]`.
-- Configuration: `terminology_panel.nominators` and `terminology_panel.judges`, validated by `ai/config_schema.json`. Absent by default; the owner's existing configuration files stay valid unchanged.
-- Local API upload: the same two lists, chosen from `GET /presets` (Phase 4).
-- These fail before any call: a panel with `--glossary`; a panel with `--extraction-model`; a panel with `--glossary-mode deep-scan` (§4); two presets of one vendor in one role; a single nominator whose vendor is the only judge vendor (every keep vote would be void); an unknown or disabled preset.
-- Outputs in the cache folder: the glossary and `term-panel-report.json` (candidates, proposals, sentences, votes, merges, tiers, bias, failures, call counts).
+**The panel is its own step, and its only output is a tiered glossary file.** Phase 1 made that file a complete interface: `--glossary` already consumes it. So the translation path does not change.
+
+- **Terms command:** `bookweaver terms BOOK.epub --panel NAME [--output-dir DIR] [--glossary-mode deep-scan] [--allow-paid-api]`. It writes the glossary and `term-panel-report.json` into the cache folder (§3.7) and prints the glossary path. No translation.
+- **Translation:** unchanged. `bookweaver BOOK.epub --glossary PATH --preset NAME` uses the panel's glossary like any other.
+- **Panels are named in configuration**, validated by `ai/config_schema.json`:
+
+```json
+"terminology_panels": {
+  "three-vendor": {
+    "nominators": ["agy-flash-low", "codex-gpt-6.1-sol-low", "claude-opus-5-5-low"],
+    "judges": ["codex-gpt-6.1-sol-low", "claude-opus-5-5-low"],
+    "status": "experiment"
+  }
+}
+```
+
+  - The key is the panel name users see. `status` follows the preset statuses: `experiment` until a panel has live acceptance, then `default` only by the owner's decision. A panel is reachable without being the default; no run uses a panel unless asked.
+  - The repository ships `config/config.json.example` with one example panel. The owner's ignored configuration stays valid without the key; nothing rewrites it.
+- **Local API upload (Phase 4):** one optional field, `term_panel`, a dropdown of panel names built like `PresetName`, default none.
+  - With a panel, the child runs `bookweaver terms`, then the translation with the resulting glossary, inside the existing run record and the one-run rule.
+  - The upload stops sending `extraction_model` when a panel is chosen; the two conflict.
+  - Output folder: `<book>/panel-<name>/<preset>/`, so a panel run never resumes a checkpoint made with another glossary. The upload still has no `--force-resume`.
+  - Paid panel members are not offered on the upload in the first version.
+- **Conflicts, before any call:** `--panel` with `--glossary` or `--extraction-model`; an unknown panel; a panel that names an unknown, disabled or unavailable preset (§3.12); two presets of one vendor in one list; a single nominator whose vendor is the only judge vendor (every keep vote would be void).
 
 ### 3.11 Persistent structure changed
 
@@ -157,15 +178,46 @@ These are Structure paths in `docs/agents/impact-radius.md`. This list is the de
 | Glossary block (`GlossaryManager.format_block`) | Second block for `preferred` terms; unchanged output when no term has `tier` |
 | Glossary cache (`glossary_cache_path`) | New panel location and identity (§3.7); the existing single-extraction identity and files are unchanged |
 | New files | `term-panel-report.json` and saved member replies under `.bookweaver_glossaries/panel/` |
-| Runtime configuration schema | Optional `terminology_panel` with `nominators` and `judges` |
-| Model registry (`ai/model_profiles.py`) | `vendor` on every preset; no `model_id` changes |
+| Runtime configuration schema | Optional `terminology_panels` (named panels, §3.10) and `runtimes.disabled` (§3.12); `config/config.json.example` gains one example panel |
+| Model registry (`ai/model_profiles.py`) | `vendor` on every preset, subscription and metered; no `model_id` changes |
+| Deep Scan prompt (`ai/glossary_extractor.py`, Phase 5) | Real title and table of contents; bumps `extractor_version` for Deep Scan caches only |
 | Term report (`term-consistency.json`) | Per-tier grading; reports without tiers keep their current shape |
 
 No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only for books that use it.
 
+### 3.12 Availability: code records evidence, configuration records subscriptions
+
+- Presets stay in code (`ai/model_profiles.py`): model ID, probe evidence, status. They change with evidence, in a reviewed change.
+- Which subscriptions the owner has is configuration: an optional `runtimes.disabled` list (for example `["codex"]`). A disabled runtime's presets leave `GET /presets`, the upload dropdown and `bookweaver presets` (which marks them `disabled`), and any run that names one fails before a call.
+- Cancelling a subscription is therefore a configuration edit: disable the runtime and remove it from panels. No code change.
+- A panel that names a disabled or logged-out member stops before any call and names the member. The program never shrinks a panel silently.
+- The local API may show login status from the existing login checks (`codex login status`, `claude auth status`), which spend no quota. It only reports; it never edits a panel.
+
+### 3.13 Deep Scan with a panel
+
+Deep Scan sends the whole book in one request (`ai/glossary_extractor.py`, about 566,000 characters for *Political Thinking*). It is the only route for books without an index, which are common among older humanities books.
+
+- **One nominator only.** Several whole-book requests multiply quota, and only Gemini has read input this long; Codex and Claude Code have no evidence at that length. A Deep Scan panel uses the first nominator and rejects a panel that lists more than one for this mode.
+- **Judges are unchanged.** They read candidates, body sentences (found locally, no model) and the table of contents, not the book. So a Deep Scan book still gets a cheap cross-vendor vote.
+- The Deep Scan prompt gains the book's real title and the table of contents. Today it sends the title `Unknown`.
+- Deep Scan has no live evidence on a subscription CLI (issue 71). Phase 5 needs that evidence first.
+- Parked idea (owner, 2026-11-10): the Deep Scan model also returns the sentences it based each term on, and those feed the judges. Not in scope; recorded so it is not lost.
+
+### 3.14 Three reading depths
+
+The owner's rule: hide no setting, but tier the views, and build every view from one resolved plan.
+
+- **Ordinary:** choose a preset and, optionally, a panel name.
+- **Confirm:** before the first call, `bookweaver terms` prints the resolved plan: each member's preset, runtime (quota pool), vendor and planned calls, and whether any call is paid. The upload returns the same plan in its response.
+- **Inspect:** `term-panel-report.json` (votes, merges, tiers, bias, failures) and `term-consistency.json`.
+
+The plan and the report come from the same resolver that runs the panel; no surface keeps a second copy of the rules.
+
 ## 4. Out of scope
 
-- Several nominators in Deep Scan. A whole-book scan is the most expensive nomination and has no live evidence on a subscription CLI (issue 71). When added, Deep Scan keeps one nominator and may add judges, because judging reads only candidates and sentences.
+- Several nominators in Deep Scan (§3.13).
+- Free combinations of presets on any surface. New combinations are new named panels.
+- A Copilot runtime. It would add a quota pool, not a vote; add it only when quota requires.
 - A human dispute step. The owner does not judge English terms.
 - Web search during judging.
 - Judging or auditing the translation itself: SPEC-025 §3.7 and its evaluation spec.
@@ -176,7 +228,7 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 - [x] Owner confirmed on 2026-11-09: one vote per vendor (§3.2), not one per preset.
 - [x] Owner confirmed on 2026-11-09: the tie-break of §3.4 rule 5. With two judges it decides every disagreement; in the replay it chose Opus.
 - [x] Run-to-run register variation, measured on ch007 (2026-11-10): two strict runs differed by 0.54 per 1,000 characters; the 91-term glossary did not lower register there.
-- [ ] Owner feedback, 2026-11-10: do not normalize terms fully; adapting a word to the sentence is welcome. Phase 2 should keep the `fixed` tier narrow (the author's coined concepts, names and titles, established doctrines) and leave ordinary words `preferred`. Decide whether §3.4 rule 6 needs a judge field for this, or only a sharper `enforce` instruction in the judge prompt.
+- [x] Owner feedback, 2026-11-10: do not normalize terms fully; adapting a word to the sentence is welcome. Decision: no new field. The judge prompt defines `enforce: fixed` narrowly: an author's coined concept, a person's name, a title, or an established doctrine or school. Everything else is `preferred`.
 - [ ] Gemini Pro (`agy-pro-low`) has not judged, and the owner cannot use it at present. A Google vote is Gemini Flash until then; Flash showed self-preference per preset, which the own-term rule offsets.
 - [ ] Confirm the prompt limit per runtime before relying on one-call judging.
 - [ ] `duplicate_of` is new; no judge has produced it yet.
@@ -186,10 +238,11 @@ No checkpoint schema change. A tiered glossary changes `system_prompt_hash` only
 1. **Tiered glossary (done; adopted 2026-11-10, `docs/plans/2026-11-10-tiered-glossary-acceptance.md`).** `tier` field, two prompt blocks, byte-identical rendering for old glossaries, tiered term report. Offline tests through prompt preparation and the term report.
    - Live acceptance: one chapter with several `preferred` terms (where Cosmic morale or Socratic civility occur; chapters 1 and 2 hold only nine), translated strict and tiered with the same glossary. Also measure register for both.
    - Gate, fixed before the run: adopt tiers when `fixed` drift is zero in the tiered version, register does not fall, and the owner does not prefer the strict version. Otherwise keep one strict block and record why. Closes issue 82 either way.
-2. **Panel on the index path, subscription presets only.** Vendor field, candidates with sentences, judges, aggregator, report, cache, saved replies, CLI and configuration. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, cache identity.
-   - Live acceptance: *Political Thinking* with one Google, one OpenAI and one Anthropic member in each role, then chapters 1 and 2 translated with the result; compare with the replay in §2.
-3. **Paid members.** Per-role consent, through the deep review. Offline tests only, unless the owner authorizes a paid call.
-4. **Local API.** Panel lists on upload; shared panel glossary per book.
+2. **Terms command on the index path, subscription presets only.** Vendor field, named panels in configuration, `runtimes.disabled`, candidates with sentences, judges, aggregator, resolved plan, report, cache, saved replies. Offline tests with fake executables: every panel-size row, the own-term rule, duplicates, both tie-breaks, the cap, failure stop and reuse, conflicts, availability, cache identity. `scripts/` in the owner's trial folder holds the reference pipeline (`replay.py` for the vote rules).
+   - Live acceptance: *A Philosophy of Software Design* (index 4,846 characters, no panel data yet) and *Political Thinking*, each with the `three-vendor` panel, then translated with `agy-flash-low` into new folders, never resuming old checkpoints. Compare *Political Thinking* with the replay in §2.
+3. **Paid members.** Consent on `bookweaver terms`, through the deep review. Offline tests only, unless the owner authorizes a paid call.
+4. **Local API.** The `term_panel` dropdown, the panel output folder, login status display.
+5. **Deep Scan with a panel.** After issue 71 has live evidence. One nominator, title and table of contents in the prompt.
 
 ## 7. Verification
 
