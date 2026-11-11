@@ -52,4 +52,4 @@ Keep books, translations and checkpoints outside this program folder. A checkpoi
 
 ## Project status and contributing
 
-Contributor rules, verification commands and the current product boundary are in [AGENTS.md](AGENTS.md). Validation status and remaining acceptance work are in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Domain terms are defined in [GLOSSARY.md](GLOSSARY.md).
+Contributor rules, verification commands and the current product boundary are in [AGENTS.md](AGENTS.md). Validation status and remaining acceptance work are in [SPEC-021](docs/architecture/specs/SPEC-021-runtime-convergence-and-book-validation.md). Architectural decisions are recorded in [ADRs](docs/architecture/decisions/). Domain terms are defined in [GLOSSARY.md](GLOSSARY.md).
