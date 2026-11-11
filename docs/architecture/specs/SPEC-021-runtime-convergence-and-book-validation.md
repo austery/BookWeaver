@@ -139,7 +139,7 @@ These criteria prove the tested books and configurations, not universal translat
 - [Format lifecycle #18](https://github.com/austery/BookWeaver/issues/18), [CLI/config #19](https://github.com/austery/BookWeaver/issues/19), [lineage #20](https://github.com/austery/BookWeaver/issues/20)
 - [Gates #21](https://github.com/austery/BookWeaver/issues/21), [probe #22](https://github.com/austery/BookWeaver/issues/22), [provider #23](https://github.com/austery/BookWeaver/issues/23), [paid path #24](https://github.com/austery/BookWeaver/issues/24)
 - [Live probe and baseline evidence](../../plans/2026-09-07-antigravity-protocol-probe.md)
-- [Historical SPEC-020](SPEC-020-antigravity-cli-migration-and-paid-api-authorization.md)
+- [Historical SPEC-020](../../_archive/SPEC-020-antigravity-cli-migration-and-paid-api-authorization.md)
 - Current code: `ai/cli.py`, `ai/core/engine.py`, `ai/provider_factory.py`, `ai/quota_tracker.py`, `ai/adapters/providers/_delimiter.py`.
 
 

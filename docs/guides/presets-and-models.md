@@ -47,7 +47,7 @@ Vendors release new models about every six months, so comparing them is a recurr
 
 ## Paid API
 
-CLI failure never automatically switches to an API. The paid presets (`gemini-*`, `anthropic-*`) and their pinned models are listed by `uv run bookweaver presets`. All metered providers share one any-llm adapter ([SPEC-024](../architecture/specs/SPEC-024-metered-openai-anthropic-providers.md)). OpenAI is not pinned yet and fails before any request.
+CLI failure never automatically switches to an API. The paid presets (`gemini-*`, `anthropic-*`) and their pinned models are listed by `uv run bookweaver presets`. All metered providers share one any-llm adapter ([SPEC-024](../_archive/SPEC-024-metered-openai-anthropic-providers.md)). OpenAI is not pinned yet and fails before any request.
 
 Set the key in the environment: `GEMINI_API_KEY` (or `gemini_api.api_key` in configuration), `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`.
 
